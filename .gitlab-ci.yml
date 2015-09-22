@@ -1,0 +1,7 @@
+before_script:
+    - angr-test sync hard
+
+angrop:
+    script: "angr-test angrop"
+    tags:
+        - "angr"
