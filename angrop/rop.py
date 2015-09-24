@@ -61,27 +61,27 @@ class ROP(angr.Analysis):
         self._only_check_near_rets = only_check_near_rets
         self._max_sym_mem_accesses = max_sym_mem_accesses
 
-        # architecture
-        # todo this info is probably somewhere in archinfo
+        a = self.project.arch
+        self._sp_reg = a.register_names[a.sp_offset]
+        self._ip_reg = a.register_names[a.ip_offset]
+        self._base_pointer = a.register_names[a.bp_offset]
+
+        self._reg_list = a.default_symbolic_registers
+        # prune the register list of the instruction pointer and the stack pointer
+        self._reg_list = filter(lambda r: r != self._sp_reg, self._reg_list)
+        self._reg_list = filter(lambda r: r != self._ip_reg, self._reg_list)
+
+        self._ret_instructions = [ a.ret_instruction ]
+        self._syscall_instructions = {"\x0f\x05"}
+
         if self.project.arch.linux_name == "x86_64":
-            self._reg_list = ['rax', 'rcx', 'rdx', 'rbx', 'rbp', 'rsi', 'rdi', 'r8', 'r9', 'r10', 'r11', 'r12', 'r13',
-                              'r14', 'r15']
-            self._base_pointer = "rbp"
-            self._sp_reg = "rsp"
-            self._ret_instructions = {"\xc2", "\xc3", "\xca", "\xcb"}
             self._syscall_instructions = {"\x0f\x05"}
             self._cc = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
             self._execve_syscall = 59
         elif self.project.arch.linux_name == "i386":
-            self._reg_list = ['eax', 'ecx', 'edx', 'ebx', 'ebp', 'esi', 'edi']
-            self._base_pointer = "ebp"
-            self._sp_reg = "esp"
-            self._ret_instructions = {"\xc2", "\xc3", "\xca", "\xcb"}
             self._syscall_instructions = {"\xcd\x80"}
             self._cc = "stack"
             self._execve_syscall = 11
-        else:
-            raise Exception("rop information not created for arch %s", self.project.arch.linux_name)
 
         # get ret locations
         self._ret_locations = self._get_ret_locations()
