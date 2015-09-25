@@ -71,7 +71,6 @@ class ROP(angr.Analysis):
         self._reg_list = filter(lambda r: r != self._sp_reg, self._reg_list)
         self._reg_list = filter(lambda r: r != self._ip_reg, self._reg_list)
 
-        self._ret_instructions = [ a.ret_instruction ]
         self._syscall_instructions = {"\x0f\x05"}
 
         if self.project.arch.linux_name == "x86_64":
@@ -155,8 +154,9 @@ class ROP(angr.Analysis):
         """
         self.gadgets = []
 
-        for addr in enumerate(self._addresses_to_check_with_caching()):
-            gadget = self.analyze_gadget(addr)
+        _set_global_gadget_analyzer(self._gadget_analyzer)
+        for _, addr in enumerate(self._ret_locations):
+            gadget = _global_gadget_analyzer.analyze_gadget(addr)
             if gadget is not None:
                 self.gadgets.append(gadget)
 
@@ -200,7 +200,11 @@ class ROP(angr.Analysis):
     def _block_has_ip_relative(self, addr, bl):
         string = bl.bytes
         bl2 = self.project.factory.block(0x41414141, insn_bytes=string)
-        diff_constants = angr.bindiff.differing_constants(bl, bl2)
+        # TODO: FIXME
+        try:
+            diff_constants = angr.bindiff.differing_constants(bl, bl2)
+        except angr.analyses.bindiff.UnmatchedStatementsException:
+            return True
         # check if it changes if we move it
         bl_end = addr + bl.size
         bl2_end = 0x41414141 + bl2.size
@@ -246,22 +250,8 @@ class ROP(angr.Analysis):
         """
         :return: all the addresses to check
         """
-        if self._only_check_near_rets:
-            start_locs = [addr-self._max_block_size for addr in self._ret_locations]
-            current_addr = 0
-            for s in start_locs:
-                current_addr = max(current_addr, s)
-                end_addr = s + self._max_block_size + 1
-                for i in range(current_addr, end_addr):
-                    if self.project.loader.main_bin.find_segment_containing(i).is_executable:
-                        yield i
-                current_addr = max(current_addr, end_addr)
-        else:
-            for segment in self.project.loader.main_bin.segments:
-                if segment.is_executable:
-                    l.debug("Analyzing segment with address range: 0x%x, 0x%x" % (segment.min_addr, segment.max_addr))
-                    for addr in xrange(segment.min_addr, segment.max_addr):
-                        yield self.project.loader.main_bin.rebase_addr + addr
+        for loc in self._ret_locations:
+            yield self.project.loader.main_bin.rebase_addr + loc
 
     def _get_ret_locations(self):
         """
@@ -272,10 +262,11 @@ class ROP(angr.Analysis):
             if segment.is_executable:
                 min_addr = segment.min_addr + self.project.loader.main_bin.rebase_addr
                 num_bytes = segment.max_addr-segment.min_addr
-                read_bytes = "".join(self.project.loader.memory.read_bytes(min_addr, num_bytes))
-                for ret_instruction in self._ret_instructions:
-                    for loc in _str_find_all(read_bytes, ret_instruction):
-                        addrs.append(loc + min_addr)
+
+                for offset in xrange(0, num_bytes, self.project.arch.instruction_alignment):
+                    block = self.project.factory.block(min_addr+offset)
+                    if block.vex.jumpkind.startswith("Ijk_Ret"):
+                        addrs.append(min_addr+offset)
 
         return sorted(addrs)
 

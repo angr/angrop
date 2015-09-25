@@ -43,8 +43,6 @@ class ChainBuilder(object):
             self._syscall_instructions = {"\xcd\x80"}
             self._cc = "stack"
             self._execve_syscall = 11
-        else:
-            raise Exception("rop information not created for arch %s", self.project.arch.linux_name)
 
         # test state
         self._test_symbolic_state = rop_utils.make_symbolic_state(self.project, self._reg_list)

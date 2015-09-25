@@ -77,7 +77,7 @@ class GadgetAnalyzer(object):
             self._compute_sp_change(symbolic_state, this_gadget)
 
             # if the sp moves to the bp we have to handle it differently
-            if not this_gadget.bp_moves_to_sp:
+            if not this_gadget.bp_moves_to_sp and self._base_pointer != self._sp_reg:
                 symbolic_state.registers.store(self._base_pointer,
                                                symbolic_state.se.BV("sreg_" + self._base_pointer + "-",
                                                                     self.project.arch.bits))
