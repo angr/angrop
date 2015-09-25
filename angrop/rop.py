@@ -155,7 +155,7 @@ class ROP(angr.Analysis):
         self.gadgets = []
 
         _set_global_gadget_analyzer(self._gadget_analyzer)
-        for _, addr in enumerate(self._ret_locations):
+        for _, addr in enumerate(self._addresses_to_check_with_caching()):
             gadget = _global_gadget_analyzer.analyze_gadget(addr)
             if gadget is not None:
                 self.gadgets.append(gadget)
@@ -199,7 +199,8 @@ class ROP(angr.Analysis):
 
     def _block_has_ip_relative(self, addr, bl):
         string = bl.bytes
-        bl2 = self.project.factory.block(0x41414141, insn_bytes=string)
+        test_addr = 0x41414140 + addr % 0x10
+        bl2 = self.project.factory.block(test_addr, insn_bytes=string)
         # TODO: FIXME
         try:
             diff_constants = angr.bindiff.differing_constants(bl, bl2)
@@ -207,11 +208,11 @@ class ROP(angr.Analysis):
             return True
         # check if it changes if we move it
         bl_end = addr + bl.size
-        bl2_end = 0x41414141 + bl2.size
+        bl2_end = test_addr + bl2.size
         filtered_diffs = []
         for d in diff_constants:
             if d.value_a < addr or d.value_a >= bl_end or \
-                    d.value_b < 0x41414141 or d.value_b >= bl2_end:
+                    d.value_b < test_addr or d.value_b >= bl2_end:
                 filtered_diffs.append(d)
         return len(filtered_diffs) > 0
 
@@ -250,23 +251,43 @@ class ROP(angr.Analysis):
         """
         :return: all the addresses to check
         """
-        for loc in self._ret_locations:
-            yield self.project.loader.main_bin.rebase_addr + loc
+        if self._only_check_near_rets:
+            # align block size
+            alignment = self.project.arch.instruction_alignment
+            block_size = (self._max_block_size & ((1 << self.project.arch.bits) - alignment)) + alignment
+            slices = [(addr-block_size, addr) for addr in self._ret_locations]
+            current_addr = 0
+            for st, ed in slices:
+                current_addr = max(current_addr, st)
+                end_addr = st + block_size + alignment
+                for i in range(current_addr, end_addr, alignment):
+                    if self.project.loader.main_bin.find_segment_containing(i).is_executable:
+                        yield i
+                current_addr = max(current_addr, end_addr)
+        else:
+            raise NotImplementedError("this mode is not implemented in the arch agnostic branch")
 
     def _get_ret_locations(self):
         """
         :return: all the locations in the binary with a ret instruction
         """
-        addrs = []
+        addrs = [ ]
+        seen = set()
         for segment in self.project.loader.main_bin.segments:
             if segment.is_executable:
                 min_addr = segment.min_addr + self.project.loader.main_bin.rebase_addr
                 num_bytes = segment.max_addr-segment.min_addr
 
-                for offset in xrange(0, num_bytes, self.project.arch.instruction_alignment):
+                alignment = self.project.arch.instruction_alignment
+                # iterate backwards through the code looking for rets
+                # align num_bytes if need
+                num_bytes = num_bytes & ((1 << self.project.arch.bits) - alignment)
+                for offset in xrange(num_bytes, 0, -alignment):
                     block = self.project.factory.block(min_addr+offset)
                     if block.vex.jumpkind.startswith("Ijk_Ret"):
-                        addrs.append(min_addr+offset)
+                        if not block.addr + block.size in seen:
+                            addrs.append(min_addr+offset)
+                            seen.add(min_addr+offset+block.size)
 
         return sorted(addrs)
 
