@@ -174,7 +174,8 @@ class ROP(angr.Analysis):
         self._reload_chain_funcs()
 
     def save_gadgets(self, path):
-        pickle.dump((self.gadgets, self._duplicates), open(path, "wb"))
+        with open(path, "wb") as f:
+            pickle.dump((self.gadgets, self._duplicates), f)
 
     def load_gadgets(self, path):
         self.gadgets, self._duplicates = pickle.load(open(path, "rb"))
