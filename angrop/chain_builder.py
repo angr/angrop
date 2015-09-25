@@ -708,20 +708,20 @@ class ChainBuilder(object):
         if len(gadget.mem_writes) != 1 or len(gadget.mem_reads) + len(gadget.mem_changes) > 0:
             raise RopException("too many memory accesses for my lazy implementation")
 
-        # find what the registers would need to be
-        start_addr = self._get_single_ret()
+        arch_bytes = self.project.arch.bits / 8
+        arch_endness = self.project.arch.memory_endness
 
         # constrain the successor to be at the gadget
+        # emulate 'pop pc'
         test_state = self._test_symbolic_state.copy()
-        test_state.regs.ip = start_addr
-        p = self.project.factory.path(test_state)
-        p.step()
-        test_state.add_constraints(p.unconstrained_successors[0].state.regs.ip == gadget.addr)
-        # restep
-        p = self.project.factory.path(test_state)
-        p.step()
+        test_state.regs.ip = gadget.addr
+        test_state.add_constraints(test_state.memory.load(test_state.regs.sp, arch_bytes, endness=arch_endness) == gadget.addr)
+        test_state.regs.sp += arch_bytes
+
+        #p = self.project.factory.path(test_state)
+        #p.step()
         # step the gadget
-        pre_gadget_state = p.unconstrained_successors[0].state
+        pre_gadget_state = test_state # p.unconstrained_successors[0].state
         succ_p = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
 
         # constrain the write
@@ -747,7 +747,7 @@ class ChainBuilder(object):
         test_state.add_constraints(state.memory.load(addr, len(data)) == test_state.BVV(data))
 
         # get the actual register values
-        all_deps = mem_write.addr_dependencies + mem_write.data_dependencies
+        all_deps = list(mem_write.addr_dependencies) + list(mem_write.data_dependencies)
         reg_vals = dict()
         for reg in set(all_deps):
             reg_vals[reg] = test_state.se.any_int(test_state.registers.load(reg))
@@ -757,7 +757,7 @@ class ChainBuilder(object):
 
         bytes_per_pop = self.project.arch.bits / 8
         chain.add_value(gadget.addr, needs_rebase=True)
-        for i in range(gadget.stack_change / bytes_per_pop - 1):
+        for _ in range(gadget.stack_change / bytes_per_pop - 1):
             chain.add_value(0, needs_rebase=False)
         return chain
 
