@@ -17,7 +17,7 @@ def get_ast_dependency(ast):
             dependencies.add(var[5:].split("-")[0])
         else:
             return []
-    return list(dependencies)
+    return dependencies
 
 
 def get_ast_controllers(test_state, ast, reg_deps):
