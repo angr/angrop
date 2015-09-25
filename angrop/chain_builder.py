@@ -253,7 +253,7 @@ class ChainBuilder(object):
 
         register_arguments = args
         stack_arguments = []
-        if len(arguments) > len(cc.ARG_REGS):
+        if len(args) > len(cc.ARG_REGS):
             register_arguments = args[:len(cc.ARG_REGS)]
             stack_arguments = args[len(cc.ARG_REGS):]
 
@@ -261,7 +261,7 @@ class ChainBuilder(object):
             registers[reg] = arg
 
         if len(registers) > 0:
-            chain = self.set_regs(use_partial_controllers=use_partial_controllers, **reg_vals)
+            chain = self.set_regs(use_partial_controllers=use_partial_controllers, **registers)
         else:
             chain = RopChain(self.project, self)
 
@@ -277,7 +277,6 @@ class ChainBuilder(object):
                     if stack_cleaner is None or g.stack_change < stack_cleaner.stack_change:
                         stack_cleaner = g
 
-        chain = RopChain(self.project, self)
         chain.add_value(address, needs_rebase=True)
         if not stack_cleaner is None:
             chain.add_value(stack_cleaner.addr, needs_rebase=True)
@@ -285,8 +284,9 @@ class ChainBuilder(object):
 
         for arg in stack_arguments:
             chain.add_value(arg, needs_rebase=False)
-        for _ in range(stack_cleaner.stack_change / bytes_per_arg - len(stack_arguments) - 1):
-            chain.add_value(0, needs_rebase=False)
+        if not stack_cleaner is None:
+            for _ in range(stack_cleaner.stack_change / bytes_per_arg - len(stack_arguments) - 1):
+                chain.add_value(0, needs_rebase=False)
 
         return chain
 
