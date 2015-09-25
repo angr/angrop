@@ -32,17 +32,21 @@ class ChainBuilder(object):
         self._duplicates = duplicates
         self._reg_list = reg_list
 
-        # architecture
-        # todo this info is probably somewhere in archinfo
+        self._syscall_instruction = None
         if self.project.arch.linux_name == "x86_64":
             self._syscall_instructions = {"\x0f\x05"}
-            # FIXME get calling convention from archinfo
-            self._cc = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
-            self._execve_syscall = 59
         elif self.project.arch.linux_name == "i386":
             self._syscall_instructions = {"\xcd\x80"}
-            self._cc = "stack"
-            self._execve_syscall = 11
+
+        self._execve_syscall = None
+        # TODO this code is replicated in a couple of places...
+        if self.project.loader.main_bin.os == "unix":
+            if self.project.arch.bits == 64:
+                self._execve_syscall = 59
+            elif self.project.arch.bits == 32:
+                self._execve_syscall = 11
+            else:
+                raise RopException("unknown unix platform")
 
         # test state
         self._test_symbolic_state = rop_utils.make_symbolic_state(self.project, self._reg_list)
@@ -243,37 +247,47 @@ class ChainBuilder(object):
             else:
                 raise RopException("Symbol passed to func_call does not exist in the binary")
 
+        cc = simuvex.s_cc.DefaultCC[self.project.arch.name](self.project.arch)
         # register arguments
-        if isinstance(self._cc, list):
-            reg_vals = dict()
-            if len(args) > len(self._cc):
-                raise RopException("More arguments than registers in the calling convention")
-            for reg, arg in zip(self._cc, args):
-                reg_vals[reg] = arg
-            # it would be cool if we could use calls inside the program too
+        registers = { }
+
+        register_arguments = args
+        stack_arguments = []
+        if len(arguments) > len(cc.ARG_REGS):
+            register_arguments = args[:len(cc.ARG_REGS)]
+            stack_arguments = args[len(cc.ARG_REGS):]
+
+        for reg, arg in zip(cc.ARG_REGS, register_arguments):
+            registers[reg] = arg
+
+        if len(registers) > 0:
             chain = self.set_regs(use_partial_controllers=use_partial_controllers, **reg_vals)
-            chain.add_value(address, needs_rebase=True)
-            return chain
+        else:
+            chain = RopChain(self.project, self)
 
         # stack arguments
         bytes_per_arg = self.project.arch.bits / 8
         # find the smallest stack change
         stack_cleaner = None
-        for g in self._gadgets:
-            if len(g.mem_reads) > 0 or len(g.mem_writes) > 0 or len(g.mem_changes) > 0:
-                continue
-            if g.stack_change >= bytes_per_arg * (len(args) + 1):
-                if stack_cleaner is None or g.stack_change < stack_cleaner.stack_change:
-                    stack_cleaner = g
+        if len(stack_arguments) > 0:
+            for g in self._gadgets:
+                if len(g.mem_reads) > 0 or len(g.mem_writes) > 0 or len(g.mem_changes) > 0:
+                    continue
+                if g.stack_change >= bytes_per_arg * (len(stack_arguments) + 1):
+                    if stack_cleaner is None or g.stack_change < stack_cleaner.stack_change:
+                        stack_cleaner = g
 
         chain = RopChain(self.project, self)
         chain.add_value(address, needs_rebase=True)
-        chain.add_value(stack_cleaner.addr, needs_rebase=True)
-        chain.add_gadget(stack_cleaner)
-        for arg in args:
+        if not stack_cleaner is None:
+            chain.add_value(stack_cleaner.addr, needs_rebase=True)
+            chain.add_gadget(stack_cleaner)
+
+        for arg in stack_arguments:
             chain.add_value(arg, needs_rebase=False)
-        for _ in range(stack_cleaner.stack_change / bytes_per_arg - len(args) - 1):
+        for _ in range(stack_cleaner.stack_change / bytes_per_arg - len(stack_arguments) - 1):
             chain.add_value(0, needs_rebase=False)
+
         return chain
 
     @staticmethod

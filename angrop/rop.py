@@ -71,16 +71,14 @@ class ROP(angr.Analysis):
         self._reg_list = filter(lambda r: r != self._sp_reg, self._reg_list)
         self._reg_list = filter(lambda r: r != self._ip_reg, self._reg_list)
 
-        self._syscall_instructions = {"\x0f\x05"}
-
-        if self.project.arch.linux_name == "x86_64":
-            self._syscall_instructions = {"\x0f\x05"}
-            self._cc = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
-            self._execve_syscall = 59
-        elif self.project.arch.linux_name == "i386":
-            self._syscall_instructions = {"\xcd\x80"}
-            self._cc = "stack"
-            self._execve_syscall = 11
+        self._execve_syscall = None
+        if self.project.loader.main_bin.os == "unix":
+            if self.project.arch.bits == 64:
+                self._execve_syscall = 59
+            elif self.project.arch.bits == 32:
+                self._execve_syscall = 11
+            else:
+                raise RopException("unknown unix platform")
 
         # get ret locations
         self._ret_locations = self._get_ret_locations()
