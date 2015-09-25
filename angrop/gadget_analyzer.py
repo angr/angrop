@@ -344,10 +344,10 @@ class GadgetAnalyzer(object):
             raise RopException("SP change is uncontrolled")
         elif len(dependencies) == 0 and not sp_change.symbolic:
             stack_changes = [ss_copy.se.any_int(sp_change)]
-        elif dependencies[0] == self._sp_reg:
+        elif list(dependencies)[0] == self._sp_reg:
             stack_changes = ss_copy.se.any_n_int(sp_change, 2)
             gadget.stack_change = stack_changes[0]
-        elif dependencies[0] == self._base_pointer:
+        elif list(dependencies)[0] == self._base_pointer:
             sp_change = symbolic_p.state.regs.sp - ss_copy.regs.bp
             stack_changes = ss_copy.se.any_n_int(sp_change, 2)
             gadget.bp_moves_to_sp = True
