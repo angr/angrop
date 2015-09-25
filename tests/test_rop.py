@@ -131,7 +131,10 @@ def test_rop_arm():
     nose.tools.assert_equal(result_state.se.any_int(result_state.regs.r9), 0x44556677)
     nose.tools.assert_equal(result_state.se.any_int(result_state.regs.r11), 0x11223344)
 
-    # TODO test memwrite chain
+    # test memwrite chain
+    chain = rop.write_to_mem(0x41414141, "ABCDEFGH")
+    result_state = execute_chain(b, chain)
+    nose.tools.assert_equal(result_state.se.any_str(result_state.memory.load(0x41414141, 8)), "ABCDEFGH")
 
 def run_all():
     functions = globals()
