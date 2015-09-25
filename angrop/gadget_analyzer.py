@@ -249,10 +249,10 @@ class GadgetAnalyzer(object):
             # check its dependencies
             dependencies = self._get_reg_dependencies(symbolic_p, reg)
             if len(dependencies) != 0:
-                gadget.reg_dependencies[reg] = dependencies
+                gadget.reg_dependencies[reg] = set(dependencies)
             controllers = self._get_reg_controllers(symbolic_state, symbolic_p, reg, dependencies)
             if len(controllers) != 0:
-                gadget.reg_controllers[reg] = controllers
+                gadget.reg_controllers[reg] = set(controllers)
 
     def _check_reg_movers(self, symbolic_state, symbolic_p, reg_reads, gadget):
         """
