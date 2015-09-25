@@ -493,14 +493,20 @@ class ChainBuilder(object):
         addrs = [g.addr for g in gadgets]
         addrs.append(test_symbolic_state.BV("next_addr", self.project.arch.bits))
 
-        start_addr = self._get_single_ret()
+        arch_bytes = self.project.arch.bits / 8
+        arch_endness = self.project.arch.memory_endness
 
-        test_symbolic_state.regs.ip = start_addr
+        # emulate a 'pop pc' of the first gadget
         state = test_symbolic_state
+        state.regs.ip = addrs[0]
+        # the stack pointer must begin pointing to our first gadget
+        state.add_constraints(state.memory.load(state.regs.sp, arch_bytes, endness=arch_endness) == addrs[0])
+        # push the stack pointer down, like a pop would do
+        state.regs.sp += arch_bytes
         state.se._solver.timeout = 5000
 
         # for each gadget in the address trace, constrain memory addresses and add constraints for the successor
-        for addr in addrs:
+        for addr in addrs[1:]:
             succ = rop_utils.step_to_unconstrained_successor(self.project, state).state
             state.add_constraints(succ.regs.ip == addr)
             # constrain reads/writes
@@ -531,7 +537,9 @@ class ChainBuilder(object):
             res.add_gadget(g)
 
         sp = test_symbolic_state.regs.sp
-        bytes_per_pop = self.project.arch.bits / 8
+        # re-adjuest the stack pointer
+        sp -= arch_bytes
+        bytes_per_pop = arch_bytes
         gadget_addrs = [g.addr for g in gadgets]
         for i in range(stack_change / bytes_per_pop):
             sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
