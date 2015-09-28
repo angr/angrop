@@ -268,7 +268,11 @@ class ROP(angr.Analysis):
                         yield i
                 current_addr = max(current_addr, end_addr)
         else:
-            raise NotImplementedError("this mode is not implemented in the arch agnostic branch")
+            for segment in self.project.loader.main_bin.segments:
+                if segment.is_executable:
+                    l.debug("Analyzing segment with address range: 0x%x, 0x%x" % (segment.min_addr, segment.max_addr))
+                    for addr in xrange(segment.min_addr, segment.max_addr):
+                        yield self.project.loader.main_bin.rebase_addr + addr
 
     def _get_ret_locations(self):
         """
