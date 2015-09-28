@@ -111,6 +111,30 @@ def test_rop_i386_cgc():
     result_state = execute_chain(b, chain)
     nose.tools.assert_equal(result_state.se.any_str(result_state.memory.load(0x41414141, 8)), "ABCDEFGH")
 
+def test_rop_arm():
+    b = angr.Project(os.path.join(bin_location, "tests/armel/manysum"))
+    rop = b.analyses.ROP()
+    rop.find_gadgets()
+
+    # check gadgets
+    test_gadgets, _ = pickle.load(open(os.path.join(test_data_location, "arm_manysum_test_gadgets"), "rb"))
+    compare_gadgets(rop.gadgets, test_gadgets)
+
+    # test creating a rop chain
+    chain = rop.set_regs(r11=0x99887766)
+    # smallest possible chain
+    nose.tools.assert_equal(chain.payload_len, 8)
+    # correct chains, using a more complicated chain here
+    chain = rop.set_regs(r4=0x99887766, r9=0x44556677, r11=0x11223344)
+    result_state = execute_chain(b, chain)
+    nose.tools.assert_equal(result_state.se.any_int(result_state.regs.r4), 0x99887766)
+    nose.tools.assert_equal(result_state.se.any_int(result_state.regs.r9), 0x44556677)
+    nose.tools.assert_equal(result_state.se.any_int(result_state.regs.r11), 0x11223344)
+
+    # test memwrite chain
+    chain = rop.write_to_mem(0x41414141, "ABCDEFGH")
+    result_state = execute_chain(b, chain)
+    nose.tools.assert_equal(result_state.se.any_str(result_state.memory.load(0x41414141, 8)), "ABCDEFGH")
 
 def run_all():
     functions = globals()

@@ -77,7 +77,7 @@ class GadgetAnalyzer(object):
             self._compute_sp_change(symbolic_state, this_gadget)
 
             # if the sp moves to the bp we have to handle it differently
-            if not this_gadget.bp_moves_to_sp:
+            if not this_gadget.bp_moves_to_sp and self._base_pointer != self._sp_reg:
                 symbolic_state.registers.store(self._base_pointer,
                                                symbolic_state.se.BV("sreg_" + self._base_pointer + "-",
                                                                     self.project.arch.bits))
@@ -249,10 +249,10 @@ class GadgetAnalyzer(object):
             # check its dependencies
             dependencies = self._get_reg_dependencies(symbolic_p, reg)
             if len(dependencies) != 0:
-                gadget.reg_dependencies[reg] = dependencies
+                gadget.reg_dependencies[reg] = set(dependencies)
             controllers = self._get_reg_controllers(symbolic_state, symbolic_p, reg, dependencies)
             if len(controllers) != 0:
-                gadget.reg_controllers[reg] = controllers
+                gadget.reg_controllers[reg] = set(controllers)
 
     def _check_reg_movers(self, symbolic_state, symbolic_p, reg_reads, gadget):
         """
@@ -344,10 +344,10 @@ class GadgetAnalyzer(object):
             raise RopException("SP change is uncontrolled")
         elif len(dependencies) == 0 and not sp_change.symbolic:
             stack_changes = [ss_copy.se.any_int(sp_change)]
-        elif dependencies[0] == self._sp_reg:
+        elif list(dependencies)[0] == self._sp_reg:
             stack_changes = ss_copy.se.any_n_int(sp_change, 2)
             gadget.stack_change = stack_changes[0]
-        elif dependencies[0] == self._base_pointer:
+        elif list(dependencies)[0] == self._base_pointer:
             sp_change = symbolic_p.state.regs.sp - ss_copy.regs.bp
             stack_changes = ss_copy.se.any_n_int(sp_change, 2)
             gadget.bp_moves_to_sp = True

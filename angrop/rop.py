@@ -9,6 +9,8 @@ import inspect
 import logging
 import progressbar
 
+from errors import RopException
+
 from multiprocessing import Pool
 
 l = logging.getLogger('angrop.rop')
@@ -61,27 +63,24 @@ class ROP(angr.Analysis):
         self._only_check_near_rets = only_check_near_rets
         self._max_sym_mem_accesses = max_sym_mem_accesses
 
-        # architecture
-        # todo this info is probably somewhere in archinfo
-        if self.project.arch.linux_name == "x86_64":
-            self._reg_list = ['rax', 'rcx', 'rdx', 'rbx', 'rbp', 'rsi', 'rdi', 'r8', 'r9', 'r10', 'r11', 'r12', 'r13',
-                              'r14', 'r15']
-            self._base_pointer = "rbp"
-            self._sp_reg = "rsp"
-            self._ret_instructions = {"\xc2", "\xc3", "\xca", "\xcb"}
-            self._syscall_instructions = {"\x0f\x05"}
-            self._cc = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
-            self._execve_syscall = 59
-        elif self.project.arch.linux_name == "i386":
-            self._reg_list = ['eax', 'ecx', 'edx', 'ebx', 'ebp', 'esi', 'edi']
-            self._base_pointer = "ebp"
-            self._sp_reg = "esp"
-            self._ret_instructions = {"\xc2", "\xc3", "\xca", "\xcb"}
-            self._syscall_instructions = {"\xcd\x80"}
-            self._cc = "stack"
-            self._execve_syscall = 11
-        else:
-            raise Exception("rop information not created for arch %s", self.project.arch.linux_name)
+        a = self.project.arch
+        self._sp_reg = a.register_names[a.sp_offset]
+        self._ip_reg = a.register_names[a.ip_offset]
+        self._base_pointer = a.register_names[a.bp_offset]
+
+        self._reg_list = a.default_symbolic_registers
+        # prune the register list of the instruction pointer and the stack pointer
+        self._reg_list = filter(lambda r: r != self._sp_reg, self._reg_list)
+        self._reg_list = filter(lambda r: r != self._ip_reg, self._reg_list)
+
+        self._execve_syscall = None
+        if self.project.loader.main_bin.os == "unix":
+            if self.project.arch.bits == 64:
+                self._execve_syscall = 59
+            elif self.project.arch.bits == 32:
+                self._execve_syscall = 11
+            else:
+                raise RopException("unknown unix platform")
 
         # get ret locations
         self._ret_locations = self._get_ret_locations()
@@ -155,8 +154,9 @@ class ROP(angr.Analysis):
         """
         self.gadgets = []
 
-        for addr in enumerate(self._addresses_to_check_with_caching()):
-            gadget = self.analyze_gadget(addr)
+        _set_global_gadget_analyzer(self._gadget_analyzer)
+        for _, addr in enumerate(self._addresses_to_check_with_caching()):
+            gadget = _global_gadget_analyzer.analyze_gadget(addr)
             if gadget is not None:
                 self.gadgets.append(gadget)
 
@@ -174,7 +174,8 @@ class ROP(angr.Analysis):
         self._reload_chain_funcs()
 
     def save_gadgets(self, path):
-        pickle.dump((self.gadgets, self._duplicates), open(path, "wb"))
+        with open(path, "wb") as f:
+            pickle.dump((self.gadgets, self._duplicates), f)
 
     def load_gadgets(self, path):
         self.gadgets, self._duplicates = pickle.load(open(path, "rb"))
@@ -198,16 +199,23 @@ class ROP(angr.Analysis):
             raise Exception("No gadgets, call find_gadgets() or load_gadgets() first")
 
     def _block_has_ip_relative(self, addr, bl):
+        """
+        Checks if a block has any ip relative instructions
+        """
         string = bl.bytes
-        bl2 = self.project.factory.block(0x41414141, insn_bytes=string)
-        diff_constants = angr.bindiff.differing_constants(bl, bl2)
+        test_addr = 0x41414140 + addr % 0x10
+        bl2 = self.project.factory.block(test_addr, insn_bytes=string)
+        try:
+            diff_constants = angr.bindiff.differing_constants(bl, bl2)
+        except angr.analyses.bindiff.UnmatchedStatementsException:
+            return True
         # check if it changes if we move it
         bl_end = addr + bl.size
-        bl2_end = 0x41414141 + bl2.size
+        bl2_end = test_addr + bl2.size
         filtered_diffs = []
         for d in diff_constants:
             if d.value_a < addr or d.value_a >= bl_end or \
-                    d.value_b < 0x41414141 or d.value_b >= bl2_end:
+                    d.value_b < test_addr or d.value_b >= bl2_end:
                 filtered_diffs.append(d)
         return len(filtered_diffs) > 0
 
@@ -247,12 +255,15 @@ class ROP(angr.Analysis):
         :return: all the addresses to check
         """
         if self._only_check_near_rets:
-            start_locs = [addr-self._max_block_size for addr in self._ret_locations]
+            # align block size
+            alignment = self.project.arch.instruction_alignment
+            block_size = (self._max_block_size & ((1 << self.project.arch.bits) - alignment)) + alignment
+            slices = [(addr-block_size, addr) for addr in self._ret_locations]
             current_addr = 0
-            for s in start_locs:
-                current_addr = max(current_addr, s)
-                end_addr = s + self._max_block_size + 1
-                for i in range(current_addr, end_addr):
+            for st, ed in slices:
+                current_addr = max(current_addr, st)
+                end_addr = st + block_size + alignment
+                for i in range(current_addr, end_addr, alignment):
                     if self.project.loader.main_bin.find_segment_containing(i).is_executable:
                         yield i
                 current_addr = max(current_addr, end_addr)
@@ -267,13 +278,63 @@ class ROP(angr.Analysis):
         """
         :return: all the locations in the binary with a ret instruction
         """
+
+        try:
+            return self._get_ret_locations_by_string()
+        except RopException:
+            pass
+
+        addrs = []
+        seen = set()
+        for segment in self.project.loader.main_bin.segments:
+            if segment.is_executable:
+                min_addr = segment.min_addr + self.project.loader.main_bin.rebase_addr
+                num_bytes = segment.max_addr-segment.min_addr
+
+                alignment = self.project.arch.instruction_alignment
+                # hack for arm thumb
+                if self.project.arch.linux_name == "aarch64" or self.project.arch.linux_name == "arm":
+                    alignment = 1
+
+                # iterate through the code looking for rets
+                for addr in xrange(min_addr, min_addr+num_bytes, alignment):
+                    # dont recheck addresses we've seen before
+                    if addr in seen:
+                        continue
+                    try:
+                        block = self.project.factory.block(addr)
+                        # it it has a ret get the return address
+                        if block.vex.jumpkind.startswith("Ijk_Ret"):
+                            ret_addr = block.instruction_addrs[-1]
+                            # hack for mips pipelining
+                            if self.project.arch.linux_name.startswith("mips"):
+                                ret_addr = block.instruction_addrs[-2]
+                            if ret_addr not in seen:
+                                addrs.append(ret_addr)
+                        # save the addresses in the block
+                        seen.update(block.instruction_addrs)
+                    except angr.AngrTranslationError:
+                        pass
+
+        return sorted(addrs)
+
+    def _get_ret_locations_by_string(self):
+        """
+        uses a string filter to find the return instructions
+        :return: all the locations in the binary with a ret instruction
+        """
+        if self.project.arch.linux_name == "x86_64" or self.project.arch.linux_name == "i386":
+            ret_instructions={"\xc2", "\xc3", "\xca", "\xcb"}
+        else:
+            raise RopException("Only have ret strings for i386 and x86_64")
+
         addrs = []
         for segment in self.project.loader.main_bin.segments:
             if segment.is_executable:
                 min_addr = segment.min_addr + self.project.loader.main_bin.rebase_addr
                 num_bytes = segment.max_addr-segment.min_addr
                 read_bytes = "".join(self.project.loader.memory.read_bytes(min_addr, num_bytes))
-                for ret_instruction in self._ret_instructions:
+                for ret_instruction in ret_instructions:
                     for loc in _str_find_all(read_bytes, ret_instruction):
                         addrs.append(loc + min_addr)
 

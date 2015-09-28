@@ -32,19 +32,21 @@ class ChainBuilder(object):
         self._duplicates = duplicates
         self._reg_list = reg_list
 
-        # architecture
-        # todo this info is probably somewhere in archinfo
+        self._syscall_instruction = None
         if self.project.arch.linux_name == "x86_64":
             self._syscall_instructions = {"\x0f\x05"}
-            # FIXME get calling convention from archinfo
-            self._cc = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
-            self._execve_syscall = 59
         elif self.project.arch.linux_name == "i386":
             self._syscall_instructions = {"\xcd\x80"}
-            self._cc = "stack"
-            self._execve_syscall = 11
-        else:
-            raise Exception("rop information not created for arch %s", self.project.arch.linux_name)
+
+        self._execve_syscall = None
+        # TODO this code is replicated in a couple of places...
+        if self.project.loader.main_bin.os == "unix":
+            if self.project.arch.bits == 64:
+                self._execve_syscall = 59
+            elif self.project.arch.bits == 32:
+                self._execve_syscall = 11
+            else:
+                raise RopException("unknown unix platform")
 
         # test state
         self._test_symbolic_state = rop_utils.make_symbolic_state(self.project, self._reg_list)
@@ -245,37 +247,47 @@ class ChainBuilder(object):
             else:
                 raise RopException("Symbol passed to func_call does not exist in the binary")
 
+        cc = simuvex.s_cc.DefaultCC[self.project.arch.name](self.project.arch)
         # register arguments
-        if isinstance(self._cc, list):
-            reg_vals = dict()
-            if len(args) > len(self._cc):
-                raise RopException("More arguments than registers in the calling convention")
-            for reg, arg in zip(self._cc, args):
-                reg_vals[reg] = arg
-            # it would be cool if we could use calls inside the program too
-            chain = self.set_regs(use_partial_controllers=use_partial_controllers, **reg_vals)
-            chain.add_value(address, needs_rebase=True)
-            return chain
+        registers = {}
+
+        register_arguments = args
+        stack_arguments = []
+        if len(args) > len(cc.ARG_REGS):
+            register_arguments = args[:len(cc.ARG_REGS)]
+            stack_arguments = args[len(cc.ARG_REGS):]
+
+        for reg, arg in zip(cc.ARG_REGS, register_arguments):
+            registers[reg] = arg
+
+        if len(registers) > 0:
+            chain = self.set_regs(use_partial_controllers=use_partial_controllers, **registers)
+        else:
+            chain = RopChain(self.project, self)
 
         # stack arguments
         bytes_per_arg = self.project.arch.bits / 8
         # find the smallest stack change
         stack_cleaner = None
-        for g in self._gadgets:
-            if len(g.mem_reads) > 0 or len(g.mem_writes) > 0 or len(g.mem_changes) > 0:
-                continue
-            if g.stack_change >= bytes_per_arg * (len(args) + 1):
-                if stack_cleaner is None or g.stack_change < stack_cleaner.stack_change:
-                    stack_cleaner = g
+        if len(stack_arguments) > 0:
+            for g in self._gadgets:
+                if len(g.mem_reads) > 0 or len(g.mem_writes) > 0 or len(g.mem_changes) > 0:
+                    continue
+                if g.stack_change >= bytes_per_arg * (len(stack_arguments) + 1):
+                    if stack_cleaner is None or g.stack_change < stack_cleaner.stack_change:
+                        stack_cleaner = g
 
-        chain = RopChain(self.project, self)
         chain.add_value(address, needs_rebase=True)
-        chain.add_value(stack_cleaner.addr, needs_rebase=True)
-        chain.add_gadget(stack_cleaner)
-        for arg in args:
+        if stack_cleaner is not None:
+            chain.add_value(stack_cleaner.addr, needs_rebase=True)
+            chain.add_gadget(stack_cleaner)
+
+        for arg in stack_arguments:
             chain.add_value(arg, needs_rebase=False)
-        for _ in range(stack_cleaner.stack_change / bytes_per_arg - len(args) - 1):
-            chain.add_value(0, needs_rebase=False)
+        if stack_cleaner is not None:
+            for _ in range(stack_cleaner.stack_change / bytes_per_arg - len(stack_arguments) - 1):
+                chain.add_value(0, needs_rebase=False)
+
         return chain
 
     @staticmethod
@@ -495,14 +507,20 @@ class ChainBuilder(object):
         addrs = [g.addr for g in gadgets]
         addrs.append(test_symbolic_state.BV("next_addr", self.project.arch.bits))
 
-        start_addr = self._get_single_ret()
+        arch_bytes = self.project.arch.bits / 8
+        arch_endness = self.project.arch.memory_endness
 
-        test_symbolic_state.regs.ip = start_addr
+        # emulate a 'pop pc' of the first gadget
         state = test_symbolic_state
+        state.regs.ip = addrs[0]
+        # the stack pointer must begin pointing to our first gadget
+        state.add_constraints(state.memory.load(state.regs.sp, arch_bytes, endness=arch_endness) == addrs[0])
+        # push the stack pointer down, like a pop would do
+        state.regs.sp += arch_bytes
         state.se._solver.timeout = 5000
 
         # for each gadget in the address trace, constrain memory addresses and add constraints for the successor
-        for addr in addrs:
+        for addr in addrs[1:]:
             succ = rop_utils.step_to_unconstrained_successor(self.project, state).state
             state.add_constraints(succ.regs.ip == addr)
             # constrain reads/writes
@@ -533,7 +551,9 @@ class ChainBuilder(object):
             res.add_gadget(g)
 
         sp = test_symbolic_state.regs.sp
-        bytes_per_pop = self.project.arch.bits / 8
+        # re-adjuest the stack pointer
+        sp -= arch_bytes
+        bytes_per_pop = arch_bytes
         gadget_addrs = [g.addr for g in gadgets]
         for i in range(stack_change / bytes_per_pop):
             sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
@@ -688,20 +708,19 @@ class ChainBuilder(object):
         if len(gadget.mem_writes) != 1 or len(gadget.mem_reads) + len(gadget.mem_changes) > 0:
             raise RopException("too many memory accesses for my lazy implementation")
 
-        # find what the registers would need to be
-        start_addr = self._get_single_ret()
+        arch_bytes = self.project.arch.bits / 8
+        arch_endness = self.project.arch.memory_endness
 
         # constrain the successor to be at the gadget
+        # emulate 'pop pc'
         test_state = self._test_symbolic_state.copy()
-        test_state.regs.ip = start_addr
-        p = self.project.factory.path(test_state)
-        p.step()
-        test_state.add_constraints(p.unconstrained_successors[0].state.regs.ip == gadget.addr)
-        # restep
-        p = self.project.factory.path(test_state)
-        p.step()
+        test_state.regs.ip = gadget.addr
+        test_state.add_constraints(
+            test_state.memory.load(test_state.regs.sp, arch_bytes, endness=arch_endness) == gadget.addr)
+        test_state.regs.sp += arch_bytes
+
         # step the gadget
-        pre_gadget_state = p.unconstrained_successors[0].state
+        pre_gadget_state = test_state
         succ_p = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
 
         # constrain the write
@@ -727,7 +746,7 @@ class ChainBuilder(object):
         test_state.add_constraints(state.memory.load(addr, len(data)) == test_state.BVV(data))
 
         # get the actual register values
-        all_deps = mem_write.addr_dependencies + mem_write.data_dependencies
+        all_deps = list(mem_write.addr_dependencies) + list(mem_write.data_dependencies)
         reg_vals = dict()
         for reg in set(all_deps):
             reg_vals[reg] = test_state.se.any_int(test_state.registers.load(reg))
@@ -737,7 +756,7 @@ class ChainBuilder(object):
 
         bytes_per_pop = self.project.arch.bits / 8
         chain.add_value(gadget.addr, needs_rebase=True)
-        for i in range(gadget.stack_change / bytes_per_pop - 1):
+        for _ in range(gadget.stack_change / bytes_per_pop - 1):
             chain.add_value(0, needs_rebase=False)
         return chain
 
