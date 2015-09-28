@@ -9,6 +9,8 @@ import inspect
 import logging
 import progressbar
 
+from errors import RopException
+
 from multiprocessing import Pool
 
 l = logging.getLogger('angrop.rop')
@@ -197,10 +199,12 @@ class ROP(angr.Analysis):
             raise Exception("No gadgets, call find_gadgets() or load_gadgets() first")
 
     def _block_has_ip_relative(self, addr, bl):
+        """
+        Checks if a block has any ip relative instructions
+        """
         string = bl.bytes
         test_addr = 0x41414140 + addr % 0x10
         bl2 = self.project.factory.block(test_addr, insn_bytes=string)
-        # TODO: FIXME
         try:
             diff_constants = angr.bindiff.differing_constants(bl, bl2)
         except angr.analyses.bindiff.UnmatchedStatementsException:
@@ -270,7 +274,13 @@ class ROP(angr.Analysis):
         """
         :return: all the locations in the binary with a ret instruction
         """
-        addrs = [ ]
+
+        try:
+            return self._get_ret_locations_by_string()
+        except RopException:
+            pass
+
+        addrs = []
         seen = set()
         for segment in self.project.loader.main_bin.segments:
             if segment.is_executable:
@@ -278,15 +288,51 @@ class ROP(angr.Analysis):
                 num_bytes = segment.max_addr-segment.min_addr
 
                 alignment = self.project.arch.instruction_alignment
-                # iterate backwards through the code looking for rets
-                # align num_bytes if need
-                num_bytes = num_bytes & ((1 << self.project.arch.bits) - alignment)
-                for offset in xrange(num_bytes, 0, -alignment):
-                    block = self.project.factory.block(min_addr+offset)
-                    if block.vex.jumpkind.startswith("Ijk_Ret"):
-                        if not block.addr + block.size in seen:
-                            addrs.append(min_addr+offset)
-                            seen.add(min_addr+offset+block.size)
+                # hack for arm thumb
+                if self.project.arch.linux_name == "aarch64" or self.project.arch.linux_name == "arm":
+                    alignment = 1
+
+                # iterate through the code looking for rets
+                for addr in xrange(min_addr, min_addr+num_bytes, alignment):
+                    # dont recheck addresses we've seen before
+                    if addr in seen:
+                        continue
+                    try:
+                        block = self.project.factory.block(addr)
+                        # it it has a ret get the return address
+                        if block.vex.jumpkind.startswith("Ijk_Ret"):
+                            ret_addr = block.instruction_addrs[-1]
+                            # hack for mips pipelining
+                            if self.project.arch.linux_name.startswith("mips"):
+                                ret_addr = block.instruction_addrs[-2]
+                            if ret_addr not in seen:
+                                addrs.append(ret_addr)
+                        # save the addresses in the block
+                        seen.update(block.instruction_addrs)
+                    except angr.AngrTranslationError:
+                        pass
+
+        return sorted(addrs)
+
+    def _get_ret_locations_by_string(self):
+        """
+        uses a string filter to find the return instructions
+        :return: all the locations in the binary with a ret instruction
+        """
+        if self.project.arch.linux_name == "x86_64" or self.project.arch.linux_name == "i386":
+            ret_instructions={"\xc2", "\xc3", "\xca", "\xcb"}
+        else:
+            raise RopException("Only have ret strings for i386 and x86_64")
+
+        addrs = []
+        for segment in self.project.loader.main_bin.segments:
+            if segment.is_executable:
+                min_addr = segment.min_addr + self.project.loader.main_bin.rebase_addr
+                num_bytes = segment.max_addr-segment.min_addr
+                read_bytes = "".join(self.project.loader.memory.read_bytes(min_addr, num_bytes))
+                for ret_instruction in ret_instructions:
+                    for loc in _str_find_all(read_bytes, ret_instruction):
+                        addrs.append(loc + min_addr)
 
         return sorted(addrs)
 
