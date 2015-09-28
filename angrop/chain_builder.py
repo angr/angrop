@@ -249,7 +249,7 @@ class ChainBuilder(object):
 
         cc = simuvex.s_cc.DefaultCC[self.project.arch.name](self.project.arch)
         # register arguments
-        registers = { }
+        registers = {}
 
         register_arguments = args
         stack_arguments = []
@@ -278,13 +278,13 @@ class ChainBuilder(object):
                         stack_cleaner = g
 
         chain.add_value(address, needs_rebase=True)
-        if not stack_cleaner is None:
+        if stack_cleaner is not None:
             chain.add_value(stack_cleaner.addr, needs_rebase=True)
             chain.add_gadget(stack_cleaner)
 
         for arg in stack_arguments:
             chain.add_value(arg, needs_rebase=False)
-        if not stack_cleaner is None:
+        if stack_cleaner is not None:
             for _ in range(stack_cleaner.stack_change / bytes_per_arg - len(stack_arguments) - 1):
                 chain.add_value(0, needs_rebase=False)
 
@@ -715,13 +715,12 @@ class ChainBuilder(object):
         # emulate 'pop pc'
         test_state = self._test_symbolic_state.copy()
         test_state.regs.ip = gadget.addr
-        test_state.add_constraints(test_state.memory.load(test_state.regs.sp, arch_bytes, endness=arch_endness) == gadget.addr)
+        test_state.add_constraints(
+            test_state.memory.load(test_state.regs.sp, arch_bytes, endness=arch_endness) == gadget.addr)
         test_state.regs.sp += arch_bytes
 
-        #p = self.project.factory.path(test_state)
-        #p.step()
         # step the gadget
-        pre_gadget_state = test_state # p.unconstrained_successors[0].state
+        pre_gadget_state = test_state
         succ_p = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
 
         # constrain the write
