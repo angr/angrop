@@ -11,6 +11,9 @@ bin_location = str(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..
 test_data_location = str(os.path.dirname(os.path.realpath(__file__)))
 
 
+# FIXME need to update so we can find additional gadgets and still have tests pass
+
+
 def assert_mem_access_equal(m1, m2):
     nose.tools.assert_equal(m1.addr_dependencies, m2.addr_dependencies)
     nose.tools.assert_equal(m1.addr_controllers, m2.addr_controllers)
