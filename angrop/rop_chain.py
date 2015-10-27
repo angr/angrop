@@ -13,7 +13,7 @@ class RopChain(object):
         # blank state used for solving
         self._blank_state = self._p.factory.blank_state() if state is None else state
         self._pie = self._p.loader.main_bin.rebase_addr != 0
-        self._rebase_val = self._blank_state.BV("base", self._p.arch.bits)
+        self._rebase_val = self._blank_state.se.BVS("base", self._p.arch.bits)
 
     def __add__(self, other):
         # need to add the values from the other's stack and the constraints to the result state

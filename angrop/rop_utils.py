@@ -129,7 +129,7 @@ def make_initial_state(project, stack_length):
     initial_state.options.discard(simuvex.o.CGC_ZERO_FILL_UNCONSTRAINED_MEMORY)
     initial_state.options.update({simuvex.o.TRACK_REGISTER_ACTIONS, simuvex.o.TRACK_MEMORY_ACTIONS,
                                   simuvex.o.TRACK_JMP_ACTIONS, simuvex.o.TRACK_CONSTRAINT_ACTIONS})
-    symbolic_stack = initial_state.se.BV("symbolic_stack", project.arch.bits*stack_length)
+    symbolic_stack = initial_state.se.BVS("symbolic_stack", project.arch.bits*stack_length)
     initial_state.mem[initial_state.regs.sp:] = symbolic_stack
     initial_state.regs.bp = initial_state.regs.sp + 20*initial_state.arch.bits
     initial_state.se._solver.timeout = 500  # only solve for half a second at most
@@ -145,7 +145,7 @@ def make_symbolic_state(project, reg_list, stack_length=200):
     symbolic_state = input_state.copy()
     # overwrite all registers
     for reg in reg_list:
-        symbolic_state.registers.store(reg, symbolic_state.se.BV("sreg_" + reg + "-", project.arch.bits))
+        symbolic_state.registers.store(reg, symbolic_state.se.BVS("sreg_" + reg + "-", project.arch.bits))
     # restore sp
     symbolic_state.regs.sp = input_state.regs.sp
     # restore bp
