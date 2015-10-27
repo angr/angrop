@@ -75,7 +75,7 @@ def execute_chain(project, chain):
 def test_rop_x86_64():
     b = angr.Project(os.path.join(bin_location, "tests/x86_64/datadep_test"))
     rop = b.analyses.ROP()
-    rop.find_gadgets()
+    rop.find_gadgets_single_threaded()
 
     # check gadgets
     test_gadgets, _ = pickle.load(open(os.path.join(test_data_location, "datadep_test_gadgets"), "rb"))
@@ -94,7 +94,7 @@ def test_rop_x86_64():
 def test_rop_i386_cgc():
     b = angr.Project(os.path.join(bin_location, "cgc_scored_event_1/cgc/0b32aa01_01"))
     rop = b.analyses.ROP()
-    rop.find_gadgets()
+    rop.find_gadgets_single_threaded()
 
     # check gadgets
     test_gadgets, _ = pickle.load(open(os.path.join(test_data_location, "0b32aa01_01_gadgets"), "rb"))
@@ -117,7 +117,7 @@ def test_rop_i386_cgc():
 def test_rop_arm():
     b = angr.Project(os.path.join(bin_location, "tests/armel/manysum"))
     rop = b.analyses.ROP()
-    rop.find_gadgets()
+    rop.find_gadgets_single_threaded()
 
     # check gadgets
     test_gadgets, _ = pickle.load(open(os.path.join(test_data_location, "arm_manysum_test_gadgets"), "rb"))
