@@ -505,7 +505,7 @@ class ChainBuilder(object):
     def _build_reg_setting_chain(self, gadgets, modifiable_memory_range, register_dict, stack_change, rebase_regs):
         test_symbolic_state = rop_utils.make_symbolic_state(self.project, self._reg_list)
         addrs = [g.addr for g in gadgets]
-        addrs.append(test_symbolic_state.BV("next_addr", self.project.arch.bits))
+        addrs.append(test_symbolic_state.se.BVS("next_addr", self.project.arch.bits))
 
         arch_bytes = self.project.arch.bits / 8
         arch_endness = self.project.arch.memory_endness
@@ -743,7 +743,7 @@ class ChainBuilder(object):
         state = succ_p.state
 
         # constrain the data
-        test_state.add_constraints(state.memory.load(addr, len(data)) == test_state.BVV(data))
+        test_state.add_constraints(state.memory.load(addr, len(data)) == test_state.se.BVV(data))
 
         # get the actual register values
         all_deps = list(mem_write.addr_dependencies) + list(mem_write.data_dependencies)

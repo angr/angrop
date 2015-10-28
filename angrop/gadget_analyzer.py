@@ -79,7 +79,7 @@ class GadgetAnalyzer(object):
             # if the sp moves to the bp we have to handle it differently
             if not this_gadget.bp_moves_to_sp and self._base_pointer != self._sp_reg:
                 symbolic_state.registers.store(self._base_pointer,
-                                               symbolic_state.se.BV("sreg_" + self._base_pointer + "-",
+                                               symbolic_state.se.BVS("sreg_" + self._base_pointer + "-",
                                                                     self.project.arch.bits))
                 symbolic_p = rop_utils.step_to_unconstrained_successor(self.project, symbolic_state)
 
@@ -209,7 +209,7 @@ class GadgetAnalyzer(object):
             if symbolic_mem_accesses[0].action == "read" and symbolic_mem_accesses[1].action == "write" and \
                     symbolic_mem_accesses[1].data.ast.op == "__sub__" or symbolic_mem_accesses[1].data.ast.op == "__add__" and \
                     symbolic_mem_accesses[1].data.ast.size() == self.project.arch.bits and \
-                    symbolic_mem_accesses[0].addr.ast.identical(symbolic_mem_accesses[1].addr.ast):
+                    symbolic_mem_accesses[0].addr.ast is symbolic_mem_accesses[1].addr.ast:
                 return True
         return False
 
@@ -227,7 +227,7 @@ class GadgetAnalyzer(object):
             # we assume any register in reg_writes changed
             # verify the stack controls it
             # we need to make sure they arent equal to the exit target otherwise they arent controlled
-            if symbolic_state.registers.load(reg).identical(exit_target):
+            if symbolic_state.registers.load(reg) is exit_target:
                 gadget.changed_regs.add(reg)
             elif self._check_if_stack_controls_ast(succ_state.registers.load(reg), symbolic_state):
                 gadget.popped_regs.add(reg)
@@ -276,7 +276,7 @@ class GadgetAnalyzer(object):
             for from_reg in regs_to_check:
                 ast_1 = symbolic_state.registers.load(from_reg)
                 ast_2 = symbolic_p.state.registers.load(reg)
-                if ast_1.identical(ast_2):
+                if ast_1 is ast_2:
                     gadget.reg_moves.append(RopRegMove(from_reg, reg, self.project.arch.bits))
                 # try lower 32 bits (this is intended for amd64)
                 # todo do this for less bits too?
@@ -284,7 +284,7 @@ class GadgetAnalyzer(object):
                     half_bits = self.project.arch.bits / 2
                     ast_1 = claripy.Extract(half_bits-1, 0, ast_1)
                     ast_2 = claripy.Extract(half_bits-1, 0, ast_2)
-                    if ast_1.identical(ast_2):
+                    if ast_1 is ast_2:
                         gadget.reg_moves.append(RopRegMove(from_reg, reg, half_bits))
 
     # todo need to handle reg calls/jumps
@@ -309,7 +309,7 @@ class GadgetAnalyzer(object):
             return False
 
         stack_bytes_length = self._stack_length * (self.project.arch.bits / 8)
-        concrete_stack = initial_state.BVV("B" * stack_bytes_length)
+        concrete_stack = initial_state.se.BVV("B" * stack_bytes_length)
         concrete_stack_s = initial_state.copy()
         concrete_stack_s.add_constraints(
             initial_state.memory.load(initial_state.regs.sp, stack_bytes_length) == concrete_stack)
@@ -330,8 +330,8 @@ class GadgetAnalyzer(object):
         """
         # store symbolic sp and bp and check for dependencies
         ss_copy = symbolic_state.copy()
-        ss_copy.regs.bp = ss_copy.se.BV("sreg_" + self._base_pointer + "-", self.project.arch.bits)
-        ss_copy.regs.sp = ss_copy.se.BV("sreg_" + self._sp_reg + "-", self.project.arch.bits)
+        ss_copy.regs.bp = ss_copy.se.BVS("sreg_" + self._base_pointer + "-", self.project.arch.bits)
+        ss_copy.regs.sp = ss_copy.se.BVS("sreg_" + self._sp_reg + "-", self.project.arch.bits)
         symbolic_p = rop_utils.step_to_unconstrained_successor(self.project, ss_copy)
         dependencies = self._get_reg_dependencies(symbolic_p, "sp")
         sp_change = symbolic_p.state.regs.sp - ss_copy.regs.sp
@@ -387,7 +387,7 @@ class GadgetAnalyzer(object):
                 if a.action == "write":
                     # special case for read than write form the same addr
                     if last_action is not None and last_action.action == "read" and \
-                            last_action.addr.identical(a.addr.ast) and \
+                            last_action.addr.ast is a.addr.ast and \
                             self._in_same_instruction(last_action, a):
                         mem_change = gadget.mem_reads[-1]
                         gadget.mem_reads = gadget.mem_reads[:-1]
@@ -412,7 +412,7 @@ class GadgetAnalyzer(object):
                     else:
                         raise Exception("No data values, something went wrong")
                 elif a.action == "read" and not isinstance(a.data.ast, claripy.fp.FPV) and \
-                        not isinstance(a.data.ast, claripy.FP):
+                        not isinstance(a.data.ast, claripy.ast.FP):
                     # for reads we want to know if any register will have the data after
                     succ_state = symbolic_p.state
                     bits_to_extend = self.project.arch.bits - a.data.ast.size()
