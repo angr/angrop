@@ -387,7 +387,7 @@ class GadgetAnalyzer(object):
                 if a.action == "write":
                     # special case for read than write form the same addr
                     if last_action is not None and last_action.action == "read" and \
-                            last_action.addr is a.addr.ast and \
+                            last_action.addr.ast is a.addr.ast and \
                             self._in_same_instruction(last_action, a):
                         mem_change = gadget.mem_reads[-1]
                         gadget.mem_reads = gadget.mem_reads[:-1]
@@ -412,7 +412,7 @@ class GadgetAnalyzer(object):
                     else:
                         raise Exception("No data values, something went wrong")
                 elif a.action == "read" and not isinstance(a.data.ast, claripy.fp.FPV) and \
-                        not isinstance(a.data.ast, claripy.FP):
+                        not isinstance(a.data.ast, claripy.ast.FP):
                     # for reads we want to know if any register will have the data after
                     succ_state = symbolic_p.state
                     bits_to_extend = self.project.arch.bits - a.data.ast.size()
