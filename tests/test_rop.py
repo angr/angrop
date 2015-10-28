@@ -4,7 +4,7 @@ import angrop
 import pickle
 
 import logging
-l = logging.getLogger("angr.tests.test_bindiff")
+l = logging.getLogger("angrop.tests.test_rop")
 
 import os
 bin_location = str(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../binaries'))
