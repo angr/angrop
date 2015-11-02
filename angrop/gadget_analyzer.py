@@ -180,7 +180,7 @@ class GadgetAnalyzer(object):
                 return True
             elif len(constant_jump_targets) == 1:
                 if not self._block_makes_sense(constant_jump_targets[0]):
-                    return False
+                    return True
                 return self._does_not_get_to_unconstrained(constant_jump_targets[0], max_steps-1)
             elif len(constant_jump_targets) > 1:
                 return True
