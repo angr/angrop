@@ -1,3 +1,4 @@
+import os
 import nose
 import angr
 import angrop
@@ -6,12 +7,23 @@ import pickle
 import logging
 l = logging.getLogger("angrop.tests.test_rop")
 
-import os
 bin_location = str(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../binaries'))
 test_data_location = str(os.path.dirname(os.path.realpath(__file__)))
 
 
-# FIXME need to update so we can find additional gadgets and still have tests pass
+"""
+Suggestions on how to debug angr changes that break angrop.
+
+If the gadget is completely missing after your changes. Pick the address that didn't work and run the following.
+The logging should say why the gadget was discarded.
+
+rop = p.analyses.ROP()
+angrop.gadget_analyzer.l.setLevel("DEBUG")
+rop._gadget_analyzer.analyze_gadget(addr)
+
+If a gadget is missing memory reads / memory writes / memory changes, the actions are probably missing.
+Memory changes require a read action followed by a write action to the same address.
+"""
 
 
 def assert_mem_access_equal(m1, m2):
@@ -47,14 +59,27 @@ def assert_gadgets_equal(g1, g2):
     nose.tools.assert_equal(g1.changed_regs, g2.changed_regs)
 
 
-def compare_gadgets(gadgets_1, gadgets_2):
-    gadgets_1 = sorted(gadgets_1, key=lambda x: x.addr)
-    gadgets_2 = sorted(gadgets_2, key=lambda x: x.addr)
-    # check length
-    nose.tools.assert_equal(len(gadgets_1), len(gadgets_2))
+def compare_gadgets(test_gadgets, known_gadgets):
+    test_gadgets = sorted(test_gadgets, key=lambda x: x.addr)
+    known_gadgets = sorted(known_gadgets, key=lambda x: x.addr)
+
+    # we allow new gadgets to be found, but only check the correctness of those that were there in the known_gadgets
+    # so filter new gadgets found
+    expected_addrs = set(g.addr for g in known_gadgets)
+    test_gadgets = [g for g in test_gadgets if g.addr in expected_addrs]
+
+    # check that each of the expected gadget addrs was found as a gadget
+    # if it wasn't the best way to debug is to run:
+    # angrop.gadget_analyzer.l.setLevel("DEBUG"); rop._gadget_analyzer.analyze_gadget(addr)
+    found_addrs = set(g.addr for g in test_gadgets)
+    for g in known_gadgets:
+        nose.tools.assert_in(g.addr, found_addrs)
+
+    # So now we should have
+    nose.tools.assert_equal(len(test_gadgets), len(known_gadgets))
 
     # check gadgets
-    for g1, g2, in zip(gadgets_1, gadgets_2):
+    for g1, g2, in zip(test_gadgets, known_gadgets):
         assert_gadgets_equal(g1, g2)
 
 
@@ -114,6 +139,7 @@ def test_rop_i386_cgc():
     result_state = execute_chain(b, chain)
     nose.tools.assert_equal(result_state.se.any_str(result_state.memory.load(0x41414141, 8)), "ABCDEFGH")
 
+
 def test_rop_arm():
     b = angr.Project(os.path.join(bin_location, "tests/armel/manysum"))
     rop = b.analyses.ROP()
@@ -139,12 +165,14 @@ def test_rop_arm():
     result_state = execute_chain(b, chain)
     nose.tools.assert_equal(result_state.se.any_str(result_state.memory.load(0x41414141, 8)), "ABCDEFGH")
 
+
 def run_all():
     functions = globals()
     all_functions = dict(filter((lambda (k, v): k.startswith('test_')), functions.items()))
     for f in sorted(all_functions.keys()):
         if hasattr(all_functions[f], '__call__'):
             all_functions[f]()
+
 
 if __name__ == "__main__":
     logging.getLogger("angrop.rop").setLevel(logging.DEBUG)
