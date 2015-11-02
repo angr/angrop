@@ -263,8 +263,9 @@ class ROP(angr.Analysis):
             for st, ed in slices:
                 current_addr = max(current_addr, st)
                 end_addr = st + block_size + alignment
-                for i in range(current_addr, end_addr, alignment):
-                    if self.project.loader.main_bin.find_segment_containing(i).is_executable:
+                for i in xrange(current_addr, end_addr, alignment):
+                    segment = self.project.loader.main_bin.find_segment_containing(i)
+                    if segment is not None and segment.is_executable:
                         yield i
                 current_addr = max(current_addr, end_addr)
         else:
@@ -324,7 +325,7 @@ class ROP(angr.Analysis):
         :return: all the locations in the binary with a ret instruction
         """
         if self.project.arch.linux_name == "x86_64" or self.project.arch.linux_name == "i386":
-            ret_instructions={"\xc2", "\xc3", "\xca", "\xcb"}
+            ret_instructions = {"\xc2", "\xc3", "\xca", "\xcb"}
         else:
             raise RopException("Only have ret strings for i386 and x86_64")
 
