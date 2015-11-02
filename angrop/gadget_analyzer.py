@@ -80,7 +80,7 @@ class GadgetAnalyzer(object):
             if not this_gadget.bp_moves_to_sp and self._base_pointer != self._sp_reg:
                 symbolic_state.registers.store(self._base_pointer,
                                                symbolic_state.se.BVS("sreg_" + self._base_pointer + "-",
-                                                                    self.project.arch.bits))
+                                                                     self.project.arch.bits))
                 symbolic_p = rop_utils.step_to_unconstrained_successor(self.project, symbolic_state)
 
                 if not self._satisfies_mem_access_limits(symbolic_p):
@@ -106,7 +106,7 @@ class GadgetAnalyzer(object):
             self._analyze_mem_accesses(symbolic_p, symbolic_state, this_gadget)
             for m_access in this_gadget.mem_writes + this_gadget.mem_reads + this_gadget.mem_changes:
                 if len(m_access.addr_dependencies) == 0 and m_access.addr_constant is None:
-                    l.debug("... mem access with no data dependencies")
+                    l.debug("... mem access with no addr dependencies")
                     return None
 
         except RopException as e:
@@ -207,7 +207,8 @@ class GadgetAnalyzer(object):
         # allow mem changes (only add/subtract) to count as a single access
         if len(symbolic_mem_accesses) == 2 and self._max_sym_mem_accesses == 1:
             if symbolic_mem_accesses[0].action == "read" and symbolic_mem_accesses[1].action == "write" and \
-                    symbolic_mem_accesses[1].data.ast.op == "__sub__" or symbolic_mem_accesses[1].data.ast.op == "__add__" and \
+                    (symbolic_mem_accesses[1].data.ast.op == "__sub__" or
+                        symbolic_mem_accesses[1].data.ast.op == "__add__") and \
                     symbolic_mem_accesses[1].data.ast.size() == self.project.arch.bits and \
                     symbolic_mem_accesses[0].addr.ast is symbolic_mem_accesses[1].addr.ast:
                 return True
