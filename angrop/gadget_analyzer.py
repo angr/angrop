@@ -78,9 +78,7 @@ class GadgetAnalyzer(object):
 
             # if the sp moves to the bp we have to handle it differently
             if not this_gadget.bp_moves_to_sp and self._base_pointer != self._sp_reg:
-                symbolic_state.registers.store(self._base_pointer,
-                                               symbolic_state.se.BVS("sreg_" + self._base_pointer + "-",
-                                                                     self.project.arch.bits))
+                rop_utils.make_reg_symbolic(symbolic_state, self._base_pointer)
                 symbolic_p = rop_utils.step_to_unconstrained_successor(self.project, symbolic_state)
 
                 if not self._satisfies_mem_access_limits(symbolic_p):
@@ -393,11 +391,7 @@ class GadgetAnalyzer(object):
                         mem_change = gadget.mem_reads[-1]
                         gadget.mem_reads = gadget.mem_reads[:-1]
                         # get the actual change in certain cases
-                        if a.data.op == "__add__" or a.data.op == "__sub__" and a.data.size() == self.project.arch.bits:
-                            diff = symbolic_state.se.simplify(a.data - last_action.data)
-                            mem_change.data_dependencies = rop_utils.get_ast_dependency(diff)
-                            mem_change.data_controllers = rop_utils.get_ast_controllers(symbolic_state, diff,
-                                                                                        mem_change.data_dependencies)
+                        self._get_mem_change_op_and_data(mem_change, a, symbolic_state)
                         gadget.mem_changes.append(mem_change)
                         last_action = None
                         continue
@@ -441,6 +435,30 @@ class GadgetAnalyzer(object):
                     gadget.mem_reads.append(mem_access)
                 if a.action == "write":
                     gadget.mem_writes.append(mem_access)
+
+    @staticmethod
+    def _get_mem_change_op_and_data(mem_change, write_action, symbolic_state):
+            if not write_action.data.ast.symbolic:
+                return
+            if len(write_action.data.ast.args) != 2:
+                return
+            if not write_action.data.ast.args[0].symbolic:
+                return
+
+            vars0 = list(write_action.data.ast.args[0].variables)
+            if not len(vars0) == 1 and vars0[0].startswith("symbolic_read_sreg_"):
+                return
+
+            data_dependencies = rop_utils.get_ast_dependency(write_action.data.ast.args[1])
+            if len(data_dependencies) != 1:
+                return
+            data_controllers = rop_utils.get_ast_controllers(symbolic_state, write_action.data.ast.args[1], data_dependencies)
+            if len(data_controllers) != 1:
+                return
+
+            mem_change.op = write_action.data.ast.op
+            mem_change.data_dependencies = data_dependencies
+            mem_change.data_controllers = data_controllers
 
     def _in_same_instruction(self, action_1, action_2):
         """
@@ -565,3 +583,5 @@ class GadgetAnalyzer(object):
                 except RegNotFoundException as e:
                     l.debug(e.message)
         return all_reg_writes
+
+# TODO ip setters, ie call rax

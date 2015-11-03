@@ -153,6 +153,11 @@ def make_symbolic_state(project, reg_list, stack_length=200):
     return symbolic_state
 
 
+def make_reg_symbolic(state, reg):
+    state.registers.store(reg,
+    state.se.BVS("sreg_" + reg + "-", state.arch.bits))
+
+
 def step_to_unconstrained_successor(project, state, path=None, max_steps=2, allow_simprocedures=False):
     """
     steps up to two times to try to find an unconstrained successor

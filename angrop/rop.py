@@ -193,7 +193,7 @@ class ROP(angr.Analysis):
             return self._chain_builder
         elif len(self.gadgets) > 0:
             self._chain_builder = chain_builder.ChainBuilder(self.project, self.gadgets, self._duplicates,
-                                                             self._reg_list)
+                                                             self._reg_list, self._base_pointer)
             return self._chain_builder
         else:
             raise Exception("No gadgets, call find_gadgets() or load_gadgets() first")
