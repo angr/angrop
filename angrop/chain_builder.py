@@ -156,9 +156,12 @@ class ChainBuilder(object):
     def write_to_mem(self, addr, data):
         # create a dict of bytes per write to gadgets
         # assume we need intersection of addr_dependencies and data_dependencies to be 0
+        # TODO could allow mem_reads
         possible_gadgets = set()
         for g in self._gadgets:
             if len(g.mem_reads) + len(g.mem_changes) > 0 or len(g.mem_writes) != 1:
+                continue
+            if g.bp_moves_to_sp:
                 continue
             for m_access in g.mem_writes:
                 if len(m_access.addr_controllers) > 0 and len(m_access.data_controllers) > 0 and \
@@ -652,6 +655,9 @@ class ChainBuilder(object):
             for g in gadgets:
                 # ignore gadgets which make a syscall when setting regs
                 if g.makes_syscall:
+                    continue
+                # ignore gadgets which don't have a positive stack change
+                if g.stack_change <= 0:
                     continue
 
                 stack_change = data[regs][1]
