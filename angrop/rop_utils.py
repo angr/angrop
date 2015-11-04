@@ -4,9 +4,14 @@ import simuvex
 
 
 def gadget_to_asmstring(project, gadget):
-    code = "".join(project.loader.memory.read_bytes(gadget.addr,gadget.block_length))
-    md = project.arch.capstone
-    return "; ".join(["%s %s" %(i.mnemonic, i.op_str) for i in md.disasm(code,gadget.addr)])
+    try:
+        code = "".join(project.loader.memory.read_bytes(gadget.addr,gadget.block_length))
+        md = project.arch.capstone
+        return "; ".join(["%s %s" %(i.mnemonic, i.op_str) for i in md.disasm(code,gadget.addr)])
+    except TypeError:
+        # pypy seems to throw a TypeError in Capstone :(
+        return ""
+
 
 
 def get_ast_dependency(ast):

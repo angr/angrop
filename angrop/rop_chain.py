@@ -111,7 +111,8 @@ class RopChain(object):
                     value_in_gadget = value
                 if value_in_gadget in gadget_dict:
                     asmstring = rop_utils.gadget_to_asmstring(self._p,gadget_dict[value_in_gadget])
-                    instruction_code = "\t# " + asmstring
+                    if asmstring != "":
+                        instruction_code = "\t# " + asmstring
 
             if needs_rebase:
                 payload += "chain += " + pack_rebase % value + instruction_code
