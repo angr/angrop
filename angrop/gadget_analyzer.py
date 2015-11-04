@@ -222,11 +222,12 @@ class GadgetAnalyzer(object):
         exit_target = symbolic_p.actions[-1].target.ast
 
         succ_state = symbolic_p.state
+
         for reg in self._get_reg_writes(symbolic_p):
             # we assume any register in reg_writes changed
             # verify the stack controls it
             # we need to make sure they arent equal to the exit target otherwise they arent controlled
-            if symbolic_state.registers.load(reg) is exit_target:
+            if symbolic_p.state.registers.load(reg) is exit_target:
                 gadget.changed_regs.add(reg)
             elif self._check_if_stack_controls_ast(succ_state.registers.load(reg), symbolic_state):
                 gadget.popped_regs.add(reg)
