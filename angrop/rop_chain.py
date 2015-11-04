@@ -106,7 +106,7 @@ class RopChain(object):
             if print_instructions:
                 if needs_rebase:
                     #dealing with pie code
-                    value_in_gadget = value + self._p.loader.main_bin.get_min_addr()
+                    value_in_gadget = value + self._p.loader.main_bin.rebase_addr
                 else:
                     value_in_gadget = value
                 if value_in_gadget in gadget_dict:
