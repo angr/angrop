@@ -1,3 +1,6 @@
+import rop_utils
+
+
 class RopChain(object):
     """
     This class holds rop chains returned by the rop chain building methods such as rop.set_regs()
@@ -81,7 +84,7 @@ class RopChain(object):
         rop_str = test_state.se.any_str(test_state.memory.load(sp, self.payload_len))
         return rop_str
 
-    def print_payload_code(self, constraints=None):
+    def print_payload_code(self, constraints=None, print_instructions=True):
         if self._p.arch.bits == 32:
             pack = "p32(%#x)"
             pack_rebase = "p32(%#x + base_addr)"
@@ -94,12 +97,26 @@ class RopChain(object):
         else:
             payload = ""
         payload += 'chain = ""\n'
+
+        gadget_dict = {g.addr:g for g in self._gadgets}
         concrete_vals = self._concretize_chain_values(constraints)
         for value, needs_rebase in concrete_vals:
+
+            instruction_code = ""
+            if print_instructions:
+                if needs_rebase:
+                    #dealing with pie code
+                    value_in_gadget = value + self._p.loader.main_bin.get_min_addr()
+                else:
+                    value_in_gadget = value
+                if value_in_gadget in gadget_dict:
+                    asmstring = rop_utils.gadget_to_asmstring(self._p,gadget_dict[value_in_gadget])
+                    instruction_code = "\t# " + asmstring
+
             if needs_rebase:
-                payload += "chain += " + pack_rebase % value
+                payload += "chain += " + pack_rebase % value + instruction_code
             else:
-                payload += "chain += " + pack % value
+                payload += "chain += " + pack % value + instruction_code
             payload += "\n"
         print payload
 
