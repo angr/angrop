@@ -27,10 +27,10 @@ Memory changes require a read action followed by a write action to the same addr
 
 
 def assert_mem_access_equal(m1, m2):
-    nose.tools.assert_equal(m1.addr_dependencies, m2.addr_dependencies)
-    nose.tools.assert_equal(m1.addr_controllers, m2.addr_controllers)
-    nose.tools.assert_equal(m1.data_dependencies, m2.data_dependencies)
-    nose.tools.assert_equal(m1.data_controllers, m2.data_controllers)
+    nose.tools.assert_equal(set(m1.addr_dependencies), set(m2.addr_dependencies))
+    nose.tools.assert_equal(set(m1.addr_controllers), set(m2.addr_controllers))
+    nose.tools.assert_equal(set(m1.data_dependencies), set(m2.data_dependencies))
+    nose.tools.assert_equal(set(m1.data_controllers), set(m2.data_controllers))
     nose.tools.assert_equal(m1.addr_constant, m2.addr_constant)
     nose.tools.assert_equal(m1.data_constant, m2.data_constant)
     nose.tools.assert_equal(m1.addr_size, m2.addr_size)

@@ -27,7 +27,7 @@ def get_ast_dependency(ast):
         if var.startswith("sreg_"):
             dependencies.add(var[5:].split("-")[0])
         else:
-            return []
+            return set()
     return dependencies
 
 
@@ -162,6 +162,11 @@ def make_symbolic_state(project, reg_list, stack_length=200):
     # restore bp
     symbolic_state.regs.bp = input_state.regs.bp
     return symbolic_state
+
+
+def make_reg_symbolic(state, reg):
+    state.registers.store(reg,
+    state.se.BVS("sreg_" + reg + "-", state.arch.bits))
 
 
 def step_to_unconstrained_successor(project, state, path=None, max_steps=2, allow_simprocedures=False):

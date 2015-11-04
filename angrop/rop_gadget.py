@@ -17,6 +17,7 @@ class RopMemAccess(object):
         self.data_constant = None
         self.addr_size = None
         self.data_size = None
+        self.op = None
 
     def __hash__(self):
         to_hash = sorted(self.addr_dependencies) + sorted(self.data_dependencies) + [self.addr_constant] + \
@@ -92,7 +93,16 @@ class RopGadget(object):
             dependencies = [x for x in self.reg_dependencies[reg] if x not in controllers]
             s += "    " + reg + ": [" + " ".join(controllers) + " (" + " ".join(dependencies) + ")]" + "\n"
         for mem_access in self.mem_changes:
-            s += "Memory change:\n"
+            if mem_access.op == "__add__":
+                s += "Memory add:\n"
+            elif mem_access.op == "__sub__":
+                s += "Memory subtract:\n"
+            elif mem_access.op == "__or__":
+                s += "Memory or:\n"
+            elif mem_access.op == "__and__":
+                s += "Memory and:\n"
+            else:
+                s += "Memory change:\n"
             if mem_access.addr_constant is None:
                 s += "    " + "address (%d bits) depends on: " % mem_access.addr_size
                 s += str(list(mem_access.addr_dependencies)) + "\n"
@@ -111,7 +121,7 @@ class RopGadget(object):
                 s += "    " + "data (%d bits) depends on: " % mem_access.data_size
                 s += str(list(mem_access.data_dependencies)) + "\n"
             else:
-                s += "    " + "data (%d bits): %#x" % (mem_access.data_size, mem_access.data_constant)
+                s += "    " + "data (%d bits): %#x\n" % (mem_access.data_size, mem_access.data_constant)
         for mem_access in self.mem_reads:
             s += "Memory read:\n"
             if mem_access.addr_constant is None:
