@@ -121,7 +121,7 @@ class RopGadget(object):
                 s += "    " + "data (%d bits) depends on: " % mem_access.data_size
                 s += str(list(mem_access.data_dependencies)) + "\n"
             else:
-                s += "    " + "data (%d bits): %#x" % (mem_access.data_size, mem_access.data_constant)
+                s += "    " + "data (%d bits): %#x\n" % (mem_access.data_size, mem_access.data_constant)
         for mem_access in self.mem_reads:
             s += "Memory read:\n"
             if mem_access.addr_constant is None:

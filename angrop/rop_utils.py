@@ -16,7 +16,7 @@ def get_ast_dependency(ast):
         if var.startswith("sreg_"):
             dependencies.add(var[5:].split("-")[0])
         else:
-            return []
+            return set()
     return dependencies
 
 
