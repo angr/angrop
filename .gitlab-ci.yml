@@ -5,3 +5,13 @@ angrop:
     script: "angr-test angrop"
     tags:
         - "angr"
+
+rex:
+    script: "angr-test rex"
+    tags:
+        - "angr"
+
+angrop_lint:
+    script: "angr-test lint"
+    tags:
+        - "angr"
