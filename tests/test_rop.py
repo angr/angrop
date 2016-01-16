@@ -8,6 +8,7 @@ import logging
 l = logging.getLogger("angrop.tests.test_rop")
 
 bin_location = str(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../binaries'))
+public_bin_location = str(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../binaries-public/tests'))
 test_data_location = str(os.path.dirname(os.path.realpath(__file__)))
 
 
@@ -98,7 +99,7 @@ def execute_chain(project, chain):
 
 
 def test_rop_x86_64():
-    b = angr.Project(os.path.join(bin_location, "tests/x86_64/datadep_test"))
+    b = angr.Project(os.path.join(public_bin_location, "x86_64/datadep_test"))
     rop = b.analyses.ROP()
     rop.find_gadgets_single_threaded()
 
@@ -141,7 +142,7 @@ def test_rop_i386_cgc():
 
 
 def test_rop_arm():
-    b = angr.Project(os.path.join(bin_location, "tests/armel/manysum"))
+    b = angr.Project(os.path.join(public_bin_location, "armel/manysum"))
     rop = b.analyses.ROP()
     rop.find_gadgets_single_threaded()
 
