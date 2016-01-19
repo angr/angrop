@@ -7,8 +7,8 @@ import pickle
 import logging
 l = logging.getLogger("angrop.tests.test_rop")
 
-bin_location = str(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../binaries'))
-public_bin_location = str(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../binaries-public/tests'))
+bin_location = str(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../binaries-private'))
+public_bin_location = str(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../binaries/tests'))
 test_data_location = str(os.path.dirname(os.path.realpath(__file__)))
 
 
