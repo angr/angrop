@@ -72,6 +72,8 @@ def compare_gadgets(test_gadgets, known_gadgets):
     # check that each of the expected gadget addrs was found as a gadget
     # if it wasn't the best way to debug is to run:
     # angrop.gadget_analyzer.l.setLevel("DEBUG"); rop._gadget_analyzer.analyze_gadget(addr)
+    test_gadget_dict = {g.addr: g for g in test_gadgets}
+
     found_addrs = set(g.addr for g in test_gadgets)
     for g in known_gadgets:
         nose.tools.assert_in(g.addr, found_addrs)
@@ -80,8 +82,8 @@ def compare_gadgets(test_gadgets, known_gadgets):
     nose.tools.assert_equal(len(test_gadgets), len(known_gadgets))
 
     # check gadgets
-    for g1, g2, in zip(test_gadgets, known_gadgets):
-        assert_gadgets_equal(g1, g2)
+    for g in known_gadgets:
+        assert_gadgets_equal(g, test_gadget_dict[g.addr])
 
 
 def execute_chain(project, chain):
