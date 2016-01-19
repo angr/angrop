@@ -97,6 +97,30 @@ def unconstrained_check(state, ast):
     return True
 
 
+def fast_unconstrained_check(state, ast):
+    """
+    Attempts to check if an ast has any common unreversable operations mul, div
+    :param state: the state to use
+    :param ast: the ast to check
+    :return: True if the ast is probably unconstrained
+    """
+    good_ops = {"Extract", "BVS", "__add__", "__sub__", "Reverse"}
+    if len(ast.variables) != 1:
+        return unconstrained_check(state, ast)
+
+    passes_prefilter = True
+    for a in ast.recursive_children_asts:
+        if a.op not in good_ops:
+            passes_prefilter = False
+    if ast.op not in good_ops:
+        passes_prefilter = False
+
+    if passes_prefilter:
+        return True
+
+    return unconstrained_check(state, ast)
+
+
 def get_reg_name(arch, reg_offset):
     """
     :param reg_offset: Tries to find the name of a register given the offset in the registers.

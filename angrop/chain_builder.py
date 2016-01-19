@@ -1,4 +1,5 @@
 import heapq
+import struct
 import simuvex
 
 import rop_utils
@@ -178,7 +179,8 @@ class ChainBuilder(object):
         _, _, reg_data = self._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
         l.debug("trying mem_write gadgets")
 
-        best_stack_change = 0xffffffff
+        # limit the maximum size of the chain
+        best_stack_change = 0x400
         best_gadget = None
         for t, vals in reg_data.items():
             if vals[1] >= best_stack_change:
@@ -196,6 +198,7 @@ class ChainBuilder(object):
 
         # try again using partial_controllers
         use_partial_controllers = False
+        best_stack_change = 0x400
         if best_gadget is None:
             use_partial_controllers = True
             l.warning("Trying to use partial controllers for memory write")
@@ -238,7 +241,7 @@ class ChainBuilder(object):
 
         return chain
 
-    def add_to_mem(self, addr, value, data_size = None):
+    def add_to_mem(self, addr, value, data_size=None):
         # assume we need intersection of addr_dependencies and data_dependencies to be 0
         # TODO could allow mem_reads as long as we control the address?
 
@@ -285,6 +288,74 @@ class ChainBuilder(object):
 
         # build the chain
         chain = self._change_mem_with_gadget(best_gadget, addr, data_size, difference=value)
+        return chain
+
+    def write_to_mem_v2(self, addr, data):
+        # assume we need intersection of addr_dependencies and data_dependencies to be 0
+        # TODO could allow mem_reads as long as we control the address?
+        # TODO implement better, allow adding a single byte repeatedly
+
+        possible_gadgets = set()
+        for g in self._gadgets:
+            if len(g.mem_reads) + len(g.mem_writes) > 0 or len(g.mem_changes) != 1:
+                continue
+            if g.bp_moves_to_sp:
+                continue
+            if g.stack_change <= 0:
+                continue
+            for m_access in g.mem_changes:
+                if len(m_access.addr_controllers) > 0 and len(m_access.data_controllers) > 0 and \
+                        len(set(m_access.addr_controllers) & set(m_access.data_controllers)) == 0 and \
+                        (m_access.op == "__or__" or m_access.op == "__and__"):
+                    possible_gadgets.add(g)
+
+        # get the data from trying to set all the registers
+        registers = dict((reg, 0x41) for reg in self._reg_list)
+        l.debug("getting reg data for mem adds")
+        _, _, reg_data = self._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
+        l.debug("trying mem_add gadgets")
+
+        best_stack_change = 0xffffffff
+        best_gadget = None
+        for t, vals in reg_data.items():
+            if vals[1] >= best_stack_change:
+                continue
+            for g in possible_gadgets:
+                mem_change = g.mem_changes[0]
+                if (set(mem_change.addr_dependencies) | set(mem_change.data_dependencies)).issubset(set(t)):
+                    stack_change = g.stack_change + vals[1]
+                    bytes_per_write = mem_change.data_size/8
+                    stack_change *= bytes_per_write
+                    if stack_change < best_stack_change:
+                        best_gadget = g
+                        best_stack_change = stack_change
+
+        if best_gadget is None:
+            raise RopException("Couldnt set registers for any memory add gadget")
+
+        l.debug("Now building the mem const chain")
+        mem_change = best_gadget.mem_changes[0]
+        bytes_per_write = mem_change.data_size/8
+
+        # build the chain
+        if mem_change.op == "__or__":
+            final_value = -1
+        elif mem_change.op == "__and__":
+            final_value = 0
+        else:
+            raise Exception("This shouldn't happen")
+        chain = RopChain(self.project, self)
+        for i in range(0, len(data), bytes_per_write):
+            chain = chain + self._change_mem_with_gadget(best_gadget, addr + i,
+                                                         mem_change.data_size, final_val=final_value)
+        # FIXME for other adds
+        for i in range(0, len(data), 4):
+            to_write = data[i: i+4]
+            # pad if needed
+            if len(to_write) < 4:
+                to_write += "\xff" * (4-len(to_write))
+            to_add = struct.unpack("<I", to_write)[0] - final_value
+            chain += self.add_to_mem(addr+i, to_add, 32)
         return chain
 
     def execve(self, target=None, addr_for_str=None):
@@ -434,7 +505,14 @@ class ChainBuilder(object):
         state = self._test_symbolic_state.copy()
         state.registers.store(reg, 0)
         state.regs.ip = gadget.addr
+        # store A's past the end of the stack
+        state.memory.store(state.regs.sp + gadget.stack_change, state.se.BVV("A"*0x100))
+
         succ = rop_utils.step_to_unconstrained_successor(project=self.project, state=state).state
+        # successor
+        if succ.ip is succ.registers.load(reg):
+            return False
+
         if succ.se.solution(succ.registers.load(reg), value):
             # make sure wasnt a symbolic read
             for var in succ.registers.load(reg).variables:

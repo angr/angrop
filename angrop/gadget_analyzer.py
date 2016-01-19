@@ -76,6 +76,10 @@ class GadgetAnalyzer(object):
             l.debug("... computing sp change")
             self._compute_sp_change(symbolic_state, this_gadget)
 
+            if this_gadget.stack_change % (self.project.arch.bits / 8) != 0:
+                l.debug("... uneven sp change")
+                return None
+
             # if the sp moves to the bp we have to handle it differently
             if not this_gadget.bp_moves_to_sp and self._base_pointer != self._sp_reg:
                 rop_utils.make_reg_symbolic(symbolic_state, self._base_pointer)
@@ -109,6 +113,9 @@ class GadgetAnalyzer(object):
 
         except RopException as e:
             l.debug("... %s", e.message)
+            return None
+        except claripy.ClaripyFrontendError as e:
+            l.warning("... claripy error: %s", e.message)
             return None
 
         l.debug("... Appending gadget!")
@@ -222,14 +229,16 @@ class GadgetAnalyzer(object):
         exit_target = symbolic_p.actions[-1].target.ast
 
         succ_state = symbolic_p.state
+        stack_change = gadget.stack_change if not gadget.bp_moves_to_sp else None
 
         for reg in self._get_reg_writes(symbolic_p):
             # we assume any register in reg_writes changed
             # verify the stack controls it
             # we need to make sure they arent equal to the exit target otherwise they arent controlled
+            # TODO what to do about moves to bp
             if symbolic_p.state.registers.load(reg) is exit_target:
                 gadget.changed_regs.add(reg)
-            elif self._check_if_stack_controls_ast(succ_state.registers.load(reg), symbolic_state):
+            elif self._check_if_stack_controls_ast(succ_state.registers.load(reg), symbolic_state, stack_change):
                 gadget.popped_regs.add(reg)
                 gadget.changed_regs.add(reg)
             else:
@@ -296,11 +305,20 @@ class GadgetAnalyzer(object):
         """
         return self._check_if_stack_controls_ast(symbolic_p.state.ip, symbolic_s)
 
-    def _check_if_stack_controls_ast(self, ast, initial_state):
+    def _check_if_stack_controls_ast(self, ast, initial_state, gadget_stack_change=None):
+        if gadget_stack_change is not None and gadget_stack_change <= 0:
+            return False
+
         # if we had the lemma cache this might be already there!
         test_val = 0x4242424242424242 % (1 << self.project.arch.bits)
 
-        if hash(ast) in self._solve_cache:
+        # TODO add test where we recognize a value past the end of the stack frame isn't controlled
+        # this is an annoying problem but this code should handle it
+
+        # solve cache is used if it's already known to not work or
+        # if we are using the whole stack (gadget_stack_change is None)
+        if hash(ast) in self._solve_cache and \
+                (gadget_stack_change is None or not self._solve_cache[hash(ast)]):
             return self._solve_cache[hash(ast)]
 
         # prefilter
@@ -309,17 +327,23 @@ class GadgetAnalyzer(object):
             return False
 
         stack_bytes_length = self._stack_length * (self.project.arch.bits / 8)
+        if gadget_stack_change is not None:
+            stack_bytes_length = min(max(gadget_stack_change, 0), stack_bytes_length)
         concrete_stack = initial_state.se.BVV("B" * stack_bytes_length)
         concrete_stack_s = initial_state.copy()
         concrete_stack_s.add_constraints(
             initial_state.memory.load(initial_state.regs.sp, stack_bytes_length) == concrete_stack)
         test_constraint = (ast != test_val)
-        if not concrete_stack_s.se.satisfiable(extra_constraints=(test_constraint,)):
+        # stack must have set the register and it must be able to set the register to all 1's or all 0's
+        if not concrete_stack_s.se.satisfiable(extra_constraints=(test_constraint,)) and \
+                rop_utils.fast_unconstrained_check(initial_state, ast):
             ans = True
         else:
             ans = False
 
-        self._solve_cache[hash(ast)] = ans
+        # only store the result if we were using the whole stack
+        if gadget_stack_change is not None:
+            self._solve_cache[hash(ast)] = ans
         return ans
 
     def _compute_sp_change(self, symbolic_state, gadget):
@@ -379,6 +403,7 @@ class GadgetAnalyzer(object):
 
                 # don't need to inform user of stack reads/writes
                 stack_min_addr = self._stack_pointer_value - 0x20
+                # TODO should this be changed, so that we can more easily understand writes outside the frame
                 stack_max_addr = max(stack_min_addr + self._stack_length_bytes, stack_min_addr + gadget.stack_change)
                 if mem_access.addr_constant is not None and \
                         stack_min_addr <= mem_access.addr_constant < stack_max_addr:
