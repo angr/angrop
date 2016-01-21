@@ -38,26 +38,26 @@ def assert_mem_access_equal(m1, m2):
     nose.tools.assert_equal(m1.data_size, m2.data_size)
 
 
-def assert_gadgets_equal(g1, g2):
-    nose.tools.assert_equal(g1.addr, g2.addr)
-    nose.tools.assert_equal(g1.changed_regs, g2.changed_regs)
-    nose.tools.assert_equal(g1.popped_regs, g2.popped_regs)
-    nose.tools.assert_equal(g1.reg_dependencies, g2.reg_dependencies)
-    nose.tools.assert_equal(g1.reg_controllers, g2.reg_controllers)
-    nose.tools.assert_equal(g1.stack_change, g2.stack_change)
+def assert_gadgets_equal(known_gadget, test_gadget):
+    nose.tools.assert_equal(known_gadget.addr, test_gadget.addr)
+    nose.tools.assert_equal(known_gadget.changed_regs, test_gadget.changed_regs)
+    nose.tools.assert_equal(known_gadget.popped_regs, test_gadget.popped_regs)
+    nose.tools.assert_equal(known_gadget.reg_dependencies, test_gadget.reg_dependencies)
+    nose.tools.assert_equal(known_gadget.reg_controllers, test_gadget.reg_controllers)
+    nose.tools.assert_equal(known_gadget.stack_change, test_gadget.stack_change)
 
-    nose.tools.assert_equal(len(g1.mem_reads), len(g2.mem_reads))
-    for m1, m2 in zip(g1.mem_reads, g2.mem_reads):
+    nose.tools.assert_equal(len(known_gadget.mem_reads), len(test_gadget.mem_reads))
+    for m1, m2 in zip(known_gadget.mem_reads, test_gadget.mem_reads):
         assert_mem_access_equal(m1, m2)
-    nose.tools.assert_equal(len(g1.mem_writes), len(g2.mem_writes))
-    for m1, m2 in zip(g1.mem_writes, g2.mem_writes):
+    nose.tools.assert_equal(len(known_gadget.mem_writes), len(test_gadget.mem_writes))
+    for m1, m2 in zip(known_gadget.mem_writes, test_gadget.mem_writes):
         assert_mem_access_equal(m1, m2)
-    nose.tools.assert_equal(len(g1.mem_changes), len(g2.mem_changes))
-    for m1, m2 in zip(g1.mem_changes, g2.mem_changes):
+    nose.tools.assert_equal(len(known_gadget.mem_changes), len(test_gadget.mem_changes))
+    for m1, m2 in zip(known_gadget.mem_changes, test_gadget.mem_changes):
         assert_mem_access_equal(m1, m2)
 
-    nose.tools.assert_equal(g1.addr, g2.addr)
-    nose.tools.assert_equal(g1.changed_regs, g2.changed_regs)
+    nose.tools.assert_equal(known_gadget.addr, test_gadget.addr)
+    nose.tools.assert_equal(known_gadget.changed_regs, test_gadget.changed_regs)
 
 
 def compare_gadgets(test_gadgets, known_gadgets):
