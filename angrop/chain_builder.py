@@ -894,7 +894,9 @@ class ChainBuilder(object):
         # constrain the write
         mem_write = gadget.mem_writes[0]
         the_action = None
-        for a in [a for a in succ_p.actions if a.type == "mem" and a.action == "write"]:
+        for a in succ_p.actions.hardcopy:
+            if a.type != "mem" or a.action != "write":
+                continue
             if set(rop_utils.get_ast_dependency(a.addr.ast)) == set(mem_write.addr_dependencies) or \
                     set(rop_utils.get_ast_dependency(a.data.ast)) == set(mem_write.data_dependencies):
                 the_action = a
@@ -961,7 +963,9 @@ class ChainBuilder(object):
         # constrain the change
         mem_change = gadget.mem_changes[0]
         the_action = None
-        for a in [a for a in succ_p.actions if a.type == "mem" and a.action == "write"]:
+        for a in succ_p.actions.hardcopy:
+            if a.type != "mem" or a.action != "write":
+                continue
             if set(rop_utils.get_ast_dependency(a.addr.ast)) == set(mem_change.addr_dependencies):
                 the_action = a
                 break

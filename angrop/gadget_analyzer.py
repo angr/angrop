@@ -5,9 +5,9 @@ import simuvex
 
 import logging
 
-import rop_utils
-from rop_gadget import RopGadget, RopMemAccess, RopRegMove
-from errors import RopException, RegNotFoundException
+from . import rop_utils
+from .rop_gadget import RopGadget, RopMemAccess, RopRegMove
+from .errors import RopException, RegNotFoundException
 
 l = logging.getLogger("angrop.gadget_analyzer")
 
@@ -203,7 +203,7 @@ class GadgetAnalyzer(object):
         """
         # get all the memory accesses
         symbolic_mem_accesses = []
-        for a in symbolic_path.actions:
+        for a in reversed(symbolic_path.actions):
             if a.type == 'mem' and a.addr.ast.symbolic:
                 symbolic_mem_accesses.append(a)
         if len(symbolic_mem_accesses) <= self._max_sym_mem_accesses:
@@ -391,7 +391,7 @@ class GadgetAnalyzer(object):
         :param gadget: the gadget to store mem acccess in
         """
         last_action = None
-        for a in symbolic_p.actions:
+        for a in symbolic_p.actions.hardcopy:
             if a.type == 'mem':
                 mem_access = RopMemAccess()
                 if a.addr.ast.symbolic:
@@ -513,7 +513,7 @@ class GadgetAnalyzer(object):
         :param symbolic_p: input path to check history of
         """
 
-        for act in symbolic_p.actions:
+        for act in reversed(symbolic_p.actions):
             # XXX maybe there's a better way to identify this, but angr just registers this as "handler"
             if act.sim_procedure == "handler":
                 return True
@@ -579,7 +579,7 @@ class GadgetAnalyzer(object):
         :return: A set of register names which are read
         """
         all_reg_reads = set()
-        for a in path.actions:
+        for a in reversed(path.actions):
             if a.type == "reg" and a.action == "read":
                 try:
                     reg_name = rop_utils.get_reg_name(self.project.arch, a.offset)
@@ -598,7 +598,7 @@ class GadgetAnalyzer(object):
         :return: A set of register names which are read
         """
         all_reg_writes = set()
-        for a in path.actions:
+        for a in reversed(path.actions):
             if a.type == "reg" and a.action == "write":
                 try:
                     reg_name = rop_utils.get_reg_name(self.project.arch, a.offset)
