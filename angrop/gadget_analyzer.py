@@ -413,7 +413,7 @@ class GadgetAnalyzer(object):
                     # special case for read than write form the same addr
                     if last_action is not None and last_action.action == "read" and \
                             last_action.addr.ast is a.addr.ast and \
-                            self._in_same_instruction(last_action, a):
+                            last_action.ins_addr == a.ins_addr:
                         mem_change = gadget.mem_reads[-1]
                         gadget.mem_reads = gadget.mem_reads[:-1]
                         # get the actual change in certain cases
@@ -485,26 +485,6 @@ class GadgetAnalyzer(object):
             mem_change.op = write_action.data.ast.op
             mem_change.data_dependencies = data_dependencies
             mem_change.data_controllers = data_controllers
-
-    def _in_same_instruction(self, action_1, action_2):
-        """
-        tests if two actions were in the same instruction
-        :return: True if the actions were in the same instruction, False otherwise
-        """
-        if action_1.bbl_addr != action_2.bbl_addr:
-            return False
-        block = self.project.factory.block(action_1.bbl_addr)
-        addr_1 = None
-        addr_2 = None
-        current_addr = None
-        for i, s in enumerate(block.vex.statements):
-            if s.tag == "Ist_IMark":
-                current_addr = s.addr
-            if action_1.stmt_idx == i:
-                addr_1 = current_addr
-            if action_2.stmt_idx == i:
-                addr_2 = current_addr
-        return addr_1 == addr_2
 
     @staticmethod
     def _does_syscall(symbolic_p):
