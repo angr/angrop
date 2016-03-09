@@ -59,7 +59,11 @@ class RopChain(object):
 
         solver_state = self._blank_state.copy()
         if constraints is not None:
-            solver_state.add_constraints(constraints)
+            if isinstance(constraints, (list, tuple)):
+                for c in constraints:
+                    solver_state.add_constraints(c)
+            else:
+                solver_state.add_constraints(constraints)
 
         concrete_vals = []
         for val, needs_rebase in self._values:
