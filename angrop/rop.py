@@ -314,7 +314,7 @@ class ROP(angr.Analysis):
                                 addrs.append(ret_addr)
                         # save the addresses in the block
                         seen.update(block.instruction_addrs)
-                    except angr.AngrTranslationError:
+                    except (angr.AngrTranslationError, angr.AngrMemoryError):
                         pass
 
         return sorted(addrs)
@@ -330,14 +330,18 @@ class ROP(angr.Analysis):
             raise RopException("Only have ret strings for i386 and x86_64")
 
         addrs = []
-        for segment in self.project.loader.main_bin.segments:
-            if segment.is_executable:
-                min_addr = segment.min_addr + self.project.loader.main_bin.rebase_addr
-                num_bytes = segment.max_addr-segment.min_addr
-                read_bytes = "".join(self.project.loader.memory.read_bytes(min_addr, num_bytes))
-                for ret_instruction in ret_instructions:
-                    for loc in _str_find_all(read_bytes, ret_instruction):
-                        addrs.append(loc + min_addr)
+        try:
+            for segment in self.project.loader.main_bin.segments:
+                if segment.is_executable:
+                    min_addr = segment.min_addr + self.project.loader.main_bin.rebase_addr
+                    num_bytes = segment.max_addr-segment.min_addr
+                    read_bytes = "".join(self.project.loader.memory.read_bytes(min_addr, num_bytes))
+                    for ret_instruction in ret_instructions:
+                        for loc in _str_find_all(read_bytes, ret_instruction):
+                            addrs.append(loc + min_addr)
+        except KeyError:
+            l.warning("Key error with segment analysis")
+            raise RopException("key error")
 
         return sorted(addrs)
 
