@@ -92,7 +92,7 @@ class ChainBuilder(object):
         # set the system call number
         registers[self.project.arch.register_names[self.project.arch.syscall_num_offset]] = syscall_num
 
-        cc = simuvex.s_cc.SyscallCC[self.project.arch.name](self.project.arch)
+        cc = simuvex.s_cc.SyscallCC[self.project.arch.name]["default"](self.project.arch)
 
         # distinguish register arguments from stack arguments
         register_arguments = arguments
