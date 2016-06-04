@@ -493,9 +493,11 @@ class GadgetAnalyzer(object):
         :param symbolic_p: input path to check history of
         """
 
-        for act in reversed(symbolic_p.actions):
-            # XXX maybe there's a better way to identify this, but angr just registers this as "handler"
-            if act.sim_procedure == "handler":
+        for addr in symbolic_p.addr_trace:
+            if not symbolic_p._project.is_hooked(addr):
+                continue
+            hooker = symbolic_p._project.hooked_by(addr)
+            if hooker is not None and hooker.IS_SYSCALL:
                 return True
 
         return False
