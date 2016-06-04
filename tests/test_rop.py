@@ -1,7 +1,7 @@
 import os
 import nose
 import angr
-import angrop
+import angrop  # pylint: disable=unused-import
 import pickle
 
 import logging
@@ -45,6 +45,7 @@ def assert_gadgets_equal(known_gadget, test_gadget):
     nose.tools.assert_equal(known_gadget.reg_dependencies, test_gadget.reg_dependencies)
     nose.tools.assert_equal(known_gadget.reg_controllers, test_gadget.reg_controllers)
     nose.tools.assert_equal(known_gadget.stack_change, test_gadget.stack_change)
+    nose.tools.assert_equal(known_gadget.makes_syscall, test_gadget.makes_syscall)
 
     nose.tools.assert_equal(len(known_gadget.mem_reads), len(test_gadget.mem_reads))
     for m1, m2 in zip(known_gadget.mem_reads, test_gadget.mem_reads):
