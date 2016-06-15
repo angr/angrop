@@ -10,6 +10,7 @@ import logging
 import progressbar
 
 from errors import RopException
+from .rop_gadget import RopGadget, StackPivot
 
 from multiprocessing import Pool
 
@@ -87,6 +88,7 @@ class ROP(angr.Analysis):
 
         # list of gadgets
         self.gadgets = []
+        self.stack_pivots = []
         self._duplicates = []
 
         num_to_check = len(list(self._addresses_to_check()))
@@ -130,7 +132,10 @@ class ROP(angr.Analysis):
         it = pool.imap_unordered(run_worker, self._addresses_to_check_with_caching(), chunksize=5)
         for gadget in it:
             if gadget is not None:
-                self.gadgets.append(gadget)
+                if isinstance(gadget, RopGadget):
+                    self.gadgets.append(gadget)
+                elif isinstance(gadget, StackPivot):
+                    self.stack_pivots.append(gadget)
 
         pool.close()
 
@@ -158,7 +163,10 @@ class ROP(angr.Analysis):
         for _, addr in enumerate(self._addresses_to_check_with_caching()):
             gadget = _global_gadget_analyzer.analyze_gadget(addr)
             if gadget is not None:
-                self.gadgets.append(gadget)
+                if isinstance(gadget, RopGadget):
+                    self.gadgets.append(gadget)
+                elif isinstance(gadget, StackPivot):
+                    self.stack_pivots.append(gadget)
 
         # fix up gadgets from cache
         for g in self.gadgets:
@@ -175,10 +183,10 @@ class ROP(angr.Analysis):
 
     def save_gadgets(self, path):
         with open(path, "wb") as f:
-            pickle.dump((self.gadgets, self._duplicates), f)
+            pickle.dump((self.gadgets, self.stack_pivots, self._duplicates), f)
 
     def load_gadgets(self, path):
-        self.gadgets, self._duplicates = pickle.load(open(path, "rb"))
+        self.gadgets, self.stack_pivots, self._duplicates = pickle.load(open(path, "rb"))
         self._reload_chain_funcs()
 
     def _reload_chain_funcs(self):

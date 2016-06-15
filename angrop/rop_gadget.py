@@ -136,7 +136,7 @@ class RopGadget(object):
         return s
 
     def __repr__(self):
-        return "<Gadget 0x%x>" % self.addr
+        return "<Gadget %#x>" % self.addr
 
     def copy(self):
         out = RopGadget(self.addr)
@@ -155,3 +155,21 @@ class RopGadget(object):
         out.makes_syscall = self.makes_syscall
         out.starts_with_syscall = self.starts_with_syscall
         return out
+
+
+class StackPivot(object):
+    def __init__(self, addr):
+        self.addr = addr
+        self.sp_from_reg = None
+        self.sp_popped_offset = None
+
+    def __str__(self):
+        s = "Pivot %#x\n" % self.addr
+        if self.sp_from_reg is not None:
+            s += "sp from reg: %s\n" % self.sp_from_reg
+        elif self.sp_popped_offset is not None:
+            s += "sp popped at %#x\n" % self.sp_popped_offset
+        return s
+
+    def __repr__(self):
+        return "<Pivot %#x>" % self.addr

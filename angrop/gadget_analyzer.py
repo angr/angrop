@@ -6,7 +6,7 @@ import simuvex
 import logging
 
 from . import rop_utils
-from .rop_gadget import RopGadget, RopMemAccess, RopRegMove
+from .rop_gadget import RopGadget, RopMemAccess, RopRegMove, StackPivot
 from .errors import RopException, RegNotFoundException
 
 l = logging.getLogger("angrop.gadget_analyzer")
@@ -58,13 +58,15 @@ class GadgetAnalyzer(object):
 
             l.debug("... analyzing rop potential of block")
 
-            # filter out if too many mem accesses
-            if not self._satisfies_mem_access_limits(symbolic_p):
-                l.debug("... too many symbolic memory accesses")
-                return None
             # filter out those that dont get to a controlled successor
             l.info("... check for controlled successor")
             if not self._check_for_controlled_successor(symbolic_p, symbolic_state):
+                pivot = self._check_pivot(symbolic_p, symbolic_state, addr)
+                return pivot
+
+            # filter out if too many mem accesses
+            if not self._satisfies_mem_access_limits(symbolic_p):
+                l.debug("... too many symbolic memory accesses")
                 return None
 
             # create the gadget
@@ -501,6 +503,65 @@ class GadgetAnalyzer(object):
                 return True
 
         return False
+
+    def _check_pivot(self, symbolic_p, symbolic_state, addr):
+        """
+        Checks if it was a pivot
+        :param symbolic_p: the stepped path, symbolic_state is an ancestor of it.
+        :param symbolic_state: input state for testing
+        :return: the pivot object
+        """
+        if len(symbolic_p.trace) > 1:
+            return None
+        pivot = None
+        reg_deps = rop_utils.get_ast_dependency(symbolic_p.state.regs.sp)
+        if len(reg_deps) == 1:
+            pivot = StackPivot(addr)
+            pivot.sp_from_reg = list(reg_deps)[0]
+        elif len(symbolic_p.state.regs.sp.variables) == 1 and \
+                list(symbolic_p.state.regs.sp.variables)[0].startswith("symbolic_stack"):
+            offset = None
+            for a in symbolic_p.state.regs.sp.recursive_children_asts:
+                if a.op == "Extract" and a.depth == 2:
+                    offset = a.args[2].size() - 1 - a.args[0]
+            if offset is None or offset % 8 != 0:
+                return None
+            offset_bytes = offset/8
+            pivot = StackPivot(addr)
+            pivot.sp_popped_offset = offset_bytes
+
+        if pivot is not None:
+            # verify no weird mem accesses
+            test_p = self.project.factory.path(symbolic_state.copy())
+            # step until we find the pivot action
+            for i in range(symbolic_p.previous_run.irsb.instructions):
+                test_p.step(num_inst=1)
+                if len(test_p.successors) != 1:
+                    return None
+                test_p = test_p.successors[0]
+                if test_p.state.regs.sp.symbolic:
+                    # found the pivot action
+                    break
+            # now iterate through the remaining instructions with a clean state
+            test_p.step(num_inst=1)
+            if len(test_p.successors) != 1:
+                return None
+            succ1 = test_p.successors[0]
+            ss = symbolic_state.copy()
+            ss.regs.ip = succ1.addr
+            test_p = self.project.factory.path(ss)
+            test_p.step()
+            if len(test_p.successors + test_p.unconstrained_successors) == 0:
+                return None
+            succ2 = (test_p.successors + test_p.unconstrained_successors)[0]
+
+            all_actions = [a for a in succ1.actions] + [a for a in succ2.actions]
+            for a in all_actions:
+                if a.type == "mem" and a.addr.ast.symbolic:
+                    return None
+            return pivot
+
+        return None
 
     def _starts_with_syscall(self, addr):
         """
