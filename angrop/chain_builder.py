@@ -607,11 +607,12 @@ class ChainBuilder(object):
         for g in gadgets:
             is_good = True
             num_mem_changes = len(g.mem_writes) + len(g.mem_reads) + len(g.mem_changes)
+            # make sure there are no strictly better gadgets
             for g2 in gadgets:
                 num_mem_changes2 = len(g2.mem_writes) + len(g2.mem_reads) + len(g2.mem_changes)
                 if len(g.reg_controllers) == 0 and len(g2.reg_controllers) == 0 and g.popped_regs == g2.popped_regs \
                         and g.reg_controllers == g2.reg_controllers and g.reg_dependencies == g2.reg_dependencies \
-                        and g.changed_regs == g2.changed_regs:
+                        and g.changed_regs == g2.changed_regs and g.bp_moves_to_sp == g2.bp_moves_to_sp:
                     if num_mem_changes == 0 and num_mem_changes2 == 0:
                         if g.stack_change > g2.stack_change:
                             is_good = False
@@ -619,11 +620,13 @@ class ChainBuilder(object):
                         is_good = False
             if not is_good:
                 continue
+            # make sure we don't already have one that is as good
             for g2 in good_gadgets:
                 num_mem_changes2 = len(g2.mem_writes) + len(g2.mem_reads) + len(g2.mem_changes)
                 if g2.stack_change <= g.stack_change and g.reg_controllers == g2.reg_controllers \
                         and g.reg_dependencies == g2.reg_dependencies and g2.changed_regs.issubset(g.changed_regs) \
-                        and g.popped_regs.issubset(g2.changed_regs) and num_mem_changes == 0 and num_mem_changes2 == 0:
+                        and g.popped_regs.issubset(g2.changed_regs) and num_mem_changes == 0 and num_mem_changes2 == 0 \
+                        and g.bp_moves_to_sp == g2.bp_moves_to_sp:
                     is_good = False
             if is_good:
                 good_gadgets.append(g)
