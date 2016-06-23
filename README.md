@@ -5,7 +5,13 @@ angrop is a rop gadget finder and chain builder
 
 ## Overview
 angrop is a tool to automatically generate rop chains.
-Typically, it can generate rop chains (especially long chains) faster than humans, making it ideal in time-critical situations.
+
+It is built on top of angr's symbolic execution engine, and uses constraint solving for generating chains and understanding the effects of gadgets.
+
+angrop should support all the architectures supported by angr, although more testing needs to be done.
+
+Typically, it can generate rop chains (especially long chains) faster than humans.
+
 It includes functions to generate chains which are commonly used in exploitation and CTF's, such as setting registers, and calling functions.
 
 ## Usage
@@ -35,8 +41,9 @@ chain += p64(0x56565656)
 # setting registers
 chain = rop.set_regs(rax=0x1337, rbx=0x56565656)
 
-# writing to memory
-chain = rop.write_to_mem(0x41414141, "/bin/sh\0")
+# writing to memory 
+# writes "/bin/sh\0" to address 0x61b100
+chain = rop.write_to_mem(0x61b100, "/bin/sh\0")
 
 # calling functions
 chain = rop.func_call("read", [0, 0x804f000, 0x100])
@@ -45,7 +52,7 @@ chain = rop.func_call("read", [0, 0x804f000, 0x100])
 chain = rop.add_to_mem(0x804f124, 0x41414141)
 
 # chains can be added together to chain operations
-chain = rop.write_to_mem(0x61b100, "/home/ctf/flag\x00") + rop.func_call("open", [0x61b100,0]) + ...
+chain = rop.write_to_mem(0x61b100, "/home/ctf/flag\x00") + rop.func_call("open", [0x61b100,os.O_RDONLY]) + ...
 
 # chains can be printed for copy pasting into exploits
 >>> chain.print_payload_code()
@@ -106,9 +113,16 @@ Register dependencies:
 
 ## TODO's
 Allow strings to be passed as arguments to func_call(), which are then written to memory and referenced.
+
 Add a function for open, read, write (for ctf's)
+
 Allow using of angr objects such as BVV, BVS to make using symbolic values easy
+
+The segment analysis for finding executable addresses seems to break on non-elf binaries often, such as PE files, kernel modules.
+
+Allow setting constraints on the generated chain e.g. bytes that are valid.
 
 ## Common gotchas
 Make sure to import angrop before calling proj.analyses.ROP()
+
 Make sure to call find_gadets() before trying to make chains

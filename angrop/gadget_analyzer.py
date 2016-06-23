@@ -506,7 +506,7 @@ class GadgetAnalyzer(object):
 
     def _check_pivot(self, symbolic_p, symbolic_state, addr):
         """
-        Checks if it was a pivot
+        Super basic pivot analysis. Pivots are not really used by angrop right now
         :param symbolic_p: the stepped path, symbolic_state is an ancestor of it.
         :param symbolic_state: input state for testing
         :return: the pivot object
