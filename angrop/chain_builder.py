@@ -57,6 +57,13 @@ class ChainBuilder(object):
         self._filtered_reg_gadgets = None
 
     def set_regs(self, modifiable_memory_range=None, use_partial_controllers=False, rebase_regs=None, **registers):
+        """
+        :param registers: dict of registers to values
+        :return: a chain which will set the registers to the requested values
+
+        example:
+        chain = rop.set_regs(rax=0x1234, rcx=0x41414141)
+        """
 
         if len(registers) == 0:
             return RopChain(self.project, self)
@@ -155,7 +162,12 @@ class ChainBuilder(object):
 
         return chain
 
-    def write_to_mem(self, addr, data):
+    def write_to_mem(self, addr, string_data):
+        """
+        :param addr: address to store the string
+        :param string_data: string to store
+        :return: a rop chain
+        """
         # create a dict of bytes per write to gadgets
         # assume we need intersection of addr_dependencies and data_dependencies to be 0
         # TODO could allow mem_reads as long as we control the address?
@@ -190,7 +202,7 @@ class ChainBuilder(object):
                 if (set(mem_write.addr_dependencies) | set(mem_write.data_dependencies)).issubset(set(t)):
                     stack_change = g.stack_change + vals[1]
                     bytes_per_write = mem_write.data_size / 8
-                    num_writes = (len(data) + bytes_per_write - 1)/bytes_per_write
+                    num_writes = (len(string_data) + bytes_per_write - 1)/bytes_per_write
                     stack_change *= num_writes
                     if stack_change < best_stack_change:
                         best_gadget = g
@@ -217,7 +229,7 @@ class ChainBuilder(object):
                         stack_change = g.stack_change + vals[1]
                         # only one byte at a time
                         bytes_per_write = 1
-                        num_writes = (len(data) + bytes_per_write - 1)/bytes_per_write
+                        num_writes = (len(string_data) + bytes_per_write - 1)/bytes_per_write
                         stack_change *= num_writes
                         if stack_change < best_stack_change:
                             best_gadget = g
@@ -232,8 +244,8 @@ class ChainBuilder(object):
 
         # build the chain
         chain = RopChain(self.project, self)
-        for i in range(0, len(data), bytes_per_write):
-            to_write = data[i: i+bytes_per_write]
+        for i in range(0, len(string_data), bytes_per_write):
+            to_write = string_data[i: i+bytes_per_write]
             # pad if needed
             if len(to_write) < bytes_per_write:
                 to_write += "\xff" * (bytes_per_write-len(to_write))
@@ -242,6 +254,15 @@ class ChainBuilder(object):
         return chain
 
     def add_to_mem(self, addr, value, data_size=None):
+        """
+        :param addr: the address to add to
+        :param value: the value to add
+        :param data_size: the size of the data for the add (defaults to project.arch.bits)
+        :return: A chain which will do [addr] += value
+
+        Example:
+        chain = rop.add_to_mem(0x8048f124, 0x41414141)
+        """
         # assume we need intersection of addr_dependencies and data_dependencies to be 0
         # TODO could allow mem_reads as long as we control the address?
 
@@ -291,6 +312,11 @@ class ChainBuilder(object):
         return chain
 
     def write_to_mem_v2(self, addr, data):
+        """
+        :param addr: address to store the string
+        :param string_data: string to store
+        :return: a rop chain
+        """
         # assume we need intersection of addr_dependencies and data_dependencies to be 0
         # TODO could allow mem_reads as long as we control the address?
         # TODO implement better, allow adding a single byte repeatedly
@@ -389,6 +415,11 @@ class ChainBuilder(object):
         return result
 
     def func_call(self, address, args, use_partial_controllers=False):
+        """
+        :param address: address or name of function to call
+        :param args: a list/tuple of arguments to the function
+        :return: a rop chain
+        """
         # is it a symbol?
         if isinstance(address, str):
             symbol = address

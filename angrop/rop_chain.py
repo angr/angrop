@@ -75,6 +75,10 @@ class RopChain(object):
         return concrete_vals
 
     def payload_str(self, constraints=None, base_addr=None):
+        """
+        :param base_addr: the base address of the binary
+        :return: a string that does the rop payload
+        """
         if base_addr is None:
             base_addr = self._p.loader.main_bin.rebase_addr
         test_state = self._blank_state.copy()
@@ -89,6 +93,10 @@ class RopChain(object):
         return rop_str
 
     def print_payload_code(self, constraints=None, print_instructions=True):
+        """
+        :param print_instructions: prints the instructions that the rop gadgets use
+        :return: prints the code for the rop payload
+        """
         if self._p.arch.bits == 32:
             pack = "p32(%#x)"
             pack_rebase = "p32(%#x + base_addr)"
