@@ -24,7 +24,7 @@ class RopChain(object):
         o_state = other._blank_state
         o_stack = o_state.memory.load(o_state.regs.sp, other.payload_len)
         result._blank_state.memory.store(result._blank_state.regs.sp + self.payload_len, o_stack)
-        result._blank_state.se.constraints.extend(o_state.se.constraints)
+        result._blank_state.se.add(*o_state.se.constraints)
         # add the other values and gadgets
         result._values.extend(other._values)
         result._gadgets.extend(other._gadgets)
