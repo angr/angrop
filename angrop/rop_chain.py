@@ -92,6 +92,16 @@ class RopChain(object):
         rop_str = test_state.se.any_str(test_state.memory.load(sp, self.payload_len))
         return rop_str
 
+    def payload_bv(self):
+
+        test_state = self._blank_state.copy()
+
+        for value, _ in reversed(self._values):
+            test_state.stack_push(value)
+
+        sp = test_state.regs.sp
+        return test_state.memory.load(sp, self.payload_len)
+
     def print_payload_code(self, constraints=None, print_instructions=True):
         """
         :param print_instructions: prints the instructions that the rop gadgets use
