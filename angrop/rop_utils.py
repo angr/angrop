@@ -166,12 +166,13 @@ def make_initial_state(project, stack_length):
                                   simuvex.o.TRACK_JMP_ACTIONS, simuvex.o.TRACK_CONSTRAINT_ACTIONS})
     symbolic_stack = initial_state.se.BVS("symbolic_stack", project.arch.bits*stack_length)
     initial_state.mem[initial_state.regs.sp:] = symbolic_stack
-    initial_state.regs.bp = initial_state.regs.sp + 20*initial_state.arch.bits
+    if initial_state.arch.bp_offset != initial_state.arch.sp_offset:
+        initial_state.regs.bp = initial_state.regs.sp + 20*initial_state.arch.bytes
     initial_state.se._solver.timeout = 500  # only solve for half a second at most
     return initial_state
 
 
-def make_symbolic_state(project, reg_list, stack_length=200):
+def make_symbolic_state(project, reg_list, stack_length=80):
     """
     converts an input state into a state with symbolic registers
     :return: the symbolic state
