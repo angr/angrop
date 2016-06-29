@@ -56,7 +56,7 @@ class ChainBuilder(object):
         # filtered gadget cache
         self._filtered_reg_gadgets = None
 
-    def set_regs(self, modifiable_memory_range=None, use_partial_controllers=False, rebase_regs=None, add_state=None, **registers):
+    def set_regs(self, modifiable_memory_range=None, use_partial_controllers=False, rebase_regs=None, **registers):
         """
         :param registers: dict of registers to values
         :return: a chain which will set the registers to the requested values
@@ -76,7 +76,7 @@ class ChainBuilder(object):
             raise RopException("Couldn't set registers :(")
 
         return self._build_reg_setting_chain(gadgets, modifiable_memory_range,
-                                             registers, best_stack_change, rebase_regs, add_state)
+                                             registers, best_stack_change, rebase_regs)
 
     # TODO handle mess ups by _find_reg_setting_gadgets and see if we can set a register in a syscall preamble
     # or if a register value is explicitly set to just the right value
@@ -696,7 +696,7 @@ class ChainBuilder(object):
                         addrs.append(loc + min_addr)
         return sorted(addrs)
 
-    def _build_reg_setting_chain(self, gadgets, modifiable_memory_range, register_dict, stack_change, rebase_regs, add_state):
+    def _build_reg_setting_chain(self, gadgets, modifiable_memory_range, register_dict, stack_change, rebase_regs):
         test_symbolic_state = rop_utils.make_symbolic_state(self.project, self._reg_list)
         addrs = [g.addr for g in gadgets]
         addrs.append(test_symbolic_state.se.BVS("next_addr", self.project.arch.bits))
@@ -732,8 +732,6 @@ class ChainBuilder(object):
         rebase_state = test_symbolic_state.copy()
         for r, v in register_dict.items():
             test_symbolic_state.add_constraints(state.registers.load(r) == v)
-            if add_state is not None:
-                add_state.add_constraints(state.registers.load(r) == v)
 
         if len(rebase_regs) > 0:
             for r, v in register_dict.items():
