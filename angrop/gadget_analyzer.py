@@ -22,7 +22,7 @@ class GadgetAnalyzer(object):
         self._max_sym_mem_accesses = max_sym_mem_accesses
 
         # initial state that others are based off
-        self._stack_length = 200
+        self._stack_length = 80
         self._stack_length_bytes = self._stack_length * self.project.arch.bits / 8
         self._test_symbolic_state = rop_utils.make_symbolic_state(self.project, reg_list)
         self._stack_pointer_value = self._test_symbolic_state.se.any_int(self._test_symbolic_state.regs.sp)
