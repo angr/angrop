@@ -126,7 +126,7 @@ def test_rop_i386_cgc():
     rop.find_gadgets_single_threaded()
 
     # check gadgets
-    test_gadgets, _ = pickle.load(open(os.path.join(test_data_location, "0b32aa01_01_gadgets"), "rb"))
+    test_gadgets, _, _ = pickle.load(open(os.path.join(test_data_location, "0b32aa01_01_gadgets"), "rb"))
     compare_gadgets(rop.gadgets, test_gadgets)
 
     # test creating a rop chain
