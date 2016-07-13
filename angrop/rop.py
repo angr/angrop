@@ -349,7 +349,17 @@ class ROP(angr.Analysis):
                             addrs.append(loc + min_addr)
         except KeyError:
             l.warning("Key error with segment analysis")
-            raise RopException("key error")
+            # try reading from state
+            state = self.project.factory.entry_state()
+            for segment in self.project.loader.main_bin.segments:
+                if segment.is_executable:
+                    min_addr = segment.min_addr + self.project.loader.main_bin.rebase_addr
+                    num_bytes = segment.max_addr-segment.min_addr
+
+                    read_bytes = state.se.any_str(state.memory.load(min_addr, num_bytes))
+                    for ret_instruction in ret_instructions:
+                        for loc in _str_find_all(read_bytes, ret_instruction):
+                            addrs.append(loc + min_addr)
 
         return sorted(addrs)
 
