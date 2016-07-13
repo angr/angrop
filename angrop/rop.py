@@ -183,10 +183,17 @@ class ROP(angr.Analysis):
 
     def save_gadgets(self, path):
         with open(path, "wb") as f:
-            pickle.dump((self.gadgets, self.stack_pivots, self._duplicates), f)
+            pickle.dump(self._get_cache_tuple(), f)
 
     def load_gadgets(self, path):
-        self.gadgets, self.stack_pivots, self._duplicates = pickle.load(open(path, "rb"))
+        cache_tuple = pickle.load(open(path, "rb"))
+        self._load_cache_tuple(cache_tuple)
+
+    def _get_cache_tuple(self):
+        return self.gadgets, self.stack_pivots, self._duplicates
+
+    def _load_cache_tuple(self, cache_tuple):
+        self.gadgets, self.stack_pivots, self._duplicates = cache_tuple
         self._reload_chain_funcs()
 
     def _reload_chain_funcs(self):
