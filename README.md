@@ -72,7 +72,7 @@ Gadgets contain a lot of information:
 
 For example look at how the following code translates into a gadget
 
-```
+```asm
    0x403be4:	and    ebp,edi
    0x403be6:	mov    QWORD PTR [rbx+0x90],rax
    0x403bed:	xor    eax,eax
