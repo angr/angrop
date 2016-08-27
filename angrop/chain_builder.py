@@ -26,13 +26,14 @@ def _str_find_all(a_str, sub):
 
 
 class ChainBuilder(object):
-    def __init__(self, project, gadgets, duplicates, reg_list, base_pointer):
+    def __init__(self, project, gadgets, duplicates, reg_list, base_pointer, badbytes):
         self.project = project
         self._gadgets = gadgets
         # TODO get duplicates differently?
         self._duplicates = duplicates
         self._reg_list = reg_list
         self._base_pointer = base_pointer
+        self.badbytes = badbytes
 
         self._syscall_instruction = None
         if self.project.arch.linux_name == "x86_64":
@@ -171,7 +172,6 @@ class ChainBuilder(object):
         # create a dict of bytes per write to gadgets
         # assume we need intersection of addr_dependencies and data_dependencies to be 0
         # TODO could allow mem_reads as long as we control the address?
-
         possible_gadgets = set()
         for g in self._gadgets:
             if len(g.mem_reads) + len(g.mem_changes) > 0 or len(g.mem_writes) != 1:
@@ -179,6 +179,8 @@ class ChainBuilder(object):
             if g.bp_moves_to_sp:
                 continue
             if g.stack_change <= 0:
+                continue
+            if self._containsbadbytes(g):
                 continue
             for m_access in g.mem_writes:
                 if len(m_access.addr_controllers) > 0 and len(m_access.data_controllers) > 0 and \
@@ -277,6 +279,8 @@ class ChainBuilder(object):
                 continue
             if g.stack_change <= 0:
                 continue
+            if self._containsbadbytes(g):
+                continue
             for m_access in g.mem_changes:
                 if len(m_access.addr_controllers) > 0 and len(m_access.data_controllers) > 0 and \
                         len(set(m_access.addr_controllers) & set(m_access.data_controllers)) == 0 and \
@@ -328,6 +332,8 @@ class ChainBuilder(object):
             if g.bp_moves_to_sp:
                 continue
             if g.stack_change <= 0:
+                continue
+            if self._containsbadbytes(g):
                 continue
             for m_access in g.mem_changes:
                 if len(m_access.addr_controllers) > 0 and len(m_access.data_controllers) > 0 and \
@@ -455,6 +461,8 @@ class ChainBuilder(object):
         stack_cleaner = None
         if len(stack_arguments) > 0:
             for g in self._gadgets:
+                if self._containsbadbytes(g):
+                    continue
                 if len(g.mem_reads) > 0 or len(g.mem_writes) > 0 or len(g.mem_changes) > 0:
                     continue
                 if g.stack_change >= bytes_per_arg * (len(stack_arguments) + 1):
@@ -555,6 +563,8 @@ class ChainBuilder(object):
     def _get_sufficient_partial_controllers(self, registers):
         sufficient_partial_controllers = defaultdict(set)
         for g in self._gadgets:
+            if self._containsbadbytes(g):
+                continue
             for reg in g.changed_regs:
                 if reg in registers:
                     if self._check_if_sufficient_partial_control(g, reg, registers[reg]):
@@ -625,6 +635,8 @@ class ChainBuilder(object):
         # start with a ret instruction
         ret_addr = None
         for g in self._gadgets:
+            if self._containsbadbytes(g):
+                continue
             if len(g.changed_regs) == 0 and len(g.mem_writes) == 0 and \
                     len(g.mem_reads) == 0 and len(g.mem_changes) == 0 and \
                     g.stack_change == self.project.arch.bits/8:
@@ -669,7 +681,7 @@ class ChainBuilder(object):
             for i, addr in enumerate(dups):
                 if i != 0:
                     to_remove.add(addr)
-        gadgets = [g for g in gadgets if g.addr not in to_remove]
+        gadgets = [g for g in gadgets if g.addr not in to_remove and not self._containsbadbytes(g) ]
         gadgets = [g for g in gadgets if len(g.popped_regs) != 0 or len(g.reg_controllers) != 0]
         gadget_dict = defaultdict(set)
         for g in gadgets:
@@ -849,6 +861,8 @@ class ChainBuilder(object):
                     continue
                 # ignore gadgets which don't have a positive stack change
                 if g.stack_change <= 0:
+                    continue
+                if self._containsbadbytes(g):
                     continue
 
                 stack_change = data[regs][1]
@@ -1050,6 +1064,25 @@ class ChainBuilder(object):
             if len(str_bytes & set(bad_bytes)) == 0:
                 filtered.append(g)
         return filtered
+
+    def _set_badbytes(self, badbytes):
+        self.badbytes = badbytes;
+
+    # inspired by ropper
+    def _containsbadbytes(self, gadget):
+        n_bytes = self.project.arch.bits/8
+        addr = gadget.addr
+
+        for b in self.badbytes:
+            address = addr
+            if type(b) == str:
+                b = ord(b)
+
+            for i in range(n_bytes):
+                if (address & 0xff) == b:
+                    return True
+                address >>= 8
+
 
     # should also be able to do execve by providing writable memory
     # todo pivot stack

@@ -91,6 +91,8 @@ class ROP(angr.Analysis):
         self.stack_pivots = []
         self._duplicates = []
 
+        self.badbytes = []
+
         num_to_check = len(list(self._addresses_to_check()))
         # fast mode
         if fast_mode is None:
@@ -189,6 +191,17 @@ class ROP(angr.Analysis):
         cache_tuple = pickle.load(open(path, "rb"))
         self._load_cache_tuple(cache_tuple)
 
+    def set_badbytes(self, badbytes):
+        if not isinstance(badbytes, list):
+            print "Require a list: [0x00, 0x09]"
+            return
+        self.badbytes = badbytes
+        if len(self.gadgets) > 0:
+            self.chain_builder._set_badbytes(self.badbytes)
+
+    def get_badbytes(self):
+        return self.badbytes
+
     def _get_cache_tuple(self):
         return self.gadgets, self.stack_pivots, self._duplicates
 
@@ -208,7 +221,7 @@ class ROP(angr.Analysis):
             return self._chain_builder
         elif len(self.gadgets) > 0:
             self._chain_builder = chain_builder.ChainBuilder(self.project, self.gadgets, self._duplicates,
-                                                             self._reg_list, self._base_pointer)
+                                                             self._reg_list, self._base_pointer, self.badbytes)
             return self._chain_builder
         else:
             raise Exception("No gadgets, call find_gadgets() or load_gadgets() first")
