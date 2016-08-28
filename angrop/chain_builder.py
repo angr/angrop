@@ -163,12 +163,18 @@ class ChainBuilder(object):
 
         return chain
 
-    def write_to_mem(self, addr, string_data):
+    def write_to_mem(self, addr, string_data, fill_byte="\xff"):
         """
         :param addr: address to store the string
         :param string_data: string to store
+        :param fill_byte: a byte to use to fill up the string if necessary
         :return: a rop chain
         """
+
+        if not (isinstance(fill_byte, basestring) and len(fill_byte) == 1):
+            print "fill_byte is not a one byte string, aborting"
+            return
+
         # create a dict of bytes per write to gadgets
         # assume we need intersection of addr_dependencies and data_dependencies to be 0
         # TODO could allow mem_reads as long as we control the address?
@@ -250,7 +256,7 @@ class ChainBuilder(object):
             to_write = string_data[i: i+bytes_per_write]
             # pad if needed
             if len(to_write) < bytes_per_write:
-                to_write += "\xff" * (bytes_per_write-len(to_write))
+                to_write += fill_byte * (bytes_per_write-len(to_write))
             chain = chain + self._write_to_mem_with_gadget(best_gadget, addr + i, to_write, use_partial_controllers)
 
         return chain
