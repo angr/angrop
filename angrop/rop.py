@@ -3,6 +3,7 @@ import simuvex
 
 import chain_builder
 import gadget_analyzer
+import common
 
 import pickle
 import inspect
@@ -15,16 +16,6 @@ from .rop_gadget import RopGadget, StackPivot
 from multiprocessing import Pool
 
 l = logging.getLogger('angrop.rop')
-
-
-def _str_find_all(a_str, sub):
-    start = 0
-    while True:
-        start = a_str.find(sub, start)
-        if start == -1:
-            return
-        yield start
-        start += 1
 
 
 _global_gadget_analyzer = None
@@ -395,7 +386,7 @@ class ROP(angr.Analysis):
                     num_bytes = segment.max_addr-segment.min_addr
                     read_bytes = "".join(self.project.loader.memory.read_bytes(min_addr, num_bytes))
                     for ret_instruction in ret_instructions:
-                        for loc in _str_find_all(read_bytes, ret_instruction):
+                        for loc in common.str_find_all(read_bytes, ret_instruction):
                             addrs.append(loc + min_addr)
         except KeyError:
             l.warning("Key error with segment analysis")
@@ -408,7 +399,7 @@ class ROP(angr.Analysis):
 
                     read_bytes = state.se.any_str(state.memory.load(min_addr, num_bytes))
                     for ret_instruction in ret_instructions:
-                        for loc in _str_find_all(read_bytes, ret_instruction):
+                        for loc in common.str_find_all(read_bytes, ret_instruction):
                             addrs.append(loc + min_addr)
 
         return sorted(addrs)

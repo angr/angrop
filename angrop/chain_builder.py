@@ -3,6 +3,7 @@ import struct
 import simuvex
 
 import rop_utils
+import common
 
 from errors import RopException
 from rop_chain import RopChain
@@ -13,16 +14,6 @@ import logging
 from collections import defaultdict
 
 l = logging.getLogger("angrop.chain_builder")
-
-
-def _str_find_all(a_str, sub):
-    start = 0
-    while True:
-        start = a_str.find(sub, start)
-        if start == -1:
-            return
-        yield start
-        start += 1
 
 
 class ChainBuilder(object):
@@ -726,7 +717,7 @@ class ChainBuilder(object):
                 num_bytes = segment.max_addr-segment.min_addr
                 read_bytes = "".join(self.project.loader.memory.read_bytes(min_addr, num_bytes))
                 for syscall_instruction in self._syscall_instructions:
-                    for loc in _str_find_all(read_bytes, syscall_instruction):
+                    for loc in common.str_find_all(read_bytes, syscall_instruction):
                         addrs.append(loc + min_addr)
         return sorted(addrs)
 
