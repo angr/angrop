@@ -26,7 +26,22 @@ def _str_find_all(a_str, sub):
 
 
 class ChainBuilder(object):
+    """
+    This class provides functions to generate common ropchains based on existing gadgets.
+    """
+
     def __init__(self, project, gadgets, duplicates, reg_list, base_pointer, badbytes, roparg_filler):
+        """
+        Initializes the chain builder.
+
+        :param project: Angr project
+        :param gadgets: a list of RopGadget gadgets
+        :param duplicates:
+        :param reg_list: A list of multipurpose registers
+        :param base_pointer: The name ("offset") for base pointer register
+        :param badbytes: A list with badbytes, which we should avaoid
+        :param roparg_filler: An integer used when popping superfluous registers
+        """
         self.project = project
         self._gadgets = gadgets
         # TODO get duplicates differently?
@@ -56,7 +71,6 @@ class ChainBuilder(object):
 
         # filtered gadget cache
         self._filtered_reg_gadgets = None
-
 
     def set_regs(self, modifiable_memory_range=None, use_partial_controllers=False, rebase_regs=None, **registers):
         """

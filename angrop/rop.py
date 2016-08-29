@@ -46,6 +46,10 @@ class ROP(angr.Analysis):
     """
     This class is a semantic aware rop gadget finder
     It is a work in progress, so don't be surprised if something doesn't quite work
+
+    After calling find_gadgets(), find_gadgets_single_threaded() or load_gadgets(),
+    self.gadgets, self.stack_pivots, and self._duplicates is populated.
+    Additionally, all public methods from ChainBuilder are copied into ROP.
     """
 
     def __init__(self, only_check_near_rets=True, max_block_size=20, max_sym_mem_accesses=4, fast_mode=None):
@@ -69,6 +73,7 @@ class ROP(angr.Analysis):
         self._ip_reg = a.register_names[a.ip_offset]
         self._base_pointer = a.register_names[a.bp_offset]
 
+        # get list of multipurpose registers
         self._reg_list = a.default_symbolic_registers
         # prune the register list of the instruction pointer and the stack pointer
         self._reg_list = filter(lambda r: r != self._sp_reg, self._reg_list)
@@ -77,11 +82,12 @@ class ROP(angr.Analysis):
         # get ret locations
         self._ret_locations = self._get_ret_locations()
 
-        # list of gadgets
+        # list of RopGadget's
         self.gadgets = []
         self.stack_pivots = []
         self._duplicates = []
 
+        # RopChain settings
         self.badbytes = []
         self.roparg_filler = 0x0
 
@@ -117,6 +123,7 @@ class ROP(angr.Analysis):
         """
         Finds all the gadgets in the binary by calling analyze_gadget on every address near a ret.
         Saves gadgets in self.gadgets
+        Saves stack pivots in self.stack_pivots
         :param processes: number of processes to use
         """
         self.gadgets = []
@@ -148,8 +155,9 @@ class ROP(angr.Analysis):
 
     def find_gadgets_single_threaded(self):
         """
-        Finds all the gadgets in the binary by calling analyze_gadget on every address near a ret.
+        Finds all the gadgets in the binary by calling analyze_gadget on every address near a ret
         Saves gadgets in self.gadgets
+        Saves stack pivots in self.stack_pivots
         """
         self.gadgets = []
 
@@ -176,14 +184,26 @@ class ROP(angr.Analysis):
         self._reload_chain_funcs()
 
     def save_gadgets(self, path):
+        """
+        Saves gadgets in a file.
+        :param path: A path for a file where the gadgets are stored
+        """
         with open(path, "wb") as f:
             pickle.dump(self._get_cache_tuple(), f)
 
     def load_gadgets(self, path):
+        """
+        Loads gadgets from a file.
+        :param path: A path for a file where the gadgets are loaded
+        """
         cache_tuple = pickle.load(open(path, "rb"))
         self._load_cache_tuple(cache_tuple)
 
     def set_badbytes(self, badbytes):
+        """
+        Define badbytes which should not appear in the generated ropchain.
+        :param badbytes: a list of 8 bit integers
+        """
         if not isinstance(badbytes, list):
             print "Require a list, e.g: [0x00, 0x09]"
             return
@@ -192,6 +212,11 @@ class ROP(angr.Analysis):
             self.chain_builder._set_badbytes(self.badbytes)
 
     def set_roparg_filler(self, roparg_filler):
+        """
+        Define rop gadget filler argument. These will be used if the rop chain needs to pop
+        useless registers.
+        :param roparg_filler: A integer which is used when popping useless register.
+        """
         if not isinstance(roparg_filler, int):
             print "Require an integer, e.g: 0x41414141"
             return
@@ -201,6 +226,10 @@ class ROP(angr.Analysis):
             self.chain_builder._set_roparg_filler(self.roparg_filler)
 
     def get_badbytes(self):
+        """
+        Returns list of badbytes.
+        :returns the list of badbytes
+        """
         return self.badbytes
 
     def _get_cache_tuple(self):
