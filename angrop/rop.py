@@ -74,15 +74,6 @@ class ROP(angr.Analysis):
         self._reg_list = filter(lambda r: r != self._sp_reg, self._reg_list)
         self._reg_list = filter(lambda r: r != self._ip_reg, self._reg_list)
 
-        self._execve_syscall = None
-        if self.project.loader.main_bin.os == "unix":
-            if self.project.arch.bits == 64:
-                self._execve_syscall = 59
-            elif self.project.arch.bits == 32:
-                self._execve_syscall = 11
-            else:
-                raise RopException("unknown unix platform")
-
         # get ret locations
         self._ret_locations = self._get_ret_locations()
 

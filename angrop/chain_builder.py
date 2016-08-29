@@ -43,7 +43,6 @@ class ChainBuilder(object):
             self._syscall_instructions = {"\xcd\x80"}
 
         self._execve_syscall = None
-        # TODO this code is replicated in a couple of places...
         if self.project.loader.main_bin.os == "unix":
             if self.project.arch.bits == 64:
                 self._execve_syscall = 59
@@ -57,6 +56,7 @@ class ChainBuilder(object):
 
         # filtered gadget cache
         self._filtered_reg_gadgets = None
+
 
     def set_regs(self, modifiable_memory_range=None, use_partial_controllers=False, rebase_regs=None, **registers):
         """
@@ -72,6 +72,7 @@ class ChainBuilder(object):
 
         if rebase_regs is None:
             rebase_regs = set()
+
         gadgets, best_stack_change, _ = self._find_reg_setting_gadgets(modifiable_memory_range,
                                                                        use_partial_controllers, **registers)
         if gadgets is None:
