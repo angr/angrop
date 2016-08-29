@@ -92,6 +92,7 @@ class ROP(angr.Analysis):
         self._duplicates = []
 
         self.badbytes = []
+        self.roparg_filler = 0x0
 
         num_to_check = len(list(self._addresses_to_check()))
         # fast mode
@@ -193,11 +194,20 @@ class ROP(angr.Analysis):
 
     def set_badbytes(self, badbytes):
         if not isinstance(badbytes, list):
-            print "Require a list: [0x00, 0x09]"
+            print "Require a list, e.g: [0x00, 0x09]"
             return
         self.badbytes = badbytes
         if len(self.gadgets) > 0:
             self.chain_builder._set_badbytes(self.badbytes)
+
+    def set_roparg_filler(self, roparg_filler):
+        if not isinstance(roparg_filler, int):
+            print "Require an integer, e.g: 0x41414141"
+            return
+
+        self.roparg_filler = roparg_filler
+        if len(self.gadgets) > 0:
+            self.chain_builder._set_roparg_filler(self.roparg_filler)
 
     def get_badbytes(self):
         return self.badbytes
@@ -221,7 +231,7 @@ class ROP(angr.Analysis):
             return self._chain_builder
         elif len(self.gadgets) > 0:
             self._chain_builder = chain_builder.ChainBuilder(self.project, self.gadgets, self._duplicates,
-                                                             self._reg_list, self._base_pointer, self.badbytes)
+                                                             self._reg_list, self._base_pointer, self.badbytes, self.roparg_filler)
             return self._chain_builder
         else:
             raise Exception("No gadgets, call find_gadgets() or load_gadgets() first")

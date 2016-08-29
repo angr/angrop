@@ -26,7 +26,7 @@ def _str_find_all(a_str, sub):
 
 
 class ChainBuilder(object):
-    def __init__(self, project, gadgets, duplicates, reg_list, base_pointer, badbytes):
+    def __init__(self, project, gadgets, duplicates, reg_list, base_pointer, badbytes, roparg_filler):
         self.project = project
         self._gadgets = gadgets
         # TODO get duplicates differently?
@@ -34,6 +34,7 @@ class ChainBuilder(object):
         self._reg_list = reg_list
         self._base_pointer = base_pointer
         self.badbytes = badbytes
+        self.roparg_filler = roparg_filler
 
         self._syscall_instruction = None
         if self.project.arch.linux_name == "x86_64":
@@ -158,7 +159,7 @@ class ChainBuilder(object):
             try:
                 val = stack_arguments.pop()
             except IndexError:
-                val = 0x0
+                val = self.roparg_filler
             chain.add_value(val, needs_rebase=False)
 
         return chain
@@ -484,7 +485,7 @@ class ChainBuilder(object):
             chain.add_value(arg, needs_rebase=False)
         if stack_cleaner is not None:
             for _ in range(stack_cleaner.stack_change / bytes_per_arg - len(stack_arguments) - 1):
-                chain.add_value(0, needs_rebase=False)
+                chain.add_value(self.roparg_filler, needs_rebase=False)
 
         return chain
 
@@ -781,7 +782,7 @@ class ChainBuilder(object):
                     res.add_value(val, needs_rebase=True)
                     gadget_addrs = gadget_addrs[1:]
                 elif val == val2:
-                    res.add_value(val, needs_rebase=False)
+                    res.add_value(self.roparg_filler, needs_rebase=False)
                 else:
                     raise RopException("Rebase Failed")
             else:
@@ -789,7 +790,11 @@ class ChainBuilder(object):
                     res.add_value(val, needs_rebase=True)
                     gadget_addrs = gadget_addrs[1:]
                 else:
-                    res.add_value(sym_word, needs_rebase=False)
+                    if val == 0:
+                        res.add_value(self.roparg_filler, needs_rebase=False)
+                    else:
+                        res.add_value(sym_word, needs_rebase=False)
+
 
         if len(gadget_addrs) > 0:
             raise RopException("Didnt find all gadget addresses, something must've broke")
@@ -981,7 +986,7 @@ class ChainBuilder(object):
         bytes_per_pop = self.project.arch.bits / 8
         chain.add_value(gadget.addr, needs_rebase=True)
         for _ in range(gadget.stack_change / bytes_per_pop - 1):
-            chain.add_value(0, needs_rebase=False)
+            chain.add_value(self.roparg_filler, needs_rebase=False)
         return chain
 
     def _change_mem_with_gadget(self, gadget, addr, data_size, final_val=None, difference=None):
@@ -1056,7 +1061,7 @@ class ChainBuilder(object):
         bytes_per_pop = self.project.arch.bits / 8
         chain.add_value(gadget.addr, needs_rebase=True)
         for _ in range(gadget.stack_change / bytes_per_pop - 1):
-            chain.add_value(0, needs_rebase=False)
+            chain.add_value(self.roparg_filler, needs_rebase=False)
         return chain
 
     # todo what to do with this
@@ -1073,6 +1078,9 @@ class ChainBuilder(object):
 
     def _set_badbytes(self, badbytes):
         self.badbytes = badbytes;
+
+    def _set_roparg_filler(self, roparg_filler):
+        self.roparg_filler = roparg_filler
 
     # inspired by ropper
     def _containsbadbytes(self, gadget):
