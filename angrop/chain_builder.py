@@ -331,7 +331,7 @@ class ChainBuilder(object):
     def write_to_mem_v2(self, addr, data):
         """
         :param addr: address to store the string
-        :param string_data: string to store
+        :param data: string to store
         :return: a rop chain
         """
         # assume we need intersection of addr_dependencies and data_dependencies to be 0
@@ -694,7 +694,7 @@ class ChainBuilder(object):
             for i, addr in enumerate(dups):
                 if i != 0:
                     to_remove.add(addr)
-        gadgets = [g for g in gadgets if g.addr not in to_remove and not self._containsbadbytes(g) ]
+        gadgets = [g for g in gadgets if g.addr not in to_remove and not self._containsbadbytes(g)]
         gadgets = [g for g in gadgets if len(g.popped_regs) != 0 or len(g.reg_controllers) != 0]
         gadget_dict = defaultdict(set)
         for g in gadgets:
@@ -1083,7 +1083,7 @@ class ChainBuilder(object):
         return filtered
 
     def _set_badbytes(self, badbytes):
-        self.badbytes = badbytes;
+        self.badbytes = badbytes
 
     def _set_roparg_filler(self, roparg_filler):
         self.roparg_filler = roparg_filler
