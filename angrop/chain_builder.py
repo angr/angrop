@@ -3,6 +3,7 @@ import struct
 import simuvex
 
 import rop_utils
+import common
 
 from errors import RopException
 from rop_chain import RopChain
@@ -15,24 +16,31 @@ from collections import defaultdict
 l = logging.getLogger("angrop.chain_builder")
 
 
-def _str_find_all(a_str, sub):
-    start = 0
-    while True:
-        start = a_str.find(sub, start)
-        if start == -1:
-            return
-        yield start
-        start += 1
-
-
 class ChainBuilder(object):
-    def __init__(self, project, gadgets, duplicates, reg_list, base_pointer):
+    """
+    This class provides functions to generate common ropchains based on existing gadgets.
+    """
+
+    def __init__(self, project, gadgets, duplicates, reg_list, base_pointer, badbytes, roparg_filler):
+        """
+        Initializes the chain builder.
+
+        :param project: Angr project
+        :param gadgets: a list of RopGadget gadgets
+        :param duplicates:
+        :param reg_list: A list of multipurpose registers
+        :param base_pointer: The name ("offset") for base pointer register
+        :param badbytes: A list with badbytes, which we should avaoid
+        :param roparg_filler: An integer used when popping superfluous registers
+        """
         self.project = project
         self._gadgets = gadgets
         # TODO get duplicates differently?
         self._duplicates = duplicates
         self._reg_list = reg_list
         self._base_pointer = base_pointer
+        self.badbytes = badbytes
+        self.roparg_filler = roparg_filler
 
         self._syscall_instruction = None
         if self.project.arch.linux_name == "x86_64":
@@ -41,7 +49,6 @@ class ChainBuilder(object):
             self._syscall_instructions = {"\xcd\x80"}
 
         self._execve_syscall = None
-        # TODO this code is replicated in a couple of places...
         if self.project.loader.main_bin.os == "unix":
             if self.project.arch.bits == 64:
                 self._execve_syscall = 59
@@ -70,6 +77,7 @@ class ChainBuilder(object):
 
         if rebase_regs is None:
             rebase_regs = set()
+
         gadgets, best_stack_change, _ = self._find_reg_setting_gadgets(modifiable_memory_range,
                                                                        use_partial_controllers, **registers)
         if gadgets is None:
@@ -157,21 +165,26 @@ class ChainBuilder(object):
             try:
                 val = stack_arguments.pop()
             except IndexError:
-                val = 0x0
+                val = self.roparg_filler
             chain.add_value(val, needs_rebase=False)
 
         return chain
 
-    def write_to_mem(self, addr, string_data):
+    def write_to_mem(self, addr, string_data, fill_byte="\xff"):
         """
         :param addr: address to store the string
         :param string_data: string to store
+        :param fill_byte: a byte to use to fill up the string if necessary
         :return: a rop chain
         """
+
+        if not (isinstance(fill_byte, basestring) and len(fill_byte) == 1):
+            print "fill_byte is not a one byte string, aborting"
+            return
+
         # create a dict of bytes per write to gadgets
         # assume we need intersection of addr_dependencies and data_dependencies to be 0
         # TODO could allow mem_reads as long as we control the address?
-
         possible_gadgets = set()
         for g in self._gadgets:
             if len(g.mem_reads) + len(g.mem_changes) > 0 or len(g.mem_writes) != 1:
@@ -179,6 +192,8 @@ class ChainBuilder(object):
             if g.bp_moves_to_sp:
                 continue
             if g.stack_change <= 0:
+                continue
+            if self._containsbadbytes(g):
                 continue
             for m_access in g.mem_writes:
                 if len(m_access.addr_controllers) > 0 and len(m_access.data_controllers) > 0 and \
@@ -248,7 +263,7 @@ class ChainBuilder(object):
             to_write = string_data[i: i+bytes_per_write]
             # pad if needed
             if len(to_write) < bytes_per_write:
-                to_write += "\xff" * (bytes_per_write-len(to_write))
+                to_write += fill_byte * (bytes_per_write-len(to_write))
             chain = chain + self._write_to_mem_with_gadget(best_gadget, addr + i, to_write, use_partial_controllers)
 
         return chain
@@ -276,6 +291,8 @@ class ChainBuilder(object):
             if g.bp_moves_to_sp:
                 continue
             if g.stack_change <= 0:
+                continue
+            if self._containsbadbytes(g):
                 continue
             for m_access in g.mem_changes:
                 if len(m_access.addr_controllers) > 0 and len(m_access.data_controllers) > 0 and \
@@ -328,6 +345,8 @@ class ChainBuilder(object):
             if g.bp_moves_to_sp:
                 continue
             if g.stack_change <= 0:
+                continue
+            if self._containsbadbytes(g):
                 continue
             for m_access in g.mem_changes:
                 if len(m_access.addr_controllers) > 0 and len(m_access.data_controllers) > 0 and \
@@ -455,6 +474,8 @@ class ChainBuilder(object):
         stack_cleaner = None
         if len(stack_arguments) > 0:
             for g in self._gadgets:
+                if self._containsbadbytes(g):
+                    continue
                 if len(g.mem_reads) > 0 or len(g.mem_writes) > 0 or len(g.mem_changes) > 0:
                     continue
                 if g.stack_change >= bytes_per_arg * (len(stack_arguments) + 1):
@@ -470,7 +491,7 @@ class ChainBuilder(object):
             chain.add_value(arg, needs_rebase=False)
         if stack_cleaner is not None:
             for _ in range(stack_cleaner.stack_change / bytes_per_arg - len(stack_arguments) - 1):
-                chain.add_value(0, needs_rebase=False)
+                chain.add_value(self.roparg_filler, needs_rebase=False)
 
         return chain
 
@@ -555,6 +576,8 @@ class ChainBuilder(object):
     def _get_sufficient_partial_controllers(self, registers):
         sufficient_partial_controllers = defaultdict(set)
         for g in self._gadgets:
+            if self._containsbadbytes(g):
+                continue
             for reg in g.changed_regs:
                 if reg in registers:
                     if self._check_if_sufficient_partial_control(g, reg, registers[reg]):
@@ -625,6 +648,8 @@ class ChainBuilder(object):
         # start with a ret instruction
         ret_addr = None
         for g in self._gadgets:
+            if self._containsbadbytes(g):
+                continue
             if len(g.changed_regs) == 0 and len(g.mem_writes) == 0 and \
                     len(g.mem_reads) == 0 and len(g.mem_changes) == 0 and \
                     g.stack_change == self.project.arch.bits/8:
@@ -669,7 +694,7 @@ class ChainBuilder(object):
             for i, addr in enumerate(dups):
                 if i != 0:
                     to_remove.add(addr)
-        gadgets = [g for g in gadgets if g.addr not in to_remove]
+        gadgets = [g for g in gadgets if g.addr not in to_remove and not self._containsbadbytes(g) ]
         gadgets = [g for g in gadgets if len(g.popped_regs) != 0 or len(g.reg_controllers) != 0]
         gadget_dict = defaultdict(set)
         for g in gadgets:
@@ -692,7 +717,7 @@ class ChainBuilder(object):
                 num_bytes = segment.max_addr-segment.min_addr
                 read_bytes = "".join(self.project.loader.memory.read_bytes(min_addr, num_bytes))
                 for syscall_instruction in self._syscall_instructions:
-                    for loc in _str_find_all(read_bytes, syscall_instruction):
+                    for loc in common.str_find_all(read_bytes, syscall_instruction):
                         addrs.append(loc + min_addr)
         return sorted(addrs)
 
@@ -763,7 +788,7 @@ class ChainBuilder(object):
                     res.add_value(val, needs_rebase=True)
                     gadget_addrs = gadget_addrs[1:]
                 elif val == val2:
-                    res.add_value(val, needs_rebase=False)
+                    res.add_value(self.roparg_filler, needs_rebase=False)
                 else:
                     raise RopException("Rebase Failed")
             else:
@@ -771,7 +796,11 @@ class ChainBuilder(object):
                     res.add_value(val, needs_rebase=True)
                     gadget_addrs = gadget_addrs[1:]
                 else:
-                    res.add_value(sym_word, needs_rebase=False)
+                    if val == 0:
+                        res.add_value(self.roparg_filler, needs_rebase=False)
+                    else:
+                        res.add_value(sym_word, needs_rebase=False)
+
 
         if len(gadget_addrs) > 0:
             raise RopException("Didnt find all gadget addresses, something must've broke")
@@ -849,6 +878,8 @@ class ChainBuilder(object):
                     continue
                 # ignore gadgets which don't have a positive stack change
                 if g.stack_change <= 0:
+                    continue
+                if self._containsbadbytes(g):
                     continue
 
                 stack_change = data[regs][1]
@@ -961,7 +992,7 @@ class ChainBuilder(object):
         bytes_per_pop = self.project.arch.bits / 8
         chain.add_value(gadget.addr, needs_rebase=True)
         for _ in range(gadget.stack_change / bytes_per_pop - 1):
-            chain.add_value(0, needs_rebase=False)
+            chain.add_value(self.roparg_filler, needs_rebase=False)
         return chain
 
     def _change_mem_with_gadget(self, gadget, addr, data_size, final_val=None, difference=None):
@@ -1036,7 +1067,7 @@ class ChainBuilder(object):
         bytes_per_pop = self.project.arch.bits / 8
         chain.add_value(gadget.addr, needs_rebase=True)
         for _ in range(gadget.stack_change / bytes_per_pop - 1):
-            chain.add_value(0, needs_rebase=False)
+            chain.add_value(self.roparg_filler, needs_rebase=False)
         return chain
 
     # todo what to do with this
@@ -1050,6 +1081,28 @@ class ChainBuilder(object):
             if len(str_bytes & set(bad_bytes)) == 0:
                 filtered.append(g)
         return filtered
+
+    def _set_badbytes(self, badbytes):
+        self.badbytes = badbytes;
+
+    def _set_roparg_filler(self, roparg_filler):
+        self.roparg_filler = roparg_filler
+
+    # inspired by ropper
+    def _containsbadbytes(self, gadget):
+        n_bytes = self.project.arch.bits/8
+        addr = gadget.addr
+
+        for b in self.badbytes:
+            address = addr
+            if type(b) == str:
+                b = ord(b)
+
+            for i in range(n_bytes):
+                if (address & 0xff) == b:
+                    return True
+                address >>= 8
+
 
     # should also be able to do execve by providing writable memory
     # todo pivot stack
