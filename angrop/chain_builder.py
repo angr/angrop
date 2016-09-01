@@ -1,5 +1,6 @@
 import heapq
 import struct
+import claripy
 import simuvex
 
 import rop_utils
@@ -40,7 +41,7 @@ class ChainBuilder(object):
         self._reg_list = reg_list
         self._base_pointer = base_pointer
         self.badbytes = badbytes
-        self.roparg_filler = roparg_filler
+        self._roparg_filler = roparg_filler
 
         self._syscall_instruction = None
         if self.project.arch.linux_name == "x86_64":
@@ -161,11 +162,11 @@ class ChainBuilder(object):
         bytes_per_pop = self.project.arch.bits / 8
         # reverse stack_arguments list to make pushing them onto the stack easy
         stack_arguments = stack_arguments[::-1]
-        for i in range(max(padding_bytes / bytes_per_pop, len(stack_arguments))):
+        for _ in range(max(padding_bytes / bytes_per_pop, len(stack_arguments))):
             try:
                 val = stack_arguments.pop()
             except IndexError:
-                val = self.roparg_filler
+                val = self._get_fill_val()
             chain.add_value(val, needs_rebase=False)
 
         return chain
@@ -491,7 +492,7 @@ class ChainBuilder(object):
             chain.add_value(arg, needs_rebase=False)
         if stack_cleaner is not None:
             for _ in range(stack_cleaner.stack_change / bytes_per_arg - len(stack_arguments) - 1):
-                chain.add_value(self.roparg_filler, needs_rebase=False)
+                chain.add_value(self._get_fill_val(), needs_rebase=False)
 
         return chain
 
@@ -722,6 +723,14 @@ class ChainBuilder(object):
         return sorted(addrs)
 
     def _build_reg_setting_chain(self, gadgets, modifiable_memory_range, register_dict, stack_change, rebase_regs):
+        """
+        This function figures out the actual values needed in the chain
+        for a particular set of gadgets and register values
+        This is done by stepping a symbolic state through each gadget
+        then constraining the final registers to the values that were requested
+        """
+
+        # create a symbolic state
         test_symbolic_state = rop_utils.make_symbolic_state(self.project, self._reg_list)
         addrs = [g.addr for g in gadgets]
         addrs.append(test_symbolic_state.se.BVS("next_addr", self.project.arch.bits))
@@ -738,7 +747,8 @@ class ChainBuilder(object):
         state.regs.sp += arch_bytes
         state.se._solver.timeout = 5000
 
-        # for each gadget in the address trace, constrain memory addresses and add constraints for the successor
+        # step through each gadget
+        # for each gadget, constrain memory addresses and add constraints for the successor
         for addr in addrs[1:]:
             succ = rop_utils.step_to_unconstrained_successor(self.project, state).state
             state.add_constraints(succ.regs.ip == addr)
@@ -753,11 +763,17 @@ class ChainBuilder(object):
             # get to the unconstrained successor
             state = rop_utils.step_to_unconstrained_successor(self.project, state).state
 
+        # re-adjuest the stack pointer
+        sp = test_symbolic_state.regs.sp
+        sp -= arch_bytes
+        bytes_per_pop = arch_bytes
+
         # constrain the final registers
         rebase_state = test_symbolic_state.copy()
         for r, v in register_dict.items():
             test_symbolic_state.add_constraints(state.registers.load(r) == v)
 
+        # to handle register values that should depend on the binary base address
         if len(rebase_regs) > 0:
             for r, v in register_dict.items():
                 if r in rebase_regs:
@@ -765,18 +781,29 @@ class ChainBuilder(object):
                 else:
                     rebase_state.add_constraints(state.registers.load(r) == v)
 
+        # constrain the "filler" values
+        if self._roparg_filler is not None:
+            for i in range(stack_change / bytes_per_pop):
+                sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
+                                                           endness=self.project.arch.memory_endness)
+                # check if we can constrain val to be the roparg_filler
+                if test_symbolic_state.se.satisfiable((sym_word == self._roparg_filler,)) and \
+                        rebase_state.se.satisfiable((sym_word == self._roparg_filler,)):
+                    # constrain the val to be the roparg_filler
+                    test_symbolic_state.add_constraints(sym_word == self._roparg_filler)
+                    rebase_state.add_constraints(sym_word == self._roparg_filler)
+
+        # create the ropchain
         res = RopChain(self.project, self, state=test_symbolic_state.copy())
         for g in gadgets:
             res.add_gadget(g)
 
-        sp = test_symbolic_state.regs.sp
-        # re-adjuest the stack pointer
-        sp -= arch_bytes
-        bytes_per_pop = arch_bytes
+        # iterate through the stack values that need to be in the chain
         gadget_addrs = [g.addr for g in gadgets]
         for i in range(stack_change / bytes_per_pop):
             sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
                                                        endness=self.project.arch.memory_endness)
+
             val = test_symbolic_state.se.any_int(sym_word)
 
             if len(rebase_regs) > 0:
@@ -788,7 +815,7 @@ class ChainBuilder(object):
                     res.add_value(val, needs_rebase=True)
                     gadget_addrs = gadget_addrs[1:]
                 elif val == val2:
-                    res.add_value(self.roparg_filler, needs_rebase=False)
+                    res.add_value(sym_word, needs_rebase=False)
                 else:
                     raise RopException("Rebase Failed")
             else:
@@ -796,11 +823,7 @@ class ChainBuilder(object):
                     res.add_value(val, needs_rebase=True)
                     gadget_addrs = gadget_addrs[1:]
                 else:
-                    if val == 0:
-                        res.add_value(self.roparg_filler, needs_rebase=False)
-                    else:
-                        res.add_value(sym_word, needs_rebase=False)
-
+                    res.add_value(sym_word, needs_rebase=False)
 
         if len(gadget_addrs) > 0:
             raise RopException("Didnt find all gadget addresses, something must've broke")
@@ -992,7 +1015,7 @@ class ChainBuilder(object):
         bytes_per_pop = self.project.arch.bits / 8
         chain.add_value(gadget.addr, needs_rebase=True)
         for _ in range(gadget.stack_change / bytes_per_pop - 1):
-            chain.add_value(self.roparg_filler, needs_rebase=False)
+            chain.add_value(self._get_fill_val(), needs_rebase=False)
         return chain
 
     def _change_mem_with_gadget(self, gadget, addr, data_size, final_val=None, difference=None):
@@ -1067,26 +1090,20 @@ class ChainBuilder(object):
         bytes_per_pop = self.project.arch.bits / 8
         chain.add_value(gadget.addr, needs_rebase=True)
         for _ in range(gadget.stack_change / bytes_per_pop - 1):
-            chain.add_value(self.roparg_filler, needs_rebase=False)
+            chain.add_value(self._get_fill_val(), needs_rebase=False)
         return chain
 
-    # todo what to do with this
-    def _filter_bytes(self, bad_bytes):
-        n_bytes = self.project.arch.bits/8
-        filtered = list()
-        for g in self._gadgets:
-            hex_str = hex(g.addr).replace("0x", "").replace("L", "")
-
-            str_bytes = set(hex_str.rjust(n_bytes*2, "0").decode("hex"))
-            if len(str_bytes & set(bad_bytes)) == 0:
-                filtered.append(g)
-        return filtered
+    def _get_fill_val(self):
+        if self._roparg_filler is not None:
+            return self._roparg_filler
+        else:
+            return claripy.BVS("filler", self.project.arch.bits)
 
     def _set_badbytes(self, badbytes):
         self.badbytes = badbytes
 
     def _set_roparg_filler(self, roparg_filler):
-        self.roparg_filler = roparg_filler
+        self._roparg_filler = roparg_filler
 
     # inspired by ropper
     def _containsbadbytes(self, gadget):
@@ -1098,7 +1115,7 @@ class ChainBuilder(object):
             if type(b) == str:
                 b = ord(b)
 
-            for i in range(n_bytes):
+            for _ in range(n_bytes):
                 if (address & 0xff) == b:
                     return True
                 address >>= 8

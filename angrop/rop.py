@@ -80,7 +80,7 @@ class ROP(angr.Analysis):
 
         # RopChain settings
         self.badbytes = []
-        self.roparg_filler = 0x0
+        self.roparg_filler = None
 
         num_to_check = len(list(self._addresses_to_check()))
         # fast mode
@@ -206,10 +206,12 @@ class ROP(angr.Analysis):
         """
         Define rop gadget filler argument. These will be used if the rop chain needs to pop
         useless registers.
-        :param roparg_filler: A integer which is used when popping useless register.
+        If roparg_filler is None, symbolic values will be used and the concrete values will
+        be whatever the constraint solver chooses (usually 0).
+        :param roparg_filler: A integer which is used when popping useless register or None.
         """
-        if not isinstance(roparg_filler, int):
-            print "Require an integer, e.g: 0x41414141"
+        if not isinstance(roparg_filler, (int, type(None))):
+            print "Require an integer, e.g: 0x41414141 or None"
             return
 
         self.roparg_filler = roparg_filler
@@ -310,7 +312,7 @@ class ROP(angr.Analysis):
             block_size = (self._max_block_size & ((1 << self.project.arch.bits) - alignment)) + alignment
             slices = [(addr-block_size, addr) for addr in self._ret_locations]
             current_addr = 0
-            for st, ed in slices:
+            for st, _ in slices:
                 current_addr = max(current_addr, st)
                 end_addr = st + block_size + alignment
                 for i in xrange(current_addr, end_addr, alignment):
