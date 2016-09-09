@@ -119,6 +119,11 @@ def test_rop_x86_64():
     nose.tools.assert_equal(result_state.se.any_int(result_state.regs.rbp), 0x1212)
     nose.tools.assert_equal(result_state.se.any_int(result_state.regs.rbx), 0x1234567890123456)
 
+    # test setting the filler value
+    rop.set_roparg_filler(0x4141414141414141)
+    chain = rop.set_regs(rbx=0x121212)
+    nose.tools.assert_equal(chain._concretize_chain_values()[2][0], 0x4141414141414141)
+
 
 def test_rop_i386_cgc():
     b = angr.Project(os.path.join(bin_location, "cgc_scored_event_1/cgc/0b32aa01_01"))
