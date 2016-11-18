@@ -82,6 +82,10 @@ class GadgetAnalyzer(object):
                 l.debug("... uneven sp change")
                 return None
 
+            if this_gadget.stack_change <= 0:
+                l.debug("stack change isn't positive")
+                return None
+
             # if the sp moves to the bp we have to handle it differently
             if not this_gadget.bp_moves_to_sp and self._base_pointer != self._sp_reg:
                 rop_utils.make_reg_symbolic(symbolic_state, self._base_pointer)

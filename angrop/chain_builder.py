@@ -553,6 +553,9 @@ class ChainBuilder(object):
         # make sure the register doesnt depend on itself
         if reg in gadget.reg_dependencies and reg in gadget.reg_dependencies[reg]:
             return False
+        # make sure the gadget doesnt pop bp
+        if gadget.bp_moves_to_sp:
+            return False
 
         # set the register
         state = self._test_symbolic_state.copy()
