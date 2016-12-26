@@ -7,7 +7,6 @@ import pickle
 import logging
 l = logging.getLogger("angrop.tests.test_rop")
 
-bin_location = str(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../binaries-private'))
 public_bin_location = str(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../binaries/tests'))
 test_data_location = str(os.path.dirname(os.path.realpath(__file__)))
 
@@ -126,7 +125,7 @@ def test_rop_x86_64():
 
 
 def test_rop_i386_cgc():
-    b = angr.Project(os.path.join(bin_location, "cgc_scored_event_1/cgc/0b32aa01_01"))
+    b = angr.Project(os.path.join(public_bin_location, "cgc/sc1_0b32aa01_01"))
     rop = b.analyses.ROP()
     rop.find_gadgets_single_threaded()
 
