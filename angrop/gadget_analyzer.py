@@ -499,12 +499,12 @@ class GadgetAnalyzer(object):
         :param symbolic_p: input path to check history of
         """
 
+        syscall_table = symbolic_p._project._simos.syscall_table
+
         for addr in symbolic_p.addr_trace:
-            if not symbolic_p._project.is_hooked(addr):
+            if syscall_table.get_by_addr(addr) is None:
                 continue
-            hooker = symbolic_p._project.hooked_by(addr)
-            if hooker is not None and hooker.IS_SYSCALL:
-                return True
+            return True
 
         return False
 
@@ -538,7 +538,7 @@ class GadgetAnalyzer(object):
             # verify no weird mem accesses
             test_p = self.project.factory.path(symbolic_state.copy())
             # step until we find the pivot action
-            for i in range(symbolic_p.previous_run.irsb.instructions):
+            for i in range(symbolic_p.previous_run.artifacts['irsb'].instructions):
                 test_p.step(num_inst=1)
                 if len(test_p.successors) != 1:
                     return None

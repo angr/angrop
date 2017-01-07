@@ -217,8 +217,8 @@ def step_to_unconstrained_successor(project, state, path=None, max_steps=2, allo
         if len(p.successors) + len(p.unconstrained_successors) != 1:
             raise RopException("Does not get to a single successor")
         if len(p.successors) == 1 and max_steps > 0:
-            if not allow_simprocedures and project.is_hooked(p.successors[0].addr) and \
-                    not project.hooked_by(p.successors[0].addr).IS_SYSCALL:
+            if not allow_simprocedures and project.is_hooked(p.successors[0].addr):
+                # it cannot be a syscall as now syscalls are only put in project._simos.syscall_table
                 raise RopException("Skipping simprocedure")
             return step_to_unconstrained_successor(project, p.successors[0].state, successors[0],
                                                    max_steps-1, allow_simprocedures)
