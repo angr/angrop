@@ -107,8 +107,8 @@ class ROP(angr.Analysis):
         self._chain_builder = None
 
         # silence annoying loggers
-        simuvex.vex.ccall.l.setLevel("CRITICAL")
-        simuvex.vex.expressions.ccall.l.setLevel("CRITICAL")
+        logging.getLogger('simuvex.vex.ccall').setLevel(logging.CRITICAL)
+        logging.getLogger('simuvex.vex.expressions.ccall').setLevel(logging.CRITICAL)
 
     def find_gadgets(self, processes=4):
         """
