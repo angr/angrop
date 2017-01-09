@@ -165,7 +165,7 @@ def make_initial_state(project, stack_length):
     initial_state.options.update({simuvex.o.TRACK_REGISTER_ACTIONS, simuvex.o.TRACK_MEMORY_ACTIONS,
                                   simuvex.o.TRACK_JMP_ACTIONS, simuvex.o.TRACK_CONSTRAINT_ACTIONS})
     symbolic_stack = initial_state.se.BVS("symbolic_stack", project.arch.bits*stack_length)
-    initial_state.mem[initial_state.regs.sp:] = symbolic_stack
+    initial_state.memory.store(initial_state.regs.sp, symbolic_stack)
     if initial_state.arch.bp_offset != initial_state.arch.sp_offset:
         initial_state.regs.bp = initial_state.regs.sp + 20*initial_state.arch.bytes
     initial_state.se._solver.timeout = 500  # only solve for half a second at most
