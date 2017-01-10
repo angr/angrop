@@ -1,5 +1,5 @@
 import angr
-import simuvex
+from simuvex.s_errors import SimEngineError, SimMemoryError
 
 import chain_builder
 import gadget_analyzer
@@ -289,7 +289,7 @@ class ROP(angr.Analysis):
                 if bl.size > self._max_block_size:
                     continue
                 block_data = bl.bytes
-            except angr.AngrTranslationError:
+            except (SimEngineError, SimMemoryError):
                 continue
             if block_data in seen:
                 self._cache[seen[block_data]].add(a)
@@ -366,7 +366,7 @@ class ROP(angr.Analysis):
                                 addrs.append(ret_addr)
                         # save the addresses in the block
                         seen.update(block.instruction_addrs)
-                    except (angr.AngrTranslationError, angr.AngrMemoryError):
+                    except (SimEngineError, SimMemoryError):
                         pass
 
         return sorted(addrs)

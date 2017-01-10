@@ -1,9 +1,11 @@
+
+import logging
+
 import angr
 import pyvex
 import claripy
 import simuvex
-
-import logging
+from simuvex.s_errors import SimEngineError, SimMemoryError
 
 from . import rop_utils
 from .rop_gadget import RopGadget, RopMemAccess, RopRegMove, StackPivot
@@ -197,9 +199,7 @@ class GadgetAnalyzer(object):
                 return True
             # 0 constant jump targets is what we want to find
             return False
-        except angr.AngrMemoryError:
-            return True
-        except angr.AngrTranslationError:
+        except (SimEngineError, SimMemoryError):
             return True
 
     def _satisfies_mem_access_limits(self, symbolic_path):
