@@ -256,7 +256,7 @@ class ROP(angr.Analysis):
         """
         string = bl.bytes
         test_addr = 0x41414140 + addr % 0x10
-        bl2 = self.project.factory.block(test_addr, insn_bytes=string)
+        bl2 = self.project.factory.block(test_addr, byte_string=string)
         try:
             diff_constants = angr.bindiff.differing_constants(bl, bl2)
         except angr.analyses.bindiff.UnmatchedStatementsException:
