@@ -1,5 +1,5 @@
 import angr
-import simuvex
+from simuvex.s_errors import SimEngineError, SimMemoryError
 
 import chain_builder
 import gadget_analyzer
@@ -107,8 +107,8 @@ class ROP(angr.Analysis):
         self._chain_builder = None
 
         # silence annoying loggers
-        simuvex.vex.ccall.l.setLevel("CRITICAL")
-        simuvex.vex.expressions.ccall.l.setLevel("CRITICAL")
+        logging.getLogger('simuvex.vex.ccall').setLevel(logging.CRITICAL)
+        logging.getLogger('simuvex.vex.expressions.ccall').setLevel(logging.CRITICAL)
 
     def find_gadgets(self, processes=4):
         """
@@ -256,7 +256,7 @@ class ROP(angr.Analysis):
         """
         string = bl.bytes
         test_addr = 0x41414140 + addr % 0x10
-        bl2 = self.project.factory.block(test_addr, insn_bytes=string)
+        bl2 = self.project.factory.block(test_addr, byte_string=string)
         try:
             diff_constants = angr.bindiff.differing_constants(bl, bl2)
         except angr.analyses.bindiff.UnmatchedStatementsException:
@@ -289,7 +289,7 @@ class ROP(angr.Analysis):
                 if bl.size > self._max_block_size:
                     continue
                 block_data = bl.bytes
-            except angr.AngrTranslationError:
+            except (SimEngineError, SimMemoryError):
                 continue
             if block_data in seen:
                 self._cache[seen[block_data]].add(a)
@@ -366,7 +366,7 @@ class ROP(angr.Analysis):
                                 addrs.append(ret_addr)
                         # save the addresses in the block
                         seen.update(block.instruction_addrs)
-                    except (angr.AngrTranslationError, angr.AngrMemoryError):
+                    except (SimEngineError, SimMemoryError):
                         pass
 
         return sorted(addrs)
