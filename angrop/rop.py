@@ -109,6 +109,7 @@ class ROP(angr.Analysis):
         # silence annoying loggers
         logging.getLogger('simuvex.vex.ccall').setLevel(logging.CRITICAL)
         logging.getLogger('simuvex.vex.expressions.ccall').setLevel(logging.CRITICAL)
+        logging.getLogger('simuvex.vex.irop').setLevel(logging.CRITICAL)
 
     def find_gadgets(self, processes=4, show_progress=True):
         """
