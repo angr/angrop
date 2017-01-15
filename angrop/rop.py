@@ -110,7 +110,7 @@ class ROP(angr.Analysis):
         logging.getLogger('simuvex.vex.ccall').setLevel(logging.CRITICAL)
         logging.getLogger('simuvex.vex.expressions.ccall').setLevel(logging.CRITICAL)
 
-    def find_gadgets(self, processes=4):
+    def find_gadgets(self, processes=4, show_progress=True):
         """
         Finds all the gadgets in the binary by calling analyze_gadget on every address near a ret.
         Saves gadgets in self.gadgets
@@ -121,7 +121,7 @@ class ROP(angr.Analysis):
 
         pool = Pool(processes=processes, initializer=_set_global_gadget_analyzer, initargs=(self._gadget_analyzer,))
 
-        it = pool.imap_unordered(run_worker, self._addresses_to_check_with_caching(), chunksize=5)
+        it = pool.imap_unordered(run_worker, self._addresses_to_check_with_caching(show_progress), chunksize=5)
         for gadget in it:
             if gadget is not None:
                 if isinstance(gadget, RopGadget):

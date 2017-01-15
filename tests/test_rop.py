@@ -149,7 +149,7 @@ def test_rop_i386_cgc():
 
 
 def test_rop_arm():
-    b = angr.Project(os.path.join(public_bin_location, "armel/manysum"))
+    b = angr.Project(os.path.join(public_bin_location, "armel/manysum"), load_options={"auto_load_libs": False})
     rop = b.analyses.ROP()
     rop.find_gadgets_single_threaded()
 
