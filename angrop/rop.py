@@ -4,6 +4,7 @@ from simuvex.s_errors import SimEngineError, SimMemoryError
 import chain_builder
 import gadget_analyzer
 import common
+import bz2
 
 import pickle
 import inspect
@@ -180,15 +181,25 @@ class ROP(angr.Analysis):
         Saves gadgets in a file.
         :param path: A path for a file where the gadgets are stored
         """
-        with open(path, "wb") as f:
-            pickle.dump(self._get_cache_tuple(), f)
+
+        with bz2.BZ2File(path,"w") as bf:
+            bf.write(pickle.dumps(self._get_cache_tuple()))
 
     def load_gadgets(self, path):
         """
         Loads gadgets from a file.
         :param path: A path for a file where the gadgets are loaded
         """
-        cache_tuple = pickle.load(open(path, "rb"))
+
+        # See if it's in new compressed form
+        try:
+            with bz2.BZ2File(path,"r") as bf:
+                cache_tuple = pickle.loads(bf.read())
+
+        except:
+            # Maybe it's in the old form
+            cache_tuple = pickle.load(open(path, "rb"))
+
         self._load_cache_tuple(cache_tuple)
 
     def set_badbytes(self, badbytes):
