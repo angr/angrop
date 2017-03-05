@@ -153,3 +153,6 @@ class RopChain(object):
         cp._rebase_val = self._rebase_val
 
         return cp
+
+    def __str__(self):
+        return self.payload_str()
