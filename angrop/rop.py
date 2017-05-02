@@ -97,7 +97,7 @@ class ROP(angr.Analysis):
             self._max_sym_mem_accesses = 1
             num_to_check = len(list(self._addresses_to_check()))
 
-        l.info("There are %d addresses withing %d bytes of a ret",
+        l.info("There are %d addresses within %d bytes of a ret",
                num_to_check, self._max_block_size)
 
         # gadget analyzer
