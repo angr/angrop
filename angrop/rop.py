@@ -249,7 +249,7 @@ class ROP(angr.Analysis):
                                                              self.roparg_filler)
             return self._chain_builder
         else:
-            raise Exception("No gadgets, call find_gadgets() or load_gadgets() first")
+            raise Exception("No gadgets available, call find_gadgets() or load_gadgets() if you haven't already.")
 
     def _block_has_ip_relative(self, addr, bl):
         """
