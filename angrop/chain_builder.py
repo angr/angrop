@@ -1,14 +1,14 @@
+import angr
 import heapq
 import struct
 import claripy
-import simuvex
 
-import rop_utils
-import common
+from . import rop_utils
+from . import common
 
-from errors import RopException
-from rop_chain import RopChain
-from rop_gadget import RopGadget
+from .errors import RopException
+from .rop_chain import RopChain
+from .rop_gadget import RopGadget
 
 import types
 import logging
@@ -108,7 +108,7 @@ class ChainBuilder(object):
         # set the system call number
         registers[self.project.arch.register_names[self.project.arch.syscall_num_offset]] = syscall_num
 
-        cc = simuvex.s_cc.SyscallCC[self.project.arch.name]["default"](self.project.arch)
+        cc = angr.SYSCALL_CC[self.project.arch.name]["default"](self.project.arch)
 
         # distinguish register arguments from stack arguments
         register_arguments = arguments
@@ -451,7 +451,7 @@ class ChainBuilder(object):
             else:
                 raise RopException("Symbol passed to func_call does not exist in the binary")
 
-        cc = simuvex.s_cc.DefaultCC[self.project.arch.name](self.project.arch)
+        cc = angr.DEFAULT_CC[self.project.arch.name](self.project.arch)
         # register arguments
         registers = {}
 
@@ -999,7 +999,7 @@ class ChainBuilder(object):
         # constrain the addr
         test_state.add_constraints(the_action.addr.ast == addr)
         pre_gadget_state.add_constraints(the_action.addr.ast == addr)
-        pre_gadget_state.options.discard(simuvex.o.AVOID_MULTIVALUED_WRITES)
+        pre_gadget_state.options.discard(angr.options.AVOID_MULTIVALUED_WRITES)
         succ_p = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
         state = succ_p.state
 
@@ -1067,8 +1067,8 @@ class ChainBuilder(object):
         # constrain the addr
         test_state.add_constraints(the_action.addr.ast == addr)
         pre_gadget_state.add_constraints(the_action.addr.ast == addr)
-        pre_gadget_state.options.discard(simuvex.o.AVOID_MULTIVALUED_WRITES)
-        pre_gadget_state.options.discard(simuvex.o.AVOID_MULTIVALUED_READS)
+        pre_gadget_state.options.discard(angr.options.AVOID_MULTIVALUED_WRITES)
+        pre_gadget_state.options.discard(angr.options.AVOID_MULTIVALUED_READS)
         succ_p = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
         state = succ_p.state
 

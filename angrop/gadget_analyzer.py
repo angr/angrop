@@ -4,8 +4,7 @@ import logging
 import angr
 import pyvex
 import claripy
-import simuvex
-from simuvex.s_errors import SimEngineError, SimMemoryError
+from angr.errors import SimEngineError, SimMemoryError
 
 from . import rop_utils
 from .rop_gadget import RopGadget, RopMemAccess, RopRegMove, StackPivot
@@ -167,16 +166,16 @@ class GadgetAnalyzer(object):
         except pyvex.PyVEXError:
             l.debug("... some pyvex")
             return False
-        except (angr.AngrError, pyvex.PyVEXError, simuvex.SimCCallError):
+        except (angr.AngrError, angr.SimCCallError):
             l.debug("... some other angr error")
             return False
-        except simuvex.SimMemoryLimitError:
-            l.debug("... simuvex memory limit error")
+        except angr.SimMemoryLimitError:
+            l.debug("... angr memory limit error")
             return False
-        except simuvex.UnsupportedIROpError:
-            l.debug("... simuvex unsupported op error")
+        except angr.UnsupportedIROpError:
+            l.debug("... angr unsupported op error")
             return False
-        except simuvex.UnsupportedSyscallError:
+        except angr.UnsupportedSyscallError:
             return False
         except AttributeError:
             return False

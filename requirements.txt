@@ -1,5 +1,4 @@
 progressbar
 pyvex
 claripy
-simuvex
 angr

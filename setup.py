@@ -11,6 +11,5 @@ setup(
         'angr',
         'pyvex',
         'claripy',
-        'simuvex',
     ],
 )

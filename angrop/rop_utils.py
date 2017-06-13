@@ -1,6 +1,6 @@
-from errors import RegNotFoundException, RopException
+import angr
 
-import simuvex
+from .errors import RegNotFoundException, RopException
 
 
 def gadget_to_asmstring(project, gadget):
@@ -157,13 +157,13 @@ def make_initial_state(project, stack_length):
     :return: an initial state with a symbolic stack and good options for rop
     """
     initial_state = project.factory.blank_state(
-        add_options={simuvex.o.AVOID_MULTIVALUED_READS, simuvex.o.AVOID_MULTIVALUED_WRITES,
-                     simuvex.o.NO_SYMBOLIC_JUMP_RESOLUTION, simuvex.o.CGC_NO_SYMBOLIC_RECEIVE_LENGTH,
-                     simuvex.o.NO_SYMBOLIC_SYSCALL_RESOLUTION, simuvex.o.TRACK_ACTION_HISTORY},
-        remove_options=simuvex.o.resilience_options | simuvex.o.simplification)
-    initial_state.options.discard(simuvex.o.CGC_ZERO_FILL_UNCONSTRAINED_MEMORY)
-    initial_state.options.update({simuvex.o.TRACK_REGISTER_ACTIONS, simuvex.o.TRACK_MEMORY_ACTIONS,
-                                  simuvex.o.TRACK_JMP_ACTIONS, simuvex.o.TRACK_CONSTRAINT_ACTIONS})
+        add_options={angr.options.AVOID_MULTIVALUED_READS, angr.options.AVOID_MULTIVALUED_WRITES,
+                     angr.options.NO_SYMBOLIC_JUMP_RESOLUTION, angr.options.CGC_NO_SYMBOLIC_RECEIVE_LENGTH,
+                     angr.options.NO_SYMBOLIC_SYSCALL_RESOLUTION, angr.options.TRACK_ACTION_HISTORY},
+        remove_options=angr.options.resilience_options | angr.options.simplification)
+    initial_state.options.discard(angr.options.CGC_ZERO_FILL_UNCONSTRAINED_MEMORY)
+    initial_state.options.update({angr.options.TRACK_REGISTER_ACTIONS, angr.options.TRACK_MEMORY_ACTIONS,
+                                  angr.options.TRACK_JMP_ACTIONS, angr.options.TRACK_CONSTRAINT_ACTIONS})
     symbolic_stack = initial_state.se.BVS("symbolic_stack", project.arch.bits*stack_length)
     initial_state.memory.store(initial_state.regs.sp, symbolic_stack)
     if initial_state.arch.bp_offset != initial_state.arch.sp_offset:
@@ -204,7 +204,7 @@ def step_to_unconstrained_successor(project, state, path=None, max_steps=2, allo
     try:
         # might only want to enable this option for arches / oses which don't care about bad syscall
         # nums
-        state.options.add(simuvex.o.BYPASS_UNSUPPORTED_SYSCALL)
+        state.options.add(angr.options.BYPASS_UNSUPPORTED_SYSCALL)
         if path is None:
             p = project.factory.path(state=state)
         else:
@@ -227,5 +227,5 @@ def step_to_unconstrained_successor(project, state, path=None, max_steps=2, allo
         p = p.unconstrained_successors[0]
         return p
 
-    except simuvex.UnsupportedSyscallError:
+    except angr.errors.UnsupportedSyscallError:
         raise RopException("Does not get to a single unconstrained successor")
