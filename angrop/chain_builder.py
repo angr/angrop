@@ -564,7 +564,7 @@ class ChainBuilder(object):
         # store A's past the end of the stack
         state.memory.store(state.regs.sp + gadget.stack_change, state.se.BVV("A"*0x100))
 
-        succ = rop_utils.step_to_unconstrained_successor(project=self.project, state=state).state
+        succ = rop_utils.step_to_unconstrained_successor(project=self.project, state=state)
         # successor
         if succ.ip is succ.registers.load(reg):
             return False
@@ -753,7 +753,7 @@ class ChainBuilder(object):
         # step through each gadget
         # for each gadget, constrain memory addresses and add constraints for the successor
         for addr in addrs[1:]:
-            succ = rop_utils.step_to_unconstrained_successor(self.project, state).state
+            succ = rop_utils.step_to_unconstrained_successor(self.project, state)
             state.add_constraints(succ.regs.ip == addr)
             # constrain reads/writes
             for a in succ.log.actions:
@@ -764,7 +764,7 @@ class ChainBuilder(object):
                     test_symbolic_state.add_constraints(a.addr.ast < modifiable_memory_range[1])
             test_symbolic_state.add_constraints(succ.regs.ip == addr)
             # get to the unconstrained successor
-            state = rop_utils.step_to_unconstrained_successor(self.project, state).state
+            state = rop_utils.step_to_unconstrained_successor(self.project, state)
 
         # re-adjuest the stack pointer
         sp = test_symbolic_state.regs.sp
@@ -980,12 +980,12 @@ class ChainBuilder(object):
 
         # step the gadget
         pre_gadget_state = test_state
-        succ_p = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
+        state = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
 
         # constrain the write
         mem_write = gadget.mem_writes[0]
         the_action = None
-        for a in succ_p.actions.hardcopy:
+        for a in state.history.actions.hardcopy:
             if a.type != "mem" or a.action != "write":
                 continue
             if set(rop_utils.get_ast_dependency(a.addr.ast)) == set(mem_write.addr_dependencies) or \
@@ -1000,8 +1000,7 @@ class ChainBuilder(object):
         test_state.add_constraints(the_action.addr.ast == addr)
         pre_gadget_state.add_constraints(the_action.addr.ast == addr)
         pre_gadget_state.options.discard(angr.options.AVOID_MULTIVALUED_WRITES)
-        succ_p = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
-        state = succ_p.state
+        state = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
 
         # constrain the data
         test_state.add_constraints(state.memory.load(addr, len(data)) == test_state.se.BVV(data))
@@ -1049,12 +1048,12 @@ class ChainBuilder(object):
 
         # step the gadget
         pre_gadget_state = test_state
-        succ_p = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
+        state = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
 
         # constrain the change
         mem_change = gadget.mem_changes[0]
         the_action = None
-        for a in succ_p.actions.hardcopy:
+        for a in state.history.actions.hardcopy:
             if a.type != "mem" or a.action != "write":
                 continue
             if set(rop_utils.get_ast_dependency(a.addr.ast)) == set(mem_change.addr_dependencies):
@@ -1069,8 +1068,7 @@ class ChainBuilder(object):
         pre_gadget_state.add_constraints(the_action.addr.ast == addr)
         pre_gadget_state.options.discard(angr.options.AVOID_MULTIVALUED_WRITES)
         pre_gadget_state.options.discard(angr.options.AVOID_MULTIVALUED_READS)
-        succ_p = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
-        state = succ_p.state
+        state = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
 
         # constrain the data
         if final_val is not None:

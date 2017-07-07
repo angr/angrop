@@ -194,7 +194,7 @@ def make_reg_symbolic(state, reg):
     state.se.BVS("sreg_" + reg + "-", state.arch.bits))
 
 
-def step_to_unconstrained_successor(project, state, path=None, max_steps=2, allow_simprocedures=False):
+def step_to_unconstrained_successor(project, state, max_steps=2, allow_simprocedures=False):
     """
     steps up to two times to try to find an unconstrained successor
     :param state: the input state
@@ -205,27 +205,19 @@ def step_to_unconstrained_successor(project, state, path=None, max_steps=2, allo
         # might only want to enable this option for arches / oses which don't care about bad syscall
         # nums
         state.options.add(angr.options.BYPASS_UNSUPPORTED_SYSCALL)
-        if path is None:
-            p = project.factory.path(state=state)
-        else:
-            p = path
 
-        if p.errored:
-            raise RopException(p.error)
-
-        successors = p.step()
-        if len(p.successors) + len(p.unconstrained_successors) != 1:
+        succ = project.factory.successors(state)
+        if len(succ.flat_successors) + len(succ.unconstrained_successors) != 1:
             raise RopException("Does not get to a single successor")
-        if len(p.successors) == 1 and max_steps > 0:
-            if not allow_simprocedures and project.is_hooked(p.successors[0].addr):
+        if len(succ.flat_successors) == 1 and max_steps > 0:
+            if not allow_simprocedures and project.is_hooked(succ.flat_successors[0].addr):
                 # it cannot be a syscall as now syscalls are only put in project._simos.syscall_table
                 raise RopException("Skipping simprocedure")
-            return step_to_unconstrained_successor(project, p.successors[0].state, successors[0],
+            return step_to_unconstrained_successor(project, succ.flat_successors[0],
                                                    max_steps-1, allow_simprocedures)
-        if len(p.successors) == 1 and max_steps == 0:
+        if len(succ.flat_successors) == 1 and max_steps == 0:
             raise RopException("Does not get to an unconstrained successor")
-        p = p.unconstrained_successors[0]
-        return p
+        return succ.unconstrained_successors[0]
 
-    except angr.errors.UnsupportedSyscallError:
+    except (angr.errors.UnsupportedSyscallError, angr.errors.SimEngineError):
         raise RopException("Does not get to a single unconstrained successor")

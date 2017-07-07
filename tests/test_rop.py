@@ -90,14 +90,13 @@ def execute_chain(project, chain):
     s = project.factory.blank_state()
     s.memory.store(s.regs.sp, chain.payload_str() + "AAAAAAAAA")
     s.ip = s.stack_pop()
-    p = project.factory.path(s)
+    p = project.factory.simgr(s)
     goal_addr = 0x4141414141414141 % (1 << project.arch.bits)
-    while p.addr != goal_addr:
+    while p.one_active.addr != goal_addr:
         p.step()
-        nose.tools.assert_equal(len(p.successors), 1)
-        p = p.successors[0]
+        nose.tools.assert_equal(len(p.active), 1)
 
-    return p.state
+    return p.one_active
 
 
 def test_rop_x86_64():

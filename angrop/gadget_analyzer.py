@@ -208,7 +208,7 @@ class GadgetAnalyzer(object):
         """
         # get all the memory accesses
         symbolic_mem_accesses = []
-        for a in reversed(symbolic_path.actions):
+        for a in reversed(symbolic_path.history.actions):
             if a.type == 'mem' and a.addr.ast.symbolic:
                 symbolic_mem_accesses.append(a)
         if len(symbolic_mem_accesses) <= self._max_sym_mem_accesses:
@@ -231,9 +231,9 @@ class GadgetAnalyzer(object):
         :param symbolic_state: the input state for testing
         :param gadget: the gadget to store register change information
         """
-        exit_target = symbolic_p.actions[-1].target.ast
+        exit_target = symbolic_p.history.actions[-1].target.ast
 
-        succ_state = symbolic_p.state
+        succ_state = symbolic_p
         stack_change = gadget.stack_change if not gadget.bp_moves_to_sp else None
 
         for reg in self._get_reg_writes(symbolic_p):
@@ -241,7 +241,7 @@ class GadgetAnalyzer(object):
             # verify the stack controls it
             # we need to make sure they arent equal to the exit target otherwise they arent controlled
             # TODO what to do about moves to bp
-            if symbolic_p.state.registers.load(reg) is exit_target:
+            if symbolic_p.registers.load(reg) is exit_target:
                 gadget.changed_regs.add(reg)
             elif self._check_if_stack_controls_ast(succ_state.registers.load(reg), symbolic_state, stack_change):
                 gadget.popped_regs.add(reg)
@@ -289,7 +289,7 @@ class GadgetAnalyzer(object):
                 regs_to_check = gadget.reg_dependencies[reg]
             for from_reg in regs_to_check:
                 ast_1 = symbolic_state.registers.load(from_reg)
-                ast_2 = symbolic_p.state.registers.load(reg)
+                ast_2 = symbolic_p.registers.load(reg)
                 if ast_1 is ast_2:
                     gadget.reg_moves.append(RopRegMove(from_reg, reg, self.project.arch.bits))
                 # try lower 32 bits (this is intended for amd64)
@@ -308,7 +308,7 @@ class GadgetAnalyzer(object):
         :param symbolic_s: the symbolic state
         :return: True if the address of symbolic_p is controlled by the stack
         """
-        return self._check_if_stack_controls_ast(symbolic_p.state.ip, symbolic_s)
+        return self._check_if_stack_controls_ast(symbolic_p.ip, symbolic_s)
 
     def _check_if_stack_controls_ast(self, ast, initial_state, gadget_stack_change=None):
         if gadget_stack_change is not None and gadget_stack_change <= 0:
@@ -363,7 +363,7 @@ class GadgetAnalyzer(object):
         ss_copy.regs.sp = ss_copy.se.BVS("sreg_" + self._sp_reg + "-", self.project.arch.bits)
         symbolic_p = rop_utils.step_to_unconstrained_successor(self.project, ss_copy)
         dependencies = self._get_reg_dependencies(symbolic_p, "sp")
-        sp_change = symbolic_p.state.regs.sp - ss_copy.regs.sp
+        sp_change = symbolic_p.regs.sp - ss_copy.regs.sp
 
         # analyze the results
         gadget.bp_moves_to_sp = False
@@ -377,7 +377,7 @@ class GadgetAnalyzer(object):
             stack_changes = ss_copy.se.any_n_int(sp_change, 2)
             gadget.stack_change = stack_changes[0]
         elif list(dependencies)[0] == self._base_pointer:
-            sp_change = symbolic_p.state.regs.sp - ss_copy.regs.bp
+            sp_change = symbolic_p.regs.sp - ss_copy.regs.bp
             stack_changes = ss_copy.se.any_n_int(sp_change, 2)
             gadget.bp_moves_to_sp = True
         else:
@@ -396,7 +396,7 @@ class GadgetAnalyzer(object):
         :param gadget: the gadget to store mem acccess in
         """
         last_action = None
-        for a in symbolic_p.actions.hardcopy:
+        for a in symbolic_p.history.actions.hardcopy:
             if a.type == 'mem':
                 mem_access = RopMemAccess()
                 if a.addr.ast.symbolic:
@@ -440,7 +440,7 @@ class GadgetAnalyzer(object):
                 elif a.action == "read" and not isinstance(a.data.ast, claripy.fp.FPV) and \
                         not isinstance(a.data.ast, claripy.ast.FP):
                     # for reads we want to know if any register will have the data after
-                    succ_state = symbolic_p.state
+                    succ_state = symbolic_p
                     bits_to_extend = self.project.arch.bits - a.data.ast.size()
                     # if bits_to_extend is negative it breaks everything, and we probably dont care about it
                     if bits_to_extend >= 0:
@@ -491,16 +491,15 @@ class GadgetAnalyzer(object):
             mem_change.data_dependencies = data_dependencies
             mem_change.data_controllers = data_controllers
 
-    @staticmethod
-    def _does_syscall(symbolic_p):
+    def _does_syscall(self, symbolic_p):
         """
         checks if the path does a system call at some point
         :param symbolic_p: input path to check history of
         """
 
-        syscall_table = symbolic_p._project._simos.syscall_table
+        syscall_table = self.project._simos.syscall_table
 
-        for addr in symbolic_p.addr_trace:
+        for addr in symbolic_p.history.bbl_addrs:
             if syscall_table.get_by_addr(addr) is None:
                 continue
             return True
@@ -514,17 +513,17 @@ class GadgetAnalyzer(object):
         :param symbolic_state: input state for testing
         :return: the pivot object
         """
-        if len(symbolic_p.trace) > 1:
+        if symbolic_p.history.depth > 1:
             return None
         pivot = None
-        reg_deps = rop_utils.get_ast_dependency(symbolic_p.state.regs.sp)
+        reg_deps = rop_utils.get_ast_dependency(symbolic_p.regs.sp)
         if len(reg_deps) == 1:
             pivot = StackPivot(addr)
             pivot.sp_from_reg = list(reg_deps)[0]
-        elif len(symbolic_p.state.regs.sp.variables) == 1 and \
-                list(symbolic_p.state.regs.sp.variables)[0].startswith("symbolic_stack"):
+        elif len(symbolic_p.regs.sp.variables) == 1 and \
+                list(symbolic_p.regs.sp.variables)[0].startswith("symbolic_stack"):
             offset = None
-            for a in symbolic_p.state.regs.sp.recursive_children_asts:
+            for a in symbolic_p.regs.sp.recursive_children_asts:
                 if a.op == "Extract" and a.depth == 2:
                     offset = a.args[2].size() - 1 - a.args[0]
             if offset is None or offset % 8 != 0:
@@ -535,30 +534,28 @@ class GadgetAnalyzer(object):
 
         if pivot is not None:
             # verify no weird mem accesses
-            test_p = self.project.factory.path(symbolic_state.copy())
+            test_p = self.project.factory.simgr(symbolic_state.copy())
             # step until we find the pivot action
-            for i in range(symbolic_p.previous_run.artifacts['irsb'].instructions):
+            for i in range(self.project.factory.block(symbolic_state.addr).instructions):
                 test_p.step(num_inst=1)
-                if len(test_p.successors) != 1:
+                if len(test_p.active) != 1:
                     return None
-                test_p = test_p.successors[0]
-                if test_p.state.regs.sp.symbolic:
+                if test_p.one_active.regs.sp.symbolic:
                     # found the pivot action
                     break
             # now iterate through the remaining instructions with a clean state
             test_p.step(num_inst=1)
-            if len(test_p.successors) != 1:
+            if len(test_p.active) != 1:
                 return None
-            succ1 = test_p.successors[0]
+            succ1 = test_p.active[0]
             ss = symbolic_state.copy()
             ss.regs.ip = succ1.addr
-            test_p = self.project.factory.path(ss)
-            test_p.step()
-            if len(test_p.successors + test_p.unconstrained_successors) == 0:
+            succ = self.project.factory.successors(ss)
+            if len(succ.flat_successors + succ.unconstrained_successors) == 0:
                 return None
-            succ2 = (test_p.successors + test_p.unconstrained_successors)[0]
+            succ2 = (succ.flat_successors + succ.unconstrained_successors)[0]
 
-            all_actions = [a for a in succ1.actions] + [a for a in succ2.actions]
+            all_actions = succ1.history.actions.hardcopy + succ2.history.actions.hardcopy
             for a in all_actions:
                 if a.type == "mem" and a.addr.ast.symbolic:
                     return None
@@ -583,12 +580,12 @@ class GadgetAnalyzer(object):
 
         if self._does_syscall(symbolic_p):
             # step up until the syscall and save the possible syscall numbers into the gadget
-            prev = cur = self.project.factory.path(state=symbolic_state)
+            prev = cur = symbolic_state
             while not self._does_syscall(cur):
-                cur.step()
+                succ = self.project.factory.successors(cur)
                 prev = cur
-                cur = cur.successors[0]
-            return prev.state.copy()
+                cur = succ.flat_successors[0]
+            return prev.copy()
 
         raise RopException("Gadget passed to _windup_to_presyscall_state does not make a syscall")
 
@@ -602,7 +599,7 @@ class GadgetAnalyzer(object):
         :param test_reg: the register of which we are trying to analyze dependencies
         :return: A set of register names which affect the test_reg
         """
-        dependencies = rop_utils.get_ast_dependency(symbolic_p.state.registers.load(test_reg))
+        dependencies = rop_utils.get_ast_dependency(symbolic_p.registers.load(test_reg))
         return dependencies
 
     @staticmethod
@@ -615,7 +612,7 @@ class GadgetAnalyzer(object):
         :param reg_deps: All registers which it depends on
         :return: A set of register names which can control the test_reg
         """
-        controllers = rop_utils.get_ast_controllers(symbolic_state, symbolic_p.state.registers.load(test_reg), reg_deps)
+        controllers = rop_utils.get_ast_controllers(symbolic_state, symbolic_p.registers.load(test_reg), reg_deps)
         return controllers
 
     def _get_reg_reads(self, path):
@@ -625,7 +622,7 @@ class GadgetAnalyzer(object):
         :return: A set of register names which are read
         """
         all_reg_reads = set()
-        for a in reversed(path.actions):
+        for a in reversed(path.history.actions):
             if a.type == "reg" and a.action == "read":
                 try:
                     reg_name = rop_utils.get_reg_name(self.project.arch, a.offset)
@@ -644,7 +641,7 @@ class GadgetAnalyzer(object):
         :return: A set of register names which are read
         """
         all_reg_writes = set()
-        for a in reversed(path.actions):
+        for a in reversed(path.history.actions):
             if a.type == "reg" and a.action == "write":
                 try:
                     reg_name = rop_utils.get_reg_name(self.project.arch, a.offset)
