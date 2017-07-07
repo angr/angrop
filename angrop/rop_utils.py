@@ -219,5 +219,5 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
             raise RopException("Does not get to an unconstrained successor")
         return succ.unconstrained_successors[0]
 
-    except (angr.errors.UnsupportedSyscallError, angr.errors.SimEngineError):
+    except (angr.errors.AngrError, angr.errors.SimError):
         raise RopException("Does not get to a single unconstrained successor")
