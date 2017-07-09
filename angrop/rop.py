@@ -408,4 +408,4 @@ class ROP(angr.Analysis):
 
         return sorted(addrs)
 
-angr.analysis.register_analysis(ROP, 'ROP')
+angr.analyses.register_analysis(ROP, 'ROP')
