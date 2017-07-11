@@ -327,7 +327,7 @@ class ROP(Analysis):
                 if segment.is_executable:
                     l.debug("Analyzing segment with address range: 0x%x, 0x%x" % (segment.min_addr, segment.max_addr))
                     for addr in xrange(segment.min_addr, segment.max_addr):
-                        yield self.project.loader.main_bin.rebase_addr + addr
+                        yield addr
 
     def _get_ret_locations(self):
         """
@@ -343,7 +343,6 @@ class ROP(Analysis):
         seen = set()
         for segment in self.project.loader.main_bin.segments:
             if segment.is_executable:
-                min_addr = segment.min_addr + self.project.loader.main_bin.rebase_addr
                 num_bytes = segment.max_addr-segment.min_addr
 
                 alignment = self.project.arch.instruction_alignment
@@ -352,7 +351,7 @@ class ROP(Analysis):
                     alignment = 1
 
                 # iterate through the code looking for rets
-                for addr in xrange(min_addr, min_addr+num_bytes, alignment):
+                for addr in xrange(segment.min_addr, segment.min_addr + num_bytes, alignment):
                     # dont recheck addresses we've seen before
                     if addr in seen:
                         continue
@@ -387,25 +386,23 @@ class ROP(Analysis):
         try:
             for segment in self.project.loader.main_bin.segments:
                 if segment.is_executable:
-                    min_addr = segment.min_addr + self.project.loader.main_bin.rebase_addr
                     num_bytes = segment.max_addr-segment.min_addr
-                    read_bytes = "".join(self.project.loader.memory.read_bytes(min_addr, num_bytes))
+                    read_bytes = "".join(self.project.loader.memory.read_bytes(segment.min_addr, num_bytes))
                     for ret_instruction in ret_instructions:
                         for loc in common.str_find_all(read_bytes, ret_instruction):
-                            addrs.append(loc + min_addr)
+                            addrs.append(loc + segment.min_addr)
         except KeyError:
             l.warning("Key error with segment analysis")
             # try reading from state
             state = self.project.factory.entry_state()
             for segment in self.project.loader.main_bin.segments:
                 if segment.is_executable:
-                    min_addr = segment.min_addr + self.project.loader.main_bin.rebase_addr
-                    num_bytes = segment.max_addr-segment.min_addr
+                    num_bytes = segment.max_addr - segment.min_addr
 
-                    read_bytes = state.se.any_str(state.memory.load(min_addr, num_bytes))
+                    read_bytes = state.se.any_str(state.memory.load(segment.min_addr, num_bytes))
                     for ret_instruction in ret_instructions:
                         for loc in common.str_find_all(read_bytes, ret_instruction):
-                            addrs.append(loc + min_addr)
+                            addrs.append(loc + segment.min_addr)
 
         return sorted(addrs)
 

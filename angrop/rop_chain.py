@@ -15,7 +15,7 @@ class RopChain(object):
 
         # blank state used for solving
         self._blank_state = self._p.factory.blank_state() if state is None else state
-        self._pie = self._p.loader.main_bin.rebase_addr != 0
+        self._pie = self._p.loader.main_bin.image_base_delta != 0
         self._rebase_val = self._blank_state.se.BVS("base", self._p.arch.bits)
 
     def __add__(self, other):
@@ -36,7 +36,7 @@ class RopChain(object):
         if not self._pie:
             needs_rebase = False
         if needs_rebase:
-            value -= self._p.loader.main_bin.rebase_addr
+            value -= self._p.loader.main_bin.mapped_base
         self._values.append((value, needs_rebase))
         self.payload_len += self._p.arch.bits/8
 
@@ -80,12 +80,12 @@ class RopChain(object):
         :return: a string that does the rop payload
         """
         if base_addr is None:
-            base_addr = self._p.loader.main_bin.rebase_addr
+            base_addr = self._p.loader.main_bin.mapped_base
         test_state = self._blank_state.copy()
         concrete_vals = self._concretize_chain_values(constraints)
         for value, needs_rebase in reversed(concrete_vals):
             if needs_rebase:
-                test_state.stack_push(value - self._p.loader.main_bin.rebase_addr + base_addr)
+                test_state.stack_push(value - self._p.loader.main_bin.mapped_base + base_addr)
             else:
                 test_state.stack_push(value)
         sp = test_state.regs.sp
