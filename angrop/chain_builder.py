@@ -3,6 +3,8 @@ import heapq
 import struct
 import claripy
 
+from cle.address_translator import AT
+
 from . import rop_utils
 from . import common
 
@@ -444,7 +446,7 @@ class ChainBuilder(object):
             if address in self.project.loader.main_bin.plt:
                 address = self.project.loader.main_bin.plt[symbol]
             elif symobj is not None:
-                address = symobj.addr + self.project.loader.main_bin.rebase_addr
+                address = AT.from_lva(symobj.addr, self.project.loader.main_bin).to_mva()
             else:
                 raise RopException("Symbol passed to func_call does not exist in the binary")
 
