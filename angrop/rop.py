@@ -1,6 +1,6 @@
-import angr
 from angr.errors import SimEngineError, SimMemoryError
 from angr.analyses.bindiff import differing_constants
+from angr import Analysis, register_analysis
 
 import chain_builder
 import gadget_analyzer
@@ -34,7 +34,7 @@ def run_worker(addr):
 
 # todo what if we have mov eax, [rsp+0x20]; ret (cache would need to know where it is or at least a min/max)
 # todo what if we have pop eax; mov ebx, eax; need to encode that we cannot set them to different values
-class ROP(angr.Analysis):
+class ROP(Analysis):
     """
     This class is a semantic aware rop gadget finder
     It is a work in progress, so don't be surprised if something doesn't quite work
@@ -409,4 +409,4 @@ class ROP(angr.Analysis):
 
         return sorted(addrs)
 
-angr.analyses.register_analysis(ROP, 'ROP')
+register_analysis(ROP, 'ROP')
