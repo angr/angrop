@@ -3,6 +3,8 @@ import heapq
 import struct
 import claripy
 
+from cle.address_translator import AT
+
 from . import rop_utils
 from . import common
 
@@ -415,10 +417,7 @@ class ChainBuilder(object):
             target += "\x00"
         if addr_for_str is None:
             # get the max writable addr
-            max_write_addr = 0
-            for s in self.project.loader.main_bin.segments:
-                if s.is_writable:
-                    max_write_addr = max(max_write_addr, s.max_addr + self.project.loader.main_bin.rebase_addr)
+            max_write_addr = max(s.max_addr for s in self.project.loader.main_bin.segments if s.is_writable)
             # page align up
             max_write_addr = (max_write_addr + 0x1000 - 1) / 0x1000 * 0x1000
 
@@ -447,7 +446,7 @@ class ChainBuilder(object):
             if address in self.project.loader.main_bin.plt:
                 address = self.project.loader.main_bin.plt[symbol]
             elif symobj is not None:
-                address = symobj.addr + self.project.loader.main_bin.rebase_addr
+                address = AT.from_lva(symobj.addr, self.project.loader.main_bin).to_mva()
             else:
                 raise RopException("Symbol passed to func_call does not exist in the binary")
 
@@ -717,12 +716,11 @@ class ChainBuilder(object):
         addrs = []
         for segment in self.project.loader.main_bin.segments:
             if segment.is_executable:
-                min_addr = segment.min_addr + self.project.loader.main_bin.rebase_addr
-                num_bytes = segment.max_addr-segment.min_addr
-                read_bytes = "".join(self.project.loader.memory.read_bytes(min_addr, num_bytes))
+                num_bytes = segment.max_addr - segment.min_addr
+                read_bytes = "".join(self.project.loader.memory.read_bytes(segment.min_addr, num_bytes))
                 for syscall_instruction in self._syscall_instructions:
                     for loc in common.str_find_all(read_bytes, syscall_instruction):
-                        addrs.append(loc + min_addr)
+                        addrs.append(loc + segment.min_addr)
         return sorted(addrs)
 
     def _build_reg_setting_chain(self, gadgets, modifiable_memory_range, register_dict, stack_change, rebase_regs):
