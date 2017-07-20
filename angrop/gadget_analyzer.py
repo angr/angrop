@@ -494,15 +494,11 @@ class GadgetAnalyzer(object):
     def _does_syscall(self, symbolic_p):
         """
         checks if the path does a system call at some point
-        :param symbolic_p: input path to check history of
+        :param symbolic_p: input path of which to check history
         """
-
-        syscall_table = self.project._simos.syscall_table
-
         for addr in symbolic_p.history.bbl_addrs:
-            if syscall_table.get_by_addr(addr) is None:
-                continue
-            return True
+            if self.project._simos.is_syscall_addr(addr):
+                return True
 
         return False
 
