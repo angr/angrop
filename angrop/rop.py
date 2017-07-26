@@ -318,12 +318,12 @@ class ROP(Analysis):
                 current_addr = max(current_addr, st)
                 end_addr = st + block_size + alignment
                 for i in xrange(current_addr, end_addr, alignment):
-                    segment = self.project.loader.main_bin.find_segment_containing(i)
+                    segment = self.project.loader.main_object.find_segment_containing(i)
                     if segment is not None and segment.is_executable:
                         yield i
                 current_addr = max(current_addr, end_addr)
         else:
-            for segment in self.project.loader.main_bin.segments:
+            for segment in self.project.loader.main_object.segments:
                 if segment.is_executable:
                     l.debug("Analyzing segment with address range: 0x%x, 0x%x" % (segment.min_addr, segment.max_addr))
                     for addr in xrange(segment.min_addr, segment.max_addr):
@@ -341,7 +341,7 @@ class ROP(Analysis):
 
         addrs = []
         seen = set()
-        for segment in self.project.loader.main_bin.segments:
+        for segment in self.project.loader.main_object.segments:
             if segment.is_executable:
                 num_bytes = segment.max_addr-segment.min_addr
 
@@ -384,7 +384,7 @@ class ROP(Analysis):
 
         addrs = []
         try:
-            for segment in self.project.loader.main_bin.segments:
+            for segment in self.project.loader.main_object.segments:
                 if segment.is_executable:
                     num_bytes = segment.max_addr-segment.min_addr
                     read_bytes = "".join(self.project.loader.memory.read_bytes(segment.min_addr, num_bytes))
@@ -395,7 +395,7 @@ class ROP(Analysis):
             l.warning("Key error with segment analysis")
             # try reading from state
             state = self.project.factory.entry_state()
-            for segment in self.project.loader.main_bin.segments:
+            for segment in self.project.loader.main_object.segments:
                 if segment.is_executable:
                     num_bytes = segment.max_addr - segment.min_addr
 

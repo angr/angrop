@@ -52,7 +52,7 @@ class ChainBuilder(object):
             self._syscall_instructions = {"\xcd\x80"}
 
         self._execve_syscall = None
-        if self.project.loader.main_bin.os == "unix":
+        if self.project.loader.main_object.os == "unix":
             if self.project.arch.bits == 64:
                 self._execve_syscall = 59
             elif self.project.arch.bits == 32:
@@ -417,7 +417,7 @@ class ChainBuilder(object):
             target += "\x00"
         if addr_for_str is None:
             # get the max writable addr
-            max_write_addr = max(s.max_addr for s in self.project.loader.main_bin.segments if s.is_writable)
+            max_write_addr = max(s.max_addr for s in self.project.loader.main_object.segments if s.is_writable)
             # page align up
             max_write_addr = (max_write_addr + 0x1000 - 1) / 0x1000 * 0x1000
 
@@ -442,11 +442,11 @@ class ChainBuilder(object):
         # is it a symbol?
         if isinstance(address, str):
             symbol = address
-            symobj = self.project.loader.main_bin.get_symbol(symbol)
-            if address in self.project.loader.main_bin.plt:
-                address = self.project.loader.main_bin.plt[symbol]
+            symobj = self.project.loader.main_object.get_symbol(symbol)
+            if address in self.project.loader.main_object.plt:
+                address = self.project.loader.main_object.plt[symbol]
             elif symobj is not None:
-                address = AT.from_lva(symobj.addr, self.project.loader.main_bin).to_mva()
+                address = AT.from_lva(symobj.addr, self.project.loader.main_object).to_mva()
             else:
                 raise RopException("Symbol passed to func_call does not exist in the binary")
 
@@ -714,7 +714,7 @@ class ChainBuilder(object):
         :return: all the locations in the binary with a syscall instruction
         """
         addrs = []
-        for segment in self.project.loader.main_bin.segments:
+        for segment in self.project.loader.main_object.segments:
             if segment.is_executable:
                 num_bytes = segment.max_addr - segment.min_addr
                 read_bytes = "".join(self.project.loader.memory.read_bytes(segment.min_addr, num_bytes))
