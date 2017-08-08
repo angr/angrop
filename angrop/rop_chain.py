@@ -39,7 +39,7 @@ class RopChain(object):
         if needs_rebase:
             value -= self._p.loader.main_object.mapped_base
         self._values.append((value, needs_rebase))
-        self.payload_len += self._p.arch.bits/8
+        self.payload_len += self._p.arch.bytes
 
     def add_gadget(self, gadget):
         self._gadgets.append(gadget)
