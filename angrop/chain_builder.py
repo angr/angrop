@@ -803,10 +803,10 @@ class ChainBuilder(object):
             sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
                                                        endness=self.project.arch.memory_endness)
 
-            val = test_symbolic_state.se.any_int(sym_word)
+            val = test_symbolic_state.se.eval(sym_word)
 
             if len(rebase_regs) > 0:
-                val2 = rebase_state.se.any_int(rebase_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
+                val2 = rebase_state.se.eval(rebase_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
                                                                         endness=self.project.arch.memory_endness))
                 if (val2 - val) & (2**self.project.arch.bits - 1) == 0x41414141:
                     res.add_value(val, needs_rebase=True)
@@ -1005,7 +1005,7 @@ class ChainBuilder(object):
         all_deps = list(mem_write.addr_dependencies) + list(mem_write.data_dependencies)
         reg_vals = dict()
         for reg in set(all_deps):
-            reg_vals[reg] = test_state.se.any_int(test_state.registers.load(reg))
+            reg_vals[reg] = test_state.se.eval(test_state.registers.load(reg))
 
         chain = self.set_regs(use_partial_controllers=use_partial_controllers, **reg_vals)
         chain.add_gadget(gadget)
@@ -1079,7 +1079,7 @@ class ChainBuilder(object):
         all_deps = list(mem_change.addr_dependencies) + list(mem_change.data_dependencies)
         reg_vals = dict()
         for reg in set(all_deps):
-            reg_vals[reg] = test_state.se.any_int(test_state.registers.load(reg))
+            reg_vals[reg] = test_state.se.eval(test_state.registers.load(reg))
 
         chain = self.set_regs(**reg_vals)
         chain.add_gadget(gadget)

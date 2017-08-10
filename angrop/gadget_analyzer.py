@@ -26,7 +26,7 @@ class GadgetAnalyzer(object):
         self._stack_length = 80
         self._stack_length_bytes = self._stack_length * self.project.arch.bits / 8
         self._test_symbolic_state = rop_utils.make_symbolic_state(self.project, reg_list)
-        self._stack_pointer_value = self._test_symbolic_state.se.any_int(self._test_symbolic_state.regs.sp)
+        self._stack_pointer_value = self._test_symbolic_state.se.eval(self._test_symbolic_state.regs.sp)
 
         # architecture stuff
         self._base_pointer = self.project.arch.register_names[self.project.arch.bp_offset]
@@ -372,7 +372,7 @@ class GadgetAnalyzer(object):
         elif len(dependencies) == 0 and sp_change.symbolic:
             raise RopException("SP change is uncontrolled")
         elif len(dependencies) == 0 and not sp_change.symbolic:
-            stack_changes = [ss_copy.se.any_int(sp_change)]
+            stack_changes = [ss_copy.se.eval(sp_change)]
         elif list(dependencies)[0] == self._sp_reg:
             stack_changes = ss_copy.se.any_n_int(sp_change, 2)
             gadget.stack_change = stack_changes[0]
@@ -404,7 +404,7 @@ class GadgetAnalyzer(object):
                     mem_access.addr_controllers = rop_utils.get_ast_controllers(symbolic_state, a.addr.ast,
                                                                                 mem_access.addr_dependencies)
                 else:
-                    mem_access.addr_constant = symbolic_state.se.any_int(a.addr.ast)
+                    mem_access.addr_constant = symbolic_state.se.eval(a.addr.ast)
 
                 # don't need to inform user of stack reads/writes
                 stack_min_addr = self._stack_pointer_value - 0x20
