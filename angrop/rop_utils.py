@@ -52,7 +52,7 @@ def get_ast_controllers(test_state, ast, reg_deps):
         if not constrained_copy.registers.load(reg).symbolic:
             continue
         constrained_copy.add_constraints(constrained_copy.registers.load(reg) == test_val)
-    if len(constrained_copy.se.any_n_int(ast, 2)) > 1:
+    if len(constrained_copy.se.eval_upto(ast, 2)) > 1:
         return controllers
 
     for reg in reg_deps:

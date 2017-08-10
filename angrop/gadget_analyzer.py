@@ -374,7 +374,7 @@ class GadgetAnalyzer(object):
         elif len(dependencies) == 0 and not sp_change.symbolic:
             stack_changes = [ss_copy.se.eval(sp_change)]
         elif list(dependencies)[0] == self._sp_reg:
-            stack_changes = ss_copy.se.any_n_int(sp_change, 2)
+            stack_changes = ss_copy.se.eval_upto(sp_change, 2)
             gadget.stack_change = stack_changes[0]
         elif list(dependencies)[0] == self._base_pointer:
             sp_change = symbolic_p.regs.sp - ss_copy.regs.bp
@@ -428,7 +428,7 @@ class GadgetAnalyzer(object):
                         continue
 
                     # for writes we want what the data depends on
-                    test_data = symbolic_state.se.any_n_int(a.data.ast, 2)
+                    test_data = symbolic_state.se.eval_upto(a.data.ast, 2)
                     if len(test_data) > 1:
                         mem_access.data_dependencies = rop_utils.get_ast_dependency(a.data.ast)
                         mem_access.data_controllers = rop_utils.get_ast_controllers(symbolic_state, a.data.ast,
