@@ -1,5 +1,6 @@
 from angr.errors import SimEngineError, SimMemoryError
 from angr.analyses.bindiff import differing_constants
+from angr.analyses.bindiff import UnmatchedStatementsException
 from angr import Analysis, register_analysis
 
 import chain_builder
@@ -261,7 +262,7 @@ class ROP(Analysis):
         bl2 = self.project.factory.block(test_addr, byte_string=string)
         try:
             diff_constants = differing_constants(bl, bl2)
-        except angr.analyses.bindiff.UnmatchedStatementsException:
+        except UnmatchedStatementsException:
             return True
         # check if it changes if we move it
         bl_end = addr + bl.size
