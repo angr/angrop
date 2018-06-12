@@ -157,15 +157,15 @@ def test_rop_arm():
     compare_gadgets(rop.gadgets, test_gadgets)
 
     # test creating a rop chain
-    chain = rop.set_regs(r11=0x99887766)
+    chain = rop.set_regs(v8=0x99887766)
     # smallest possible chain
     nose.tools.assert_equal(chain.payload_len, 8)
     # correct chains, using a more complicated chain here
-    chain = rop.set_regs(r4=0x99887766, r9=0x44556677, r11=0x11223344)
+    chain = rop.set_regs(v1=0x99887766, v6=0x44556677, v8=0x11223344)
     result_state = execute_chain(b, chain)
-    nose.tools.assert_equal(result_state.se.eval(result_state.regs.r4), 0x99887766)
-    nose.tools.assert_equal(result_state.se.eval(result_state.regs.r9), 0x44556677)
-    nose.tools.assert_equal(result_state.se.eval(result_state.regs.r11), 0x11223344)
+    nose.tools.assert_equal(result_state.se.eval(result_state.regs.v1), 0x99887766)
+    nose.tools.assert_equal(result_state.se.eval(result_state.regs.v6), 0x44556677)
+    nose.tools.assert_equal(result_state.se.eval(result_state.regs.v8), 0x11223344)
 
     # test memwrite chain
     chain = rop.write_to_mem(0x41414141, "ABCDEFGH")
