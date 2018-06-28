@@ -441,7 +441,7 @@ class ChainBuilder(object):
         if isinstance(address, str):
             symbol = address
             symobj = self.project.loader.main_object.get_symbol(symbol)
-            if address in self.project.loader.main_object.plt:
+            if hasattr(self.project.loader.main_object, 'plt') and address in self.project.loader.main_object.plt:
                 address = self.project.loader.main_object.plt[symbol]
             elif symobj is not None:
                 address = symobj.rebased_addr
