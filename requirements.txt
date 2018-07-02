@@ -1,4 +1,4 @@
 progressbar
-pyvex>=7.8.6.16
+pyvex>=7.8.7.1
 claripy>=7.8.6.16
-angr>=7.8.6.16
+angr>=7.8.7.1
