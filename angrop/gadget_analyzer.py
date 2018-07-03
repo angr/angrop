@@ -497,7 +497,7 @@ class GadgetAnalyzer(object):
         :param symbolic_p: input path of which to check history
         """
         for addr in symbolic_p.history.bbl_addrs:
-            if self.project._simos.is_syscall_addr(addr):
+            if self.project.simos.is_syscall_addr(addr):
                 return True
 
         return False

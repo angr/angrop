@@ -298,7 +298,9 @@ class ROP(Analysis):
                 self._cache[seen[block_data]].add(a)
                 continue
             else:
-                if len(bl.vex.constant_jump_targets) == 0 and not self._block_has_ip_relative(a, bl):
+                if self._is_jumpkind_valid(bl.vex.jumpkind) and \
+                        len(bl.vex.constant_jump_targets) == 0 and \
+                        not self._block_has_ip_relative(a, bl):
                     seen[block_data] = a
                     self._cache[a] = set()
                 yield a
@@ -406,5 +408,15 @@ class ROP(Analysis):
                             addrs.append(loc + segment.min_addr)
 
         return sorted(addrs)
+
+    @staticmethod
+    def _is_jumpkind_valid(jk):
+
+        if jk in {'Ijk_Boring', 'Ijk_Call', 'Ijk_Ret'}:
+            return True
+        elif jk.startswith("Ijk_Sys"):
+            return True
+        return False
+
 
 register_analysis(ROP, 'ROP')
