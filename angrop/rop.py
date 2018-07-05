@@ -414,8 +414,6 @@ class ROP(Analysis):
 
         if jk in {'Ijk_Boring', 'Ijk_Call', 'Ijk_Ret'}:
             return True
-        elif jk.startswith("Ijk_Sys"):
-            return True
         return False
 
 
