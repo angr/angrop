@@ -1,5 +1,3 @@
-
-
 def str_find_all(a_str, sub):
     start = 0
     while True:

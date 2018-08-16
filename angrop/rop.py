@@ -3,16 +3,16 @@ from angr.analyses.bindiff import differing_constants
 from angr.analyses.bindiff import UnmatchedStatementsException
 from angr import Analysis, register_analysis
 
-import chain_builder
-import gadget_analyzer
-import common
+from . import chain_builder
+from . import gadget_analyzer
+from . import common
 
 import pickle
 import inspect
 import logging
 import progressbar
 
-from errors import RopException
+from .errors import RopException
 from .rop_gadget import RopGadget, StackPivot
 
 from multiprocessing import Pool
@@ -199,7 +199,7 @@ class ROP(Analysis):
         :param badbytes: a list of 8 bit integers
         """
         if not isinstance(badbytes, list):
-            print "Require a list, e.g: [0x00, 0x09]"
+            print("Require a list, e.g: [0x00, 0x09]")
             return
         self.badbytes = badbytes
         if len(self.gadgets) > 0:
@@ -214,7 +214,7 @@ class ROP(Analysis):
         :param roparg_filler: A integer which is used when popping useless register or None.
         """
         if not isinstance(roparg_filler, (int, type(None))):
-            print "Require an integer, e.g: 0x41414141 or None"
+            print("Require an integer, e.g: 0x41414141 or None")
             return
 
         self.roparg_filler = roparg_filler

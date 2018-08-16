@@ -180,7 +180,7 @@ class ChainBuilder(object):
         """
 
         if not (isinstance(fill_byte, basestring) and len(fill_byte) == 1):
-            print "fill_byte is not a one byte string, aborting"
+            print("fill_byte is not a one byte string, aborting")
             return
 
         # create a dict of bytes per write to gadgets

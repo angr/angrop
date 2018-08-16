@@ -1,4 +1,4 @@
-import rop_utils
+from . import rop_utils
 
 from cle.address_translator import AT
 
@@ -142,7 +142,7 @@ class RopChain(object):
             else:
                 payload += "chain += " + pack % value + instruction_code
             payload += "\n"
-        print payload
+        print(payload)
 
     def copy(self):
         cp = RopChain(self._p, self._rop)
