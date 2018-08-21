@@ -68,7 +68,7 @@ class RopChain(object):
 
         concrete_vals = []
         for val, needs_rebase in self._values:
-            if isinstance(val, (int, long)):
+            if isinstance(val, int):
                 concrete_vals.append((val, needs_rebase))
             else:
                 concrete_vals.append((solver_state.se.eval(val), needs_rebase))
@@ -90,7 +90,7 @@ class RopChain(object):
             else:
                 test_state.stack_push(value)
         sp = test_state.regs.sp
-        rop_str = test_state.se.eval(test_state.memory.load(sp, self.payload_len), cast_to=str)
+        rop_str = test_state.se.eval(test_state.memory.load(sp, self.payload_len), cast_to=bytes)
         return rop_str
 
     def payload_bv(self):

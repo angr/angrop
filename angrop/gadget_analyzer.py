@@ -23,7 +23,7 @@ class GadgetAnalyzer(object):
 
         # initial state that others are based off
         self._stack_length = 80
-        self._stack_length_bytes = self._stack_length * self.project.arch.bits / 8
+        self._stack_length_bytes = self._stack_length * self.project.arch.bytes
         self._test_symbolic_state = rop_utils.make_symbolic_state(self.project, reg_list)
         self._stack_pointer_value = self._test_symbolic_state.se.eval(self._test_symbolic_state.regs.sp)
 
@@ -78,7 +78,7 @@ class GadgetAnalyzer(object):
             l.debug("... computing sp change")
             self._compute_sp_change(symbolic_state, this_gadget)
 
-            if this_gadget.stack_change % (self.project.arch.bits / 8) != 0:
+            if this_gadget.stack_change % (self.project.arch.bytes) != 0:
                 l.debug("... uneven sp change")
                 return None
 
@@ -118,10 +118,10 @@ class GadgetAnalyzer(object):
                     return None
 
         except RopException as e:
-            l.debug("... %s", e.message)
+            l.debug("... %s", e)
             return None
         except claripy.ClaripyFrontendError as e:
-            l.warning("... claripy error: %s", e.message)
+            l.warning("... claripy error: %s", e)
             return None
 
         l.debug("... Appending gadget!")
@@ -294,7 +294,7 @@ class GadgetAnalyzer(object):
                 # try lower 32 bits (this is intended for amd64)
                 # todo do this for less bits too?
                 else:
-                    half_bits = self.project.arch.bits / 2
+                    half_bits = self.project.arch.bits // 2
                     ast_1 = claripy.Extract(half_bits-1, 0, ast_1)
                     ast_2 = claripy.Extract(half_bits-1, 0, ast_2)
                     if ast_1 is ast_2:
@@ -326,14 +326,14 @@ class GadgetAnalyzer(object):
             return self._solve_cache[hash(ast)]
 
         # prefilter
-        if len(ast.variables) != 1 or not list(ast.variables)[0].startswith("symbolic_stack"):
+        if len(ast.variables) != 1 or not list(ast.variables)[0].startswith(b"symbolic_stack"):
             self._solve_cache[hash(ast)] = False
             return False
 
-        stack_bytes_length = self._stack_length * (self.project.arch.bits / 8)
+        stack_bytes_length = self._stack_length * self.project.arch.bytes
         if gadget_stack_change is not None:
             stack_bytes_length = min(max(gadget_stack_change, 0), stack_bytes_length)
-        concrete_stack = initial_state.se.BVV("B" * stack_bytes_length)
+        concrete_stack = initial_state.se.BVV(b"B" * stack_bytes_length)
         concrete_stack_s = initial_state.copy()
         concrete_stack_s.add_constraints(
             initial_state.memory.load(initial_state.regs.sp, stack_bytes_length) == concrete_stack)
@@ -476,7 +476,7 @@ class GadgetAnalyzer(object):
                 return
 
             vars0 = list(write_action.data.ast.args[0].variables)
-            if not len(vars0) == 1 and vars0[0].startswith("symbolic_read_sreg_"):
+            if not len(vars0) == 1 and vars0[0].startswith(b"symbolic_read_sreg_"):
                 return
 
             data_dependencies = rop_utils.get_ast_dependency(write_action.data.ast.args[1])
@@ -516,14 +516,14 @@ class GadgetAnalyzer(object):
             pivot = StackPivot(addr)
             pivot.sp_from_reg = list(reg_deps)[0]
         elif len(symbolic_p.regs.sp.variables) == 1 and \
-                list(symbolic_p.regs.sp.variables)[0].startswith("symbolic_stack"):
+                list(symbolic_p.regs.sp.variables)[0].startswith(b"symbolic_stack"):
             offset = None
             for a in symbolic_p.regs.sp.recursive_children_asts:
                 if a.op == "Extract" and a.depth == 2:
                     offset = a.args[2].size() - 1 - a.args[0]
             if offset is None or offset % 8 != 0:
                 return None
-            offset_bytes = offset/8
+            offset_bytes = offset//8
             pivot = StackPivot(addr)
             pivot.sp_popped_offset = offset_bytes
 
@@ -626,7 +626,7 @@ class GadgetAnalyzer(object):
                     elif reg_name != self._sp_reg:
                         l.info("reg read from register not in reg_list: %s", reg_name)
                 except RegNotFoundException as e:
-                    l.debug(e.message)
+                    l.debug(e)
         return all_reg_reads
 
     def _get_reg_writes(self, path):
@@ -645,7 +645,7 @@ class GadgetAnalyzer(object):
                     elif reg_name != self._sp_reg:
                         l.info("reg read from register not in reg_list: %s", reg_name)
                 except RegNotFoundException as e:
-                    l.debug(e.message)
+                    l.debug(e)
         return all_reg_writes
 
 # TODO ip setters, ie call rax

@@ -4,14 +4,9 @@ from .errors import RegNotFoundException, RopException
 
 
 def gadget_to_asmstring(project, gadget):
-    try:
-        code = "".join(project.loader.memory.read_bytes(gadget.addr,gadget.block_length))
-        md = project.arch.capstone
-        return "; ".join(["%s %s" %(i.mnemonic, i.op_str) for i in md.disasm(code,gadget.addr)])
-    except TypeError:
-        # pypy seems to throw a TypeError in Capstone :(
-        return ""
-
+    code = bytes(project.loader.memory.read_bytes(gadget.addr,gadget.block_length))
+    md = project.arch.capstone
+    return "; ".join(["%s %s" %(i.mnemonic, i.op_str) for i in md.disasm(code,gadget.addr)])
 
 
 def get_ast_dependency(ast):
@@ -24,8 +19,8 @@ def get_ast_dependency(ast):
     dependencies = set()
 
     for var in ast.variables:
-        if var.startswith("sreg_"):
-            dependencies.add(var[5:].split("-")[0])
+        if var.startswith(b"sreg_"):
+            dependencies.add(var[5:].split(b"-")[0].decode())
         else:
             return set()
     return dependencies
@@ -131,7 +126,7 @@ def get_reg_name(arch, reg_offset):
         raise RegNotFoundException("register offset is None")
 
     original_offset = reg_offset
-    while reg_offset >= 0 and reg_offset >= original_offset - (arch.bits/8):
+    while reg_offset >= 0 and reg_offset >= original_offset - arch.bytes:
         if reg_offset in arch.register_names:
             return arch.register_names[reg_offset]
         else:
