@@ -146,7 +146,7 @@ class ROP(Analysis):
         self.gadgets = sorted(self.gadgets, key=lambda x: x.addr)
         self._reload_chain_funcs()
 
-    def find_gadgets_single_threaded(self):
+    def find_gadgets_single_threaded(self, show_progress=True):
         """
         Finds all the gadgets in the binary by calling analyze_gadget on every address near a ret
         Saves gadgets in self.gadgets
@@ -155,7 +155,7 @@ class ROP(Analysis):
         self.gadgets = []
 
         _set_global_gadget_analyzer(self._gadget_analyzer)
-        for _, addr in enumerate(self._addresses_to_check_with_caching()):
+        for _, addr in enumerate(self._addresses_to_check_with_caching(show_progress)):
             gadget = _global_gadget_analyzer.analyze_gadget(addr)
             if gadget is not None:
                 if isinstance(gadget, RopGadget):

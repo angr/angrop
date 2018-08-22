@@ -19,8 +19,8 @@ def get_ast_dependency(ast):
     dependencies = set()
 
     for var in ast.variables:
-        if var.startswith(b"sreg_"):
-            dependencies.add(var[5:].split(b"-")[0].decode())
+        if var.startswith("sreg_"):
+            dependencies.add(var[5:].split("-")[0])
         else:
             return set()
     return dependencies

@@ -326,7 +326,7 @@ class GadgetAnalyzer(object):
             return self._solve_cache[hash(ast)]
 
         # prefilter
-        if len(ast.variables) != 1 or not list(ast.variables)[0].startswith(b"symbolic_stack"):
+        if len(ast.variables) != 1 or not list(ast.variables)[0].startswith("symbolic_stack"):
             self._solve_cache[hash(ast)] = False
             return False
 
@@ -476,7 +476,7 @@ class GadgetAnalyzer(object):
                 return
 
             vars0 = list(write_action.data.ast.args[0].variables)
-            if not len(vars0) == 1 and vars0[0].startswith(b"symbolic_read_sreg_"):
+            if not len(vars0) == 1 and vars0[0].startswith("symbolic_read_sreg_"):
                 return
 
             data_dependencies = rop_utils.get_ast_dependency(write_action.data.ast.args[1])
@@ -516,7 +516,7 @@ class GadgetAnalyzer(object):
             pivot = StackPivot(addr)
             pivot.sp_from_reg = list(reg_deps)[0]
         elif len(symbolic_p.regs.sp.variables) == 1 and \
-                list(symbolic_p.regs.sp.variables)[0].startswith(b"symbolic_stack"):
+                list(symbolic_p.regs.sp.variables)[0].startswith("symbolic_stack"):
             offset = None
             for a in symbolic_p.regs.sp.recursive_children_asts:
                 if a.op == "Extract" and a.depth == 2:

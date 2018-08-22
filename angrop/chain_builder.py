@@ -569,7 +569,7 @@ class ChainBuilder(object):
         if succ.se.solution(succ.registers.load(reg), value):
             # make sure wasnt a symbolic read
             for var in succ.registers.load(reg).variables:
-                if b"symbolic_read" in var:
+                if "symbolic_read" in var:
                     return False
             return True
         return False
