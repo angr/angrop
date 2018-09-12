@@ -715,7 +715,7 @@ class ChainBuilder(object):
         for segment in self.project.loader.main_object.segments:
             if segment.is_executable:
                 num_bytes = segment.max_addr - segment.min_addr
-                read_bytes = bytes(self.project.loader.memory.read_bytes(segment.min_addr, num_bytes))
+                read_bytes = self.project.loader.memory.load(segment.min_addr, num_bytes)
                 for syscall_instruction in self._syscall_instructions:
                     for loc in common.str_find_all(read_bytes, syscall_instruction):
                         addrs.append(loc + segment.min_addr)

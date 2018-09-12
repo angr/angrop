@@ -4,7 +4,7 @@ from .errors import RegNotFoundException, RopException
 
 
 def gadget_to_asmstring(project, gadget):
-    code = bytes(project.loader.memory.read_bytes(gadget.addr,gadget.block_length))
+    code = project.loader.memory.load(gadget.addr,gadget.block_length)
     md = project.arch.capstone
     return "; ".join(["%s %s" %(i.mnemonic, i.op_str) for i in md.disasm(code,gadget.addr)])
 
