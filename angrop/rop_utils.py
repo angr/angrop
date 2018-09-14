@@ -47,7 +47,7 @@ def get_ast_controllers(test_state, ast, reg_deps):
         if not constrained_copy.registers.load(reg).symbolic:
             continue
         constrained_copy.add_constraints(constrained_copy.registers.load(reg) == test_val)
-    if len(constrained_copy.se.eval_upto(ast, 2)) > 1:
+    if len(constrained_copy.solver.eval_upto(ast, 2)) > 1:
         return controllers
 
     for reg in reg_deps:
@@ -79,15 +79,15 @@ def unconstrained_check(state, ast):
     # chars need to be able to be different
     test_val_4 = int(("1001"*2 + "1010"*2 + "1011"*2 + "1100"*2 + "1101"*2 + "1110"*2 + "1110"*2 + "0001"*2), 2) \
         % (1 << size)
-    if not state.se.satisfiable(extra_constraints=(ast == test_val_0,)):
+    if not state.solver.satisfiable(extra_constraints=(ast == test_val_0,)):
         return False
-    if not state.se.satisfiable(extra_constraints=(ast == test_val_1,)):
+    if not state.solver.satisfiable(extra_constraints=(ast == test_val_1,)):
         return False
-    if not state.se.satisfiable(extra_constraints=(ast == test_val_2,)):
+    if not state.solver.satisfiable(extra_constraints=(ast == test_val_2,)):
         return False
-    if not state.se.satisfiable(extra_constraints=(ast == test_val_3,)):
+    if not state.solver.satisfiable(extra_constraints=(ast == test_val_3,)):
         return False
-    if not state.se.satisfiable(extra_constraints=(ast == test_val_4,)):
+    if not state.solver.satisfiable(extra_constraints=(ast == test_val_4,)):
         return False
     return True
 
@@ -142,7 +142,7 @@ def _asts_must_be_equal(state, ast1, ast2):
     :param ast2: second ast
     :return: True if the ast's must be equal
     """
-    if state.se.satisfiable(extra_constraints=(ast1 != ast2,)):
+    if state.solver.satisfiable(extra_constraints=(ast1 != ast2,)):
         return False
     return True
 
@@ -159,11 +159,11 @@ def make_initial_state(project, stack_length):
     initial_state.options.discard(angr.options.CGC_ZERO_FILL_UNCONSTRAINED_MEMORY)
     initial_state.options.update({angr.options.TRACK_REGISTER_ACTIONS, angr.options.TRACK_MEMORY_ACTIONS,
                                   angr.options.TRACK_JMP_ACTIONS, angr.options.TRACK_CONSTRAINT_ACTIONS})
-    symbolic_stack = initial_state.se.BVS("symbolic_stack", project.arch.bits*stack_length)
+    symbolic_stack = initial_state.solver.BVS("symbolic_stack", project.arch.bits*stack_length)
     initial_state.memory.store(initial_state.regs.sp, symbolic_stack)
     if initial_state.arch.bp_offset != initial_state.arch.sp_offset:
         initial_state.regs.bp = initial_state.regs.sp + 20*initial_state.arch.bytes
-    initial_state.se._solver.timeout = 500  # only solve for half a second at most
+    initial_state.solver._solver.timeout = 500  # only solve for half a second at most
     return initial_state
 
 
@@ -176,7 +176,7 @@ def make_symbolic_state(project, reg_list, stack_length=80):
     symbolic_state = input_state.copy()
     # overwrite all registers
     for reg in reg_list:
-        symbolic_state.registers.store(reg, symbolic_state.se.BVS("sreg_" + reg + "-", project.arch.bits))
+        symbolic_state.registers.store(reg, symbolic_state.solver.BVS("sreg_" + reg + "-", project.arch.bits))
     # restore sp
     symbolic_state.regs.sp = input_state.regs.sp
     # restore bp
@@ -186,7 +186,7 @@ def make_symbolic_state(project, reg_list, stack_length=80):
 
 def make_reg_symbolic(state, reg):
     state.registers.store(reg,
-    state.se.BVS("sreg_" + reg + "-", state.arch.bits))
+    state.solver.BVS("sreg_" + reg + "-", state.arch.bits))
 
 
 def step_to_unconstrained_successor(project, state, max_steps=2, allow_simprocedures=False):

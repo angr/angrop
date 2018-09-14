@@ -401,7 +401,7 @@ class ROP(Analysis):
                 if segment.is_executable:
                     num_bytes = segment.max_addr - segment.min_addr
 
-                    read_bytes = state.se.eval(state.memory.load(segment.min_addr, num_bytes), cast_to=bytes)
+                    read_bytes = state.solver.eval(state.memory.load(segment.min_addr, num_bytes), cast_to=bytes)
                     for ret_instruction in ret_instructions:
                         for loc in common.str_find_all(read_bytes, ret_instruction):
                             addrs.append(loc + segment.min_addr)

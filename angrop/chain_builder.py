@@ -559,14 +559,14 @@ class ChainBuilder(object):
         state.registers.store(reg, 0)
         state.regs.ip = gadget.addr
         # store A's past the end of the stack
-        state.memory.store(state.regs.sp + gadget.stack_change, state.se.BVV(b"A"*0x100))
+        state.memory.store(state.regs.sp + gadget.stack_change, state.solver.BVV(b"A"*0x100))
 
         succ = rop_utils.step_to_unconstrained_successor(project=self.project, state=state)
         # successor
         if succ.ip is succ.registers.load(reg):
             return False
 
-        if succ.se.solution(succ.registers.load(reg), value):
+        if succ.solver.solution(succ.registers.load(reg), value):
             # make sure wasnt a symbolic read
             for var in succ.registers.load(reg).variables:
                 if "symbolic_read" in var:
@@ -732,7 +732,7 @@ class ChainBuilder(object):
         # create a symbolic state
         test_symbolic_state = rop_utils.make_symbolic_state(self.project, self._reg_list)
         addrs = [g.addr for g in gadgets]
-        addrs.append(test_symbolic_state.se.BVS("next_addr", self.project.arch.bits))
+        addrs.append(test_symbolic_state.solver.BVS("next_addr", self.project.arch.bits))
 
         arch_bytes = self.project.arch.bytes
         arch_endness = self.project.arch.memory_endness
@@ -744,7 +744,7 @@ class ChainBuilder(object):
         state.add_constraints(state.memory.load(state.regs.sp, arch_bytes, endness=arch_endness) == addrs[0])
         # push the stack pointer down, like a pop would do
         state.regs.sp += arch_bytes
-        state.se._solver.timeout = 5000
+        state.solver._solver.timeout = 5000
 
         # step through each gadget
         # for each gadget, constrain memory addresses and add constraints for the successor
@@ -786,8 +786,8 @@ class ChainBuilder(object):
                 sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
                                                            endness=self.project.arch.memory_endness)
                 # check if we can constrain val to be the roparg_filler
-                if test_symbolic_state.se.satisfiable((sym_word == self._roparg_filler,)) and \
-                        rebase_state.se.satisfiable((sym_word == self._roparg_filler,)):
+                if test_symbolic_state.solver.satisfiable((sym_word == self._roparg_filler,)) and \
+                        rebase_state.solver.satisfiable((sym_word == self._roparg_filler,)):
                     # constrain the val to be the roparg_filler
                     test_symbolic_state.add_constraints(sym_word == self._roparg_filler)
                     rebase_state.add_constraints(sym_word == self._roparg_filler)
@@ -803,10 +803,10 @@ class ChainBuilder(object):
             sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
                                                        endness=self.project.arch.memory_endness)
 
-            val = test_symbolic_state.se.eval(sym_word)
+            val = test_symbolic_state.solver.eval(sym_word)
 
             if len(rebase_regs) > 0:
-                val2 = rebase_state.se.eval(rebase_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
+                val2 = rebase_state.solver.eval(rebase_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
                                                                         endness=self.project.arch.memory_endness))
                 if (val2 - val) & (2**self.project.arch.bits - 1) == 0x41414141:
                     res.add_value(val, needs_rebase=True)
@@ -999,13 +999,13 @@ class ChainBuilder(object):
         state = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
 
         # constrain the data
-        test_state.add_constraints(state.memory.load(addr, len(data)) == test_state.se.BVV(data))
+        test_state.add_constraints(state.memory.load(addr, len(data)) == test_state.solver.BVV(data))
 
         # get the actual register values
         all_deps = list(mem_write.addr_dependencies) + list(mem_write.data_dependencies)
         reg_vals = dict()
         for reg in set(all_deps):
-            reg_vals[reg] = test_state.se.eval(test_state.registers.load(reg))
+            reg_vals[reg] = test_state.solver.eval(test_state.registers.load(reg))
 
         chain = self.set_regs(use_partial_controllers=use_partial_controllers, **reg_vals)
         chain.add_gadget(gadget)
@@ -1033,9 +1033,9 @@ class ChainBuilder(object):
         rop_utils.make_reg_symbolic(test_state, self._base_pointer)
 
         if difference is not None:
-            test_state.memory.store(addr, test_state.se.BVV(~difference, data_size))
+            test_state.memory.store(addr, test_state.solver.BVV(~difference, data_size))
         if final_val is not None:
-            test_state.memory.store(addr, test_state.se.BVV(~final_val, data_size))
+            test_state.memory.store(addr, test_state.solver.BVV(~final_val, data_size))
 
         test_state.regs.ip = gadget.addr
         test_state.add_constraints(
@@ -1069,17 +1069,17 @@ class ChainBuilder(object):
         # constrain the data
         if final_val is not None:
             test_state.add_constraints(state.memory.load(addr, data_size//8, endness=arch_endness) ==
-                                       test_state.se.BVV(final_val, data_size))
+                                       test_state.solver.BVV(final_val, data_size))
         if difference is not None:
             test_state.add_constraints(state.memory.load(addr, data_size//8, endness=arch_endness) -
                                        test_state.memory.load(addr, data_size//8, endness=arch_endness) ==
-                                       test_state.se.BVV(difference, data_size))
+                                       test_state.solver.BVV(difference, data_size))
 
         # get the actual register values
         all_deps = list(mem_change.addr_dependencies) + list(mem_change.data_dependencies)
         reg_vals = dict()
         for reg in set(all_deps):
-            reg_vals[reg] = test_state.se.eval(test_state.registers.load(reg))
+            reg_vals[reg] = test_state.solver.eval(test_state.registers.load(reg))
 
         chain = self.set_regs(**reg_vals)
         chain.add_gadget(gadget)

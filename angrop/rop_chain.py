@@ -17,7 +17,7 @@ class RopChain(object):
         # blank state used for solving
         self._blank_state = self._p.factory.blank_state() if state is None else state
         self._pie = self._p.loader.main_object.image_base_delta != 0
-        self._rebase_val = self._blank_state.se.BVS("base", self._p.arch.bits)
+        self._rebase_val = self._blank_state.solver.BVS("base", self._p.arch.bits)
 
     def __add__(self, other):
         # need to add the values from the other's stack and the constraints to the result state
@@ -25,7 +25,7 @@ class RopChain(object):
         o_state = other._blank_state
         o_stack = o_state.memory.load(o_state.regs.sp, other.payload_len)
         result._blank_state.memory.store(result._blank_state.regs.sp + self.payload_len, o_stack)
-        result._blank_state.se.add(*o_state.se.constraints)
+        result._blank_state.solver.add(*o_state.solver.constraints)
         # add the other values and gadgets
         result._values.extend(other._values)
         result._gadgets.extend(other._gadgets)
@@ -71,7 +71,7 @@ class RopChain(object):
             if isinstance(val, int):
                 concrete_vals.append((val, needs_rebase))
             else:
-                concrete_vals.append((solver_state.se.eval(val), needs_rebase))
+                concrete_vals.append((solver_state.solver.eval(val), needs_rebase))
 
         return concrete_vals
 
@@ -90,7 +90,7 @@ class RopChain(object):
             else:
                 test_state.stack_push(value)
         sp = test_state.regs.sp
-        rop_str = test_state.se.eval(test_state.memory.load(sp, self.payload_len), cast_to=bytes)
+        rop_str = test_state.solver.eval(test_state.memory.load(sp, self.payload_len), cast_to=bytes)
         return rop_str
 
     def payload_bv(self):
