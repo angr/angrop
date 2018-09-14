@@ -90,7 +90,7 @@ def execute_chain(project, chain):
     s = project.factory.blank_state()
     s.memory.store(s.regs.sp, chain.payload_str() + b"AAAAAAAAA")
     s.ip = s.stack_pop()
-    p = project.factory.simgr(s)
+    p = project.factory.simulation_manager(s)
     goal_addr = 0x4141414141414141 % (1 << project.arch.bits)
     while p.one_active.addr != goal_addr:
         p.step()

@@ -529,7 +529,7 @@ class GadgetAnalyzer(object):
 
         if pivot is not None:
             # verify no weird mem accesses
-            test_p = self.project.factory.simgr(symbolic_state.copy())
+            test_p = self.project.factory.simulation_manager(symbolic_state.copy())
             # step until we find the pivot action
             for i in range(self.project.factory.block(symbolic_state.addr).instructions):
                 test_p.step(num_inst=1)
