@@ -88,9 +88,9 @@ def compare_gadgets(test_gadgets, known_gadgets):
 
 def execute_chain(project, chain):
     s = project.factory.blank_state()
-    s.memory.store(s.regs.sp, chain.payload_str() + "AAAAAAAAA")
+    s.memory.store(s.regs.sp, chain.payload_str() + b"AAAAAAAAA")
     s.ip = s.stack_pop()
-    p = project.factory.simgr(s)
+    p = project.factory.simulation_manager(s)
     goal_addr = 0x4141414141414141 % (1 << project.arch.bits)
     while p.one_active.addr != goal_addr:
         p.step()
@@ -114,8 +114,8 @@ def test_rop_x86_64():
     nose.tools.assert_equal(chain.payload_len, 24)
     # chain is correct
     result_state = execute_chain(b, chain)
-    nose.tools.assert_equal(result_state.se.eval(result_state.regs.rbp), 0x1212)
-    nose.tools.assert_equal(result_state.se.eval(result_state.regs.rbx), 0x1234567890123456)
+    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.rbp), 0x1212)
+    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.rbx), 0x1234567890123456)
 
     # test setting the filler value
     rop.set_roparg_filler(0x4141414141414141)
@@ -138,13 +138,13 @@ def test_rop_i386_cgc():
     nose.tools.assert_equal(chain.payload_len, 12)
     # chain is correct
     result_state = execute_chain(b, chain)
-    nose.tools.assert_equal(result_state.se.eval(result_state.regs.ebx), 0x98765432)
-    nose.tools.assert_equal(result_state.se.eval(result_state.regs.ecx), 0x12345678)
+    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.ebx), 0x98765432)
+    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.ecx), 0x12345678)
 
     # test memwrite chain
-    chain = rop.write_to_mem(0x41414141, "ABCDEFGH")
+    chain = rop.write_to_mem(0x41414141, b"ABCDEFGH")
     result_state = execute_chain(b, chain)
-    nose.tools.assert_equal(result_state.se.eval(result_state.memory.load(0x41414141, 8), cast_to=str), "ABCDEFGH")
+    nose.tools.assert_equal(result_state.solver.eval(result_state.memory.load(0x41414141, 8), cast_to=bytes), b"ABCDEFGH")
 
 
 def test_rop_arm():
@@ -163,19 +163,19 @@ def test_rop_arm():
     # correct chains, using a more complicated chain here
     chain = rop.set_regs(r4=0x99887766, r9=0x44556677, r11=0x11223344)
     result_state = execute_chain(b, chain)
-    nose.tools.assert_equal(result_state.se.eval(result_state.regs.r4), 0x99887766)
-    nose.tools.assert_equal(result_state.se.eval(result_state.regs.r9), 0x44556677)
-    nose.tools.assert_equal(result_state.se.eval(result_state.regs.r11), 0x11223344)
+    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.r4), 0x99887766)
+    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.r9), 0x44556677)
+    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.r11), 0x11223344)
 
     # test memwrite chain
-    chain = rop.write_to_mem(0x41414141, "ABCDEFGH")
+    chain = rop.write_to_mem(0x41414141, b"ABCDEFGH")
     result_state = execute_chain(b, chain)
-    nose.tools.assert_equal(result_state.se.eval(result_state.memory.load(0x41414141, 8), cast_to=str), "ABCDEFGH")
+    nose.tools.assert_equal(result_state.solver.eval(result_state.memory.load(0x41414141, 8), cast_to=bytes), b"ABCDEFGH")
 
 
 def run_all():
     functions = globals()
-    all_functions = dict(filter((lambda (k, v): k.startswith('test_')), functions.items()))
+    all_functions = dict(filter((lambda kv: kv[0].startswith('test_')), functions.items()))
     for f in sorted(all_functions.keys()):
         if hasattr(all_functions[f], '__call__'):
             all_functions[f]()

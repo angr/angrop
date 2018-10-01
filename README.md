@@ -25,9 +25,9 @@ The ROP analysis finds rop gadgets and can automatically build rop chains.
 >>> rop.find_gadgets()
 >>> chain = rop.set_regs(rax=0x1337, rbx=0x56565656)
 >>> chain.payload_str()
-'\xb32@\x00\x00\x00\x00\x007\x13\x00\x00\x00\x00\x00\x00\xa1\x18@\x00\x00\x00\x00\x00VVVV\x00\x00\x00\x00'
+b'\xb32@\x00\x00\x00\x00\x007\x13\x00\x00\x00\x00\x00\x00\xa1\x18@\x00\x00\x00\x00\x00VVVV\x00\x00\x00\x00'
 >>> chain.print_payload_code()
-chain = ""
+chain = b""
 chain += p64(0x410b23)	# pop rax; ret
 chain += p64(0x1337)
 chain += p64(0x404dc0)	# pop rbx; ret
@@ -43,7 +43,7 @@ chain = rop.set_regs(rax=0x1337, rbx=0x56565656)
 
 # writing to memory 
 # writes "/bin/sh\0" to address 0x61b100
-chain = rop.write_to_mem(0x61b100, "/bin/sh\0")
+chain = rop.write_to_mem(0x61b100, b"/bin/sh\0")
 
 # calling functions
 chain = rop.func_call("read", [0, 0x804f000, 0x100])
@@ -52,11 +52,11 @@ chain = rop.func_call("read", [0, 0x804f000, 0x100])
 chain = rop.add_to_mem(0x804f124, 0x41414141)
 
 # chains can be added together to chain operations
-chain = rop.write_to_mem(0x61b100, "/home/ctf/flag\x00") + rop.func_call("open", [0x61b100,os.O_RDONLY]) + ...
+chain = rop.write_to_mem(0x61b100, b"/home/ctf/flag\x00") + rop.func_call("open", [0x61b100,os.O_RDONLY]) + ...
 
 # chains can be printed for copy pasting into exploits
 >>> chain.print_payload_code()
-chain = ""
+chain = b""
 chain += p64(0x410b23)	# pop rax; ret
 chain += p64(0x74632f656d6f682f)
 chain += p64(0x404dc0)	# pop rbx; ret
@@ -82,7 +82,7 @@ For example look at how the following code translates into a gadget
 ```
 
 ```python
->>> print rop.gadgets[0]
+>>> print(rop.gadgets[0])
 Gadget 0x403be4
 Stack change: 0x20
 Changed registers: set(['rbx', 'rax', 'rbp'])
@@ -103,7 +103,7 @@ All of the information is stored as properties in the gadgets, so it is easy to 
 ```python
 >>> for g in rop.gadgets:
     if "rax" in g.popped_regs and "rbx" not in g.changed_regs:
-        print g
+        print(g)
 Gadget 0x4032b3
 Stack change: 0x10
 Changed registers: set(['rax'])

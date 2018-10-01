@@ -69,8 +69,7 @@ class ROP(Analysis):
         # get list of multipurpose registers
         self._reg_list = a.default_symbolic_registers
         # prune the register list of the instruction pointer and the stack pointer
-        self._reg_list = filter(lambda r: r != self._sp_reg, self._reg_list)
-        self._reg_list = filter(lambda r: r != self._ip_reg, self._reg_list)
+        self._reg_list = [r for r in self._reg_list if r not in (self._sp_reg, self._ip_reg)]
 
         # get ret locations
         self._ret_locations = self._get_ret_locations()
@@ -147,7 +146,7 @@ class ROP(Analysis):
         self.gadgets = sorted(self.gadgets, key=lambda x: x.addr)
         self._reload_chain_funcs()
 
-    def find_gadgets_single_threaded(self):
+    def find_gadgets_single_threaded(self, show_progress=True):
         """
         Finds all the gadgets in the binary by calling analyze_gadget on every address near a ret
         Saves gadgets in self.gadgets
@@ -156,7 +155,7 @@ class ROP(Analysis):
         self.gadgets = []
 
         _set_global_gadget_analyzer(self._gadget_analyzer)
-        for _, addr in enumerate(self._addresses_to_check_with_caching()):
+        for _, addr in enumerate(self._addresses_to_check_with_caching(show_progress)):
             gadget = _global_gadget_analyzer.analyze_gadget(addr)
             if gadget is not None:
                 if isinstance(gadget, RopGadget):
@@ -320,7 +319,7 @@ class ROP(Analysis):
             for st, _ in slices:
                 current_addr = max(current_addr, st)
                 end_addr = st + block_size + alignment
-                for i in xrange(current_addr, end_addr, alignment):
+                for i in range(current_addr, end_addr, alignment):
                     segment = self.project.loader.main_object.find_segment_containing(i)
                     if segment is not None and segment.is_executable:
                         yield i
@@ -329,7 +328,7 @@ class ROP(Analysis):
             for segment in self.project.loader.main_object.segments:
                 if segment.is_executable:
                     l.debug("Analyzing segment with address range: 0x%x, 0x%x" % (segment.min_addr, segment.max_addr))
-                    for addr in xrange(segment.min_addr, segment.max_addr):
+                    for addr in range(segment.min_addr, segment.max_addr):
                         yield addr
 
     def _get_ret_locations(self):
@@ -354,7 +353,7 @@ class ROP(Analysis):
                     alignment = 1
 
                 # iterate through the code looking for rets
-                for addr in xrange(segment.min_addr, segment.min_addr + num_bytes, alignment):
+                for addr in range(segment.min_addr, segment.min_addr + num_bytes, alignment):
                     # dont recheck addresses we've seen before
                     if addr in seen:
                         continue
@@ -381,7 +380,7 @@ class ROP(Analysis):
         :return: all the locations in the binary with a ret instruction
         """
         if self.project.arch.linux_name == "x86_64" or self.project.arch.linux_name == "i386":
-            ret_instructions = {"\xc2", "\xc3", "\xca", "\xcb"}
+            ret_instructions = {b"\xc2", b"\xc3", b"\xca", b"\xcb"}
         else:
             raise RopException("Only have ret strings for i386 and x86_64")
 
@@ -390,7 +389,7 @@ class ROP(Analysis):
             for segment in self.project.loader.main_object.segments:
                 if segment.is_executable:
                     num_bytes = segment.max_addr-segment.min_addr
-                    read_bytes = "".join(self.project.loader.memory.read_bytes(segment.min_addr, num_bytes))
+                    read_bytes = self.project.loader.memory.load(segment.min_addr, num_bytes)
                     for ret_instruction in ret_instructions:
                         for loc in common.str_find_all(read_bytes, ret_instruction):
                             addrs.append(loc + segment.min_addr)
@@ -402,7 +401,7 @@ class ROP(Analysis):
                 if segment.is_executable:
                     num_bytes = segment.max_addr - segment.min_addr
 
-                    read_bytes = state.se.eval(state.memory.load(segment.min_addr, num_bytes), cast_to=str)
+                    read_bytes = state.solver.eval(state.memory.load(segment.min_addr, num_bytes), cast_to=bytes)
                     for ret_instruction in ret_instructions:
                         for loc in common.str_find_all(read_bytes, ret_instruction):
                             addrs.append(loc + segment.min_addr)

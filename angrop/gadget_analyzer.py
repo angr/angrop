@@ -23,9 +23,9 @@ class GadgetAnalyzer(object):
 
         # initial state that others are based off
         self._stack_length = 80
-        self._stack_length_bytes = self._stack_length * self.project.arch.bits / 8
+        self._stack_length_bytes = self._stack_length * self.project.arch.bytes
         self._test_symbolic_state = rop_utils.make_symbolic_state(self.project, reg_list)
-        self._stack_pointer_value = self._test_symbolic_state.se.eval(self._test_symbolic_state.regs.sp)
+        self._stack_pointer_value = self._test_symbolic_state.solver.eval(self._test_symbolic_state.regs.sp)
 
         # architecture stuff
         self._base_pointer = self.project.arch.register_names[self.project.arch.bp_offset]
@@ -78,7 +78,7 @@ class GadgetAnalyzer(object):
             l.debug("... computing sp change")
             self._compute_sp_change(symbolic_state, this_gadget)
 
-            if this_gadget.stack_change % (self.project.arch.bits / 8) != 0:
+            if this_gadget.stack_change % (self.project.arch.bytes) != 0:
                 l.debug("... uneven sp change")
                 return None
 
@@ -118,10 +118,10 @@ class GadgetAnalyzer(object):
                     return None
 
         except RopException as e:
-            l.debug("... %s", e.message)
+            l.debug("... %s", e)
             return None
         except claripy.ClaripyFrontendError as e:
-            l.warning("... claripy error: %s", e.message)
+            l.warning("... claripy error: %s", e)
             return None
 
         l.debug("... Appending gadget!")
@@ -294,7 +294,7 @@ class GadgetAnalyzer(object):
                 # try lower 32 bits (this is intended for amd64)
                 # todo do this for less bits too?
                 else:
-                    half_bits = self.project.arch.bits / 2
+                    half_bits = self.project.arch.bits // 2
                     ast_1 = claripy.Extract(half_bits-1, 0, ast_1)
                     ast_2 = claripy.Extract(half_bits-1, 0, ast_2)
                     if ast_1 is ast_2:
@@ -330,16 +330,16 @@ class GadgetAnalyzer(object):
             self._solve_cache[hash(ast)] = False
             return False
 
-        stack_bytes_length = self._stack_length * (self.project.arch.bits / 8)
+        stack_bytes_length = self._stack_length * self.project.arch.bytes
         if gadget_stack_change is not None:
             stack_bytes_length = min(max(gadget_stack_change, 0), stack_bytes_length)
-        concrete_stack = initial_state.se.BVV("B" * stack_bytes_length)
+        concrete_stack = initial_state.solver.BVV(b"B" * stack_bytes_length)
         concrete_stack_s = initial_state.copy()
         concrete_stack_s.add_constraints(
             initial_state.memory.load(initial_state.regs.sp, stack_bytes_length) == concrete_stack)
         test_constraint = (ast != test_val)
         # stack must have set the register and it must be able to set the register to all 1's or all 0's
-        if not concrete_stack_s.se.satisfiable(extra_constraints=(test_constraint,)) and \
+        if not concrete_stack_s.solver.satisfiable(extra_constraints=(test_constraint,)) and \
                 rop_utils.fast_unconstrained_check(initial_state, ast):
             ans = True
         else:
@@ -358,8 +358,8 @@ class GadgetAnalyzer(object):
         """
         # store symbolic sp and bp and check for dependencies
         ss_copy = symbolic_state.copy()
-        ss_copy.regs.bp = ss_copy.se.BVS("sreg_" + self._base_pointer + "-", self.project.arch.bits)
-        ss_copy.regs.sp = ss_copy.se.BVS("sreg_" + self._sp_reg + "-", self.project.arch.bits)
+        ss_copy.regs.bp = ss_copy.solver.BVS("sreg_" + self._base_pointer + "-", self.project.arch.bits)
+        ss_copy.regs.sp = ss_copy.solver.BVS("sreg_" + self._sp_reg + "-", self.project.arch.bits)
         symbolic_p = rop_utils.step_to_unconstrained_successor(self.project, ss_copy)
         dependencies = self._get_reg_dependencies(symbolic_p, "sp")
         sp_change = symbolic_p.regs.sp - ss_copy.regs.sp
@@ -371,13 +371,13 @@ class GadgetAnalyzer(object):
         elif len(dependencies) == 0 and sp_change.symbolic:
             raise RopException("SP change is uncontrolled")
         elif len(dependencies) == 0 and not sp_change.symbolic:
-            stack_changes = [ss_copy.se.eval(sp_change)]
+            stack_changes = [ss_copy.solver.eval(sp_change)]
         elif list(dependencies)[0] == self._sp_reg:
-            stack_changes = ss_copy.se.eval_upto(sp_change, 2)
+            stack_changes = ss_copy.solver.eval_upto(sp_change, 2)
             gadget.stack_change = stack_changes[0]
         elif list(dependencies)[0] == self._base_pointer:
             sp_change = symbolic_p.regs.sp - ss_copy.regs.bp
-            stack_changes = ss_copy.se.eval_upto(sp_change, 2)
+            stack_changes = ss_copy.solver.eval_upto(sp_change, 2)
             gadget.bp_moves_to_sp = True
         else:
             raise RopException("SP does not depend on SP or BP")
@@ -403,7 +403,7 @@ class GadgetAnalyzer(object):
                     mem_access.addr_controllers = rop_utils.get_ast_controllers(symbolic_state, a.addr.ast,
                                                                                 mem_access.addr_dependencies)
                 else:
-                    mem_access.addr_constant = symbolic_state.se.eval(a.addr.ast)
+                    mem_access.addr_constant = symbolic_state.solver.eval(a.addr.ast)
 
                 # don't need to inform user of stack reads/writes
                 stack_min_addr = self._stack_pointer_value - 0x20
@@ -427,7 +427,7 @@ class GadgetAnalyzer(object):
                         continue
 
                     # for writes we want what the data depends on
-                    test_data = symbolic_state.se.eval_upto(a.data.ast, 2)
+                    test_data = symbolic_state.solver.eval_upto(a.data.ast, 2)
                     if len(test_data) > 1:
                         mem_access.data_dependencies = rop_utils.get_ast_dependency(a.data.ast)
                         mem_access.data_controllers = rop_utils.get_ast_controllers(symbolic_state, a.data.ast,
@@ -454,7 +454,7 @@ class GadgetAnalyzer(object):
                                 succ_state.registers.load(reg) != a.data.ast.zero_extend(bits_to_extend),
                                 succ_state.registers.load(reg) != a.data.ast.sign_extend(bits_to_extend))
 
-                            if not succ_state.se.satisfiable(extra_constraints=(test_constraint,)):
+                            if not succ_state.solver.satisfiable(extra_constraints=(test_constraint,)):
                                 mem_access.data_dependencies.add(reg)
 
                 mem_access.data_size = a.data.ast.size()
@@ -523,13 +523,13 @@ class GadgetAnalyzer(object):
                     offset = a.args[2].size() - 1 - a.args[0]
             if offset is None or offset % 8 != 0:
                 return None
-            offset_bytes = offset/8
+            offset_bytes = offset//8
             pivot = StackPivot(addr)
             pivot.sp_popped_offset = offset_bytes
 
         if pivot is not None:
             # verify no weird mem accesses
-            test_p = self.project.factory.simgr(symbolic_state.copy())
+            test_p = self.project.factory.simulation_manager(symbolic_state.copy())
             # step until we find the pivot action
             for i in range(self.project.factory.block(symbolic_state.addr).instructions):
                 test_p.step(num_inst=1)
@@ -626,7 +626,7 @@ class GadgetAnalyzer(object):
                     elif reg_name != self._sp_reg:
                         l.info("reg read from register not in reg_list: %s", reg_name)
                 except RegNotFoundException as e:
-                    l.debug(e.message)
+                    l.debug(e)
         return all_reg_reads
 
     def _get_reg_writes(self, path):
@@ -645,7 +645,7 @@ class GadgetAnalyzer(object):
                     elif reg_name != self._sp_reg:
                         l.info("reg read from register not in reg_list: %s", reg_name)
                 except RegNotFoundException as e:
-                    l.debug(e.message)
+                    l.debug(e)
         return all_reg_writes
 
 # TODO ip setters, ie call rax

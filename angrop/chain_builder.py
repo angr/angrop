@@ -45,9 +45,9 @@ class ChainBuilder(object):
 
         self._syscall_instruction = None
         if self.project.arch.linux_name == "x86_64":
-            self._syscall_instructions = {"\x0f\x05"}
+            self._syscall_instructions = {b"\x0f\x05"}
         elif self.project.arch.linux_name == "i386":
-            self._syscall_instructions = {"\xcd\x80"}
+            self._syscall_instructions = {b"\xcd\x80"}
 
         self._execve_syscall = None
         if self.project.loader.main_object.os == "unix":
@@ -132,8 +132,8 @@ class ChainBuilder(object):
         smallest = None
         for gadget in filter(lambda g: g.starts_with_syscall, self._gadgets):
             # adjust stack change for ret
-            stack_change = gadget.stack_change - (self.project.arch.bits / 8)
-            required_space = len(stack_arguments) * (self.project.arch.bits / 8)
+            stack_change = gadget.stack_change - self.project.arch.bytes
+            required_space = len(stack_arguments) * self.project.arch.bytes
             if stack_change >= required_space:
                 if smallest is None or gadget.stack_change < smallest.stack_change:
                     smallest = gadget
@@ -158,11 +158,11 @@ class ChainBuilder(object):
         chain.add_value(chosen_gadget.addr, needs_rebase=True)
 
         # remove one word to account for the ret
-        padding_bytes = chosen_gadget.stack_change - (self.project.arch.bits / 8)
-        bytes_per_pop = self.project.arch.bits / 8
+        padding_bytes = chosen_gadget.stack_change - self.project.arch.bytes
+        bytes_per_pop = self.project.arch.bytes
         # reverse stack_arguments list to make pushing them onto the stack easy
         stack_arguments = stack_arguments[::-1]
-        for _ in range(max(padding_bytes / bytes_per_pop, len(stack_arguments))):
+        for _ in range(max(padding_bytes // bytes_per_pop, len(stack_arguments))):
             try:
                 val = stack_arguments.pop()
             except IndexError:
@@ -171,7 +171,7 @@ class ChainBuilder(object):
 
         return chain
 
-    def write_to_mem(self, addr, string_data, fill_byte="\xff"):
+    def write_to_mem(self, addr, string_data, fill_byte=b"\xff"):
         """
         :param addr: address to store the string
         :param string_data: string to store
@@ -179,7 +179,7 @@ class ChainBuilder(object):
         :return: a rop chain
         """
 
-        if not (isinstance(fill_byte, basestring) and len(fill_byte) == 1):
+        if not (isinstance(fill_byte, bytes) and len(fill_byte) == 1):
             print("fill_byte is not a one byte string, aborting")
             return
 
@@ -217,8 +217,8 @@ class ChainBuilder(object):
                 mem_write = g.mem_writes[0]
                 if (set(mem_write.addr_dependencies) | set(mem_write.data_dependencies)).issubset(set(t)):
                     stack_change = g.stack_change + vals[1]
-                    bytes_per_write = mem_write.data_size / 8
-                    num_writes = (len(string_data) + bytes_per_write - 1)/bytes_per_write
+                    bytes_per_write = mem_write.data_size // 8
+                    num_writes = (len(string_data) + bytes_per_write - 1)//bytes_per_write
                     stack_change *= num_writes
                     if stack_change < best_stack_change:
                         best_gadget = g
@@ -245,7 +245,7 @@ class ChainBuilder(object):
                         stack_change = g.stack_change + vals[1]
                         # only one byte at a time
                         bytes_per_write = 1
-                        num_writes = (len(string_data) + bytes_per_write - 1)/bytes_per_write
+                        num_writes = (len(string_data) + bytes_per_write - 1)//bytes_per_write
                         stack_change *= num_writes
                         if stack_change < best_stack_change:
                             best_gadget = g
@@ -255,7 +255,7 @@ class ChainBuilder(object):
             raise RopException("Couldnt set registers for any memory write gadget")
 
         mem_write = best_gadget.mem_writes[0]
-        bytes_per_write = mem_write.data_size/8 if not use_partial_controllers else 1
+        bytes_per_write = mem_write.data_size//8 if not use_partial_controllers else 1
         l.debug("Now building the mem write chain")
 
         # build the chain
@@ -370,7 +370,7 @@ class ChainBuilder(object):
                 mem_change = g.mem_changes[0]
                 if (set(mem_change.addr_dependencies) | set(mem_change.data_dependencies)).issubset(set(t)):
                     stack_change = g.stack_change + vals[1]
-                    bytes_per_write = mem_change.data_size/8
+                    bytes_per_write = mem_change.data_size//8
                     stack_change *= bytes_per_write
                     if stack_change < best_stack_change:
                         best_gadget = g
@@ -381,7 +381,7 @@ class ChainBuilder(object):
 
         l.debug("Now building the mem const chain")
         mem_change = best_gadget.mem_changes[0]
-        bytes_per_write = mem_change.data_size/8
+        bytes_per_write = mem_change.data_size//8
 
         # build the chain
         if mem_change.op == "__or__":
@@ -399,7 +399,7 @@ class ChainBuilder(object):
             to_write = data[i: i+4]
             # pad if needed
             if len(to_write) < 4:
-                to_write += "\xff" * (4-len(to_write))
+                to_write += b"\xff" * (4-len(to_write))
             to_add = struct.unpack("<I", to_write)[0] - final_value
             chain += self.add_to_mem(addr+i, to_add, 32)
         return chain
@@ -410,14 +410,14 @@ class ChainBuilder(object):
             l.warning("No syscall instruction available, but I'll still try to make the rest of the payload for fun")
 
         if target is None:
-            target = "/bin/sh\x00"
-        if target[-1] != "\x00":
-            target += "\x00"
+            target = b"/bin/sh\x00"
+        if target[-1] != 0:
+            target += b"\x00"
         if addr_for_str is None:
             # get the max writable addr
             max_write_addr = max(s.max_addr for s in self.project.loader.main_object.segments if s.is_writable)
             # page align up
-            max_write_addr = (max_write_addr + 0x1000 - 1) / 0x1000 * 0x1000
+            max_write_addr = (max_write_addr + 0x1000 - 1) // 0x1000 * 0x1000
 
             addr_for_str = max_write_addr - 0x40
             l.warning("writing to %#x", addr_for_str)
@@ -467,7 +467,7 @@ class ChainBuilder(object):
             chain = RopChain(self.project, self)
 
         # stack arguments
-        bytes_per_arg = self.project.arch.bits / 8
+        bytes_per_arg = self.project.arch.bytes
         # find the smallest stack change
         stack_cleaner = None
         if len(stack_arguments) > 0:
@@ -488,7 +488,7 @@ class ChainBuilder(object):
         for arg in stack_arguments:
             chain.add_value(arg, needs_rebase=False)
         if stack_cleaner is not None:
-            for _ in range(stack_cleaner.stack_change / bytes_per_arg - len(stack_arguments) - 1):
+            for _ in range(stack_cleaner.stack_change // bytes_per_arg - len(stack_arguments) - 1):
                 chain.add_value(self._get_fill_val(), needs_rebase=False)
 
         return chain
@@ -559,14 +559,14 @@ class ChainBuilder(object):
         state.registers.store(reg, 0)
         state.regs.ip = gadget.addr
         # store A's past the end of the stack
-        state.memory.store(state.regs.sp + gadget.stack_change, state.se.BVV("A"*0x100))
+        state.memory.store(state.regs.sp + gadget.stack_change, state.solver.BVV(b"A"*0x100))
 
         succ = rop_utils.step_to_unconstrained_successor(project=self.project, state=state)
         # successor
         if succ.ip is succ.registers.load(reg):
             return False
 
-        if succ.se.solution(succ.registers.load(reg), value):
+        if succ.solver.solution(succ.registers.load(reg), value):
             # make sure wasnt a symbolic read
             for var in succ.registers.load(reg).variables:
                 if "symbolic_read" in var:
@@ -653,7 +653,7 @@ class ChainBuilder(object):
                 continue
             if len(g.changed_regs) == 0 and len(g.mem_writes) == 0 and \
                     len(g.mem_reads) == 0 and len(g.mem_changes) == 0 and \
-                    g.stack_change == self.project.arch.bits/8:
+                    g.stack_change == self.project.arch.bytes:
                 ret_addr = g.addr
                 break
         return ret_addr
@@ -715,7 +715,7 @@ class ChainBuilder(object):
         for segment in self.project.loader.main_object.segments:
             if segment.is_executable:
                 num_bytes = segment.max_addr - segment.min_addr
-                read_bytes = "".join(self.project.loader.memory.read_bytes(segment.min_addr, num_bytes))
+                read_bytes = self.project.loader.memory.load(segment.min_addr, num_bytes)
                 for syscall_instruction in self._syscall_instructions:
                     for loc in common.str_find_all(read_bytes, syscall_instruction):
                         addrs.append(loc + segment.min_addr)
@@ -732,9 +732,9 @@ class ChainBuilder(object):
         # create a symbolic state
         test_symbolic_state = rop_utils.make_symbolic_state(self.project, self._reg_list)
         addrs = [g.addr for g in gadgets]
-        addrs.append(test_symbolic_state.se.BVS("next_addr", self.project.arch.bits))
+        addrs.append(test_symbolic_state.solver.BVS("next_addr", self.project.arch.bits))
 
-        arch_bytes = self.project.arch.bits / 8
+        arch_bytes = self.project.arch.bytes
         arch_endness = self.project.arch.memory_endness
 
         # emulate a 'pop pc' of the first gadget
@@ -744,7 +744,7 @@ class ChainBuilder(object):
         state.add_constraints(state.memory.load(state.regs.sp, arch_bytes, endness=arch_endness) == addrs[0])
         # push the stack pointer down, like a pop would do
         state.regs.sp += arch_bytes
-        state.se._solver.timeout = 5000
+        state.solver._solver.timeout = 5000
 
         # step through each gadget
         # for each gadget, constrain memory addresses and add constraints for the successor
@@ -782,12 +782,12 @@ class ChainBuilder(object):
 
         # constrain the "filler" values
         if self._roparg_filler is not None:
-            for i in range(stack_change / bytes_per_pop):
+            for i in range(stack_change // bytes_per_pop):
                 sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
                                                            endness=self.project.arch.memory_endness)
                 # check if we can constrain val to be the roparg_filler
-                if test_symbolic_state.se.satisfiable((sym_word == self._roparg_filler,)) and \
-                        rebase_state.se.satisfiable((sym_word == self._roparg_filler,)):
+                if test_symbolic_state.solver.satisfiable((sym_word == self._roparg_filler,)) and \
+                        rebase_state.solver.satisfiable((sym_word == self._roparg_filler,)):
                     # constrain the val to be the roparg_filler
                     test_symbolic_state.add_constraints(sym_word == self._roparg_filler)
                     rebase_state.add_constraints(sym_word == self._roparg_filler)
@@ -799,14 +799,14 @@ class ChainBuilder(object):
 
         # iterate through the stack values that need to be in the chain
         gadget_addrs = [g.addr for g in gadgets]
-        for i in range(stack_change / bytes_per_pop):
+        for i in range(stack_change // bytes_per_pop):
             sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
                                                        endness=self.project.arch.memory_endness)
 
-            val = test_symbolic_state.se.eval(sym_word)
+            val = test_symbolic_state.solver.eval(sym_word)
 
             if len(rebase_regs) > 0:
-                val2 = rebase_state.se.eval(rebase_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
+                val2 = rebase_state.solver.eval(rebase_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
                                                                         endness=self.project.arch.memory_endness))
                 if (val2 - val) & (2**self.project.arch.bits - 1) == 0x41414141:
                     res.add_value(val, needs_rebase=True)
@@ -958,10 +958,10 @@ class ChainBuilder(object):
         if len(gadget.mem_writes) != 1 or len(gadget.mem_reads) + len(gadget.mem_changes) > 0:
             raise RopException("too many memory accesses for my lazy implementation")
 
-        if use_partial_controllers and len(data) < self.project.arch.bits / 8:
-            data = data.ljust(self.project.arch.bits / 8, "\x00")
+        if use_partial_controllers and len(data) < self.project.arch.bytes:
+            data = data.ljust(self.project.arch.bytes, b"\x00")
 
-        arch_bytes = self.project.arch.bits / 8
+        arch_bytes = self.project.arch.bytes
         arch_endness = self.project.arch.memory_endness
 
         # constrain the successor to be at the gadget
@@ -999,20 +999,20 @@ class ChainBuilder(object):
         state = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
 
         # constrain the data
-        test_state.add_constraints(state.memory.load(addr, len(data)) == test_state.se.BVV(data))
+        test_state.add_constraints(state.memory.load(addr, len(data)) == test_state.solver.BVV(data))
 
         # get the actual register values
         all_deps = list(mem_write.addr_dependencies) + list(mem_write.data_dependencies)
         reg_vals = dict()
         for reg in set(all_deps):
-            reg_vals[reg] = test_state.se.eval(test_state.registers.load(reg))
+            reg_vals[reg] = test_state.solver.eval(test_state.registers.load(reg))
 
         chain = self.set_regs(use_partial_controllers=use_partial_controllers, **reg_vals)
         chain.add_gadget(gadget)
 
-        bytes_per_pop = self.project.arch.bits / 8
+        bytes_per_pop = self.project.arch.bytes
         chain.add_value(gadget.addr, needs_rebase=True)
-        for _ in range(gadget.stack_change / bytes_per_pop - 1):
+        for _ in range(gadget.stack_change // bytes_per_pop - 1):
             chain.add_value(self._get_fill_val(), needs_rebase=False)
         return chain
 
@@ -1024,7 +1024,7 @@ class ChainBuilder(object):
         if (final_val is not None and difference is not None) or (final_val is None and difference is None):
             raise RopException("must specify difference or final value and not both")
 
-        arch_bytes = self.project.arch.bits / 8
+        arch_bytes = self.project.arch.bytes
         arch_endness = self.project.arch.memory_endness
 
         # constrain the successor to be at the gadget
@@ -1033,9 +1033,9 @@ class ChainBuilder(object):
         rop_utils.make_reg_symbolic(test_state, self._base_pointer)
 
         if difference is not None:
-            test_state.memory.store(addr, test_state.se.BVV(~difference, data_size))
+            test_state.memory.store(addr, test_state.solver.BVV(~difference, data_size))
         if final_val is not None:
-            test_state.memory.store(addr, test_state.se.BVV(~final_val, data_size))
+            test_state.memory.store(addr, test_state.solver.BVV(~final_val, data_size))
 
         test_state.regs.ip = gadget.addr
         test_state.add_constraints(
@@ -1068,25 +1068,25 @@ class ChainBuilder(object):
 
         # constrain the data
         if final_val is not None:
-            test_state.add_constraints(state.memory.load(addr, data_size/8, endness=arch_endness) ==
-                                       test_state.se.BVV(final_val, data_size))
+            test_state.add_constraints(state.memory.load(addr, data_size//8, endness=arch_endness) ==
+                                       test_state.solver.BVV(final_val, data_size))
         if difference is not None:
-            test_state.add_constraints(state.memory.load(addr, data_size/8, endness=arch_endness) -
-                                       test_state.memory.load(addr, data_size/8, endness=arch_endness) ==
-                                       test_state.se.BVV(difference, data_size))
+            test_state.add_constraints(state.memory.load(addr, data_size//8, endness=arch_endness) -
+                                       test_state.memory.load(addr, data_size//8, endness=arch_endness) ==
+                                       test_state.solver.BVV(difference, data_size))
 
         # get the actual register values
         all_deps = list(mem_change.addr_dependencies) + list(mem_change.data_dependencies)
         reg_vals = dict()
         for reg in set(all_deps):
-            reg_vals[reg] = test_state.se.eval(test_state.registers.load(reg))
+            reg_vals[reg] = test_state.solver.eval(test_state.registers.load(reg))
 
         chain = self.set_regs(**reg_vals)
         chain.add_gadget(gadget)
 
-        bytes_per_pop = self.project.arch.bits / 8
+        bytes_per_pop = self.project.arch.bytes
         chain.add_value(gadget.addr, needs_rebase=True)
-        for _ in range(gadget.stack_change / bytes_per_pop - 1):
+        for _ in range(gadget.stack_change // bytes_per_pop - 1):
             chain.add_value(self._get_fill_val(), needs_rebase=False)
         return chain
 
@@ -1104,7 +1104,7 @@ class ChainBuilder(object):
 
     # inspired by ropper
     def _containsbadbytes(self, gadget):
-        n_bytes = self.project.arch.bits/8
+        n_bytes = self.project.arch.bytes
         addr = gadget.addr
 
         for b in self.badbytes:
