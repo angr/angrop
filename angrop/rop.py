@@ -112,6 +112,8 @@ class ROP(Analysis):
         logging.getLogger('angr.engines.vex.expressions.ccall').setLevel(logging.CRITICAL)
         logging.getLogger('angr.engines.vex.irop').setLevel(logging.CRITICAL)
         logging.getLogger('angr.state_plugins.symbolic_memory').setLevel(logging.CRITICAL)
+        logging.getLogger('pyvex.lifting.libvex').setLevel(logging.CRITICAL)
+        logging.getLogger('angr.procedures.cgc.deallocate').setLevel(logging.CRITICAL)
 
     def find_gadgets(self, processes=4, show_progress=True):
         """
