@@ -142,6 +142,7 @@ class ChainBuilder(object):
             syscall_locs = self._get_syscall_locations()
             if len(syscall_locs) > 0:
                 smallest = RopGadget(syscall_locs[0])
+                smallest.block_length = self.project.factory.block(syscall_locs[0]).size
                 smallest.stack_change = self.project.arch.bits
 
         if smallest is None:
