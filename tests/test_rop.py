@@ -172,6 +172,16 @@ def test_rop_arm():
     result_state = execute_chain(b, chain)
     nose.tools.assert_equal(result_state.solver.eval(result_state.memory.load(0x41414141, 8), cast_to=bytes), b"ABCDEFGH")
 
+def test_roptest_x86_64():
+    p = angr.Project(os.path.join(public_bin_location, "x86_64/roptest"))
+    r = p.analyses.ROP()
+    r.find_gadgets_single_threaded()
+    c = r.execve(b"/bin/sh")
+
+    # verifying this is a giant pain, partially because the binary is so tiny, and there's no code beyond the syscall
+    assert len(c._gadgets) == 8
+    # this is the hardcoded chain...
+    assert [ g.addr for g in c._gadgets ] == [ 0x4000b0, 0x4000b2, 0x4000b4, 0x4000b0, 0x4000bb, 0x4000b2, 0x4000bf, 0x4000c1 ]
 
 def run_all():
     functions = globals()
