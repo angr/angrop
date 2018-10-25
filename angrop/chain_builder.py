@@ -50,7 +50,7 @@ class ChainBuilder(object):
             self._syscall_instructions = {b"\xcd\x80"}
 
         self._execve_syscall = None
-        if self.project.loader.main_object.os == "unix":
+        if "unix" in self.project.loader.main_object.os.lower():
             if self.project.arch.bits == 64:
                 self._execve_syscall = 59
             elif self.project.arch.bits == 32:
