@@ -425,9 +425,15 @@ class ChainBuilder(object):
 
         chain = self.write_to_mem(addr_for_str, target)
         use_partial_controllers = False
-        # TODO If this fails try using partial controllers
-        chain2 = self.do_syscall(self._execve_syscall, [addr_for_str, 0, 0],
-                                 use_partial_controllers=use_partial_controllers, needs_return=False)
+        try:
+            chain2 = self.do_syscall(self._execve_syscall, [addr_for_str, 0, 0],
+                                     use_partial_controllers=use_partial_controllers, needs_return=False)
+        except RopException:
+            # Try to use partial controllers
+            use_partial_controllers = True
+            l.warning("Trying to use partial controllers for syscall")
+            chain2 = self.do_syscall(self._execve_syscall, [addr_for_str, 0, 0],
+                                     use_partial_controllers=use_partial_controllers, needs_return=False)
         result = chain + chain2
 
         return result
