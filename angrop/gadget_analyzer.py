@@ -137,6 +137,12 @@ class GadgetAnalyzer(object):
             l.debug("... checking if block makes sense")
             block = self.project.factory.block(addr)
 
+            # handle stuff that is incorrectly modelled
+            if self.project.arch.linux_name == "x86_64" or self.project.arch.linux_name == "i386":
+                capstr = str(block.capstone).lower()
+                if 'cli' in capstr or 'rex' in capstr or "fs:" in capstr or "gs:" in capstr:
+                    return False
+
             if block.vex.jumpkind == 'Ijk_NoDecode':
                 l.debug("... not decodable")
                 return False

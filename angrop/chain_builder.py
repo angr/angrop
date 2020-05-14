@@ -680,6 +680,8 @@ class ChainBuilder(object):
                     if num_mem_changes == 0 and num_mem_changes2 == 0:
                         if g.stack_change > g2.stack_change:
                             is_good = False
+                        if g.stack_change == g2.stack_change and g.block_length > g2.block_length:
+                            is_good = False
                     if num_mem_changes2 == 0 and num_mem_changes > 0 and g.stack_change >= g2.stack_change:
                         is_good = False
             if not is_good:
