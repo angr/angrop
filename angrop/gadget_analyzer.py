@@ -142,6 +142,8 @@ class GadgetAnalyzer(object):
                 capstr = str(block.capstone).lower()
                 if 'cli' in capstr or 'rex' in capstr or "fs:" in capstr or "gs:" in capstr:
                     return False
+                if block.size < 1 or block.bytes[0] == 0x4f:
+                    return False
 
             if block.vex.jumpkind == 'Ijk_NoDecode':
                 l.debug("... not decodable")
