@@ -1,3 +1,3 @@
-__version__ = (8, 20, 7, 6)
+__version__ = (8, 20, 7, 27)
 
 from . import rop
