@@ -83,7 +83,7 @@ class ROP(Analysis):
         self.badbytes = []
         self.roparg_filler = None
 
-        num_to_check = len(list(self._addresses_to_check()))
+        num_to_check = self._num_addresses_to_check()
         # fast mode
         if fast_mode is None:
             if num_to_check > 20000:
@@ -96,7 +96,8 @@ class ROP(Analysis):
         if self._fast_mode:
             self._max_block_size = 12
             self._max_sym_mem_accesses = 1
-            num_to_check = len(list(self._addresses_to_check()))
+            # Recalculate num addresses to check based on fast_mode settings
+            num_to_check = self._num_addresses_to_check()
 
         l.info("There are %d addresses within %d bytes of a ret",
                num_to_check, self._max_block_size)
@@ -277,7 +278,7 @@ class ROP(Analysis):
         return len(filtered_diffs) > 0
 
     def _addresses_to_check_with_caching(self, show_progress=True):
-        num_addrs = len(list(self._addresses_to_check()))
+        num_addrs = self._num_addresses_to_check()
         widgets = ['ROP: ', progressbar.Percentage(), ' ',
                    progressbar.Bar(marker=progressbar.RotatingMarker()),
                    ' ', progressbar.ETA(), ' ', progressbar.FileTransferSpeed()]
@@ -334,6 +335,19 @@ class ROP(Analysis):
                     for addr in range(segment.min_addr, segment.max_addr):
                         yield addr
 
+    def _num_addresses_to_check(self):
+        if self._only_check_near_rets:
+            # TODO: This could probably be optimized further by fewer segments checks (i.e. iterating for segments and
+            #  adding ranges instead of incrementing, instead of calling _addressses_to_check) although this is still a
+            # significant improvement.
+            return sum(1 for _ in self._addresses_to_check())
+        else:
+            num = 0
+            for segment in self.project.loader.main_object.segments:
+                if segment.is_executable:
+                    num += (segment.max_addr - segment.min_addr)
+            return num
+                        
     def _get_ret_locations(self):
         """
         :return: all the locations in the binary with a ret instruction
