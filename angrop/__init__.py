@@ -1,3 +1,3 @@
-__version__ = (9, 0, "gitrolling")
+__version__ = (9, 0, 5327)
 
 from . import rop
