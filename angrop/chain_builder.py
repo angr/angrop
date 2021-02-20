@@ -85,8 +85,11 @@ class ChainBuilder(object):
         if gadgets is None:
             raise RopException("Couldn't set registers :(")
 
-        return self._build_reg_setting_chain(gadgets, modifiable_memory_range,
+        try:
+            chain = self._build_reg_setting_chain(gadgets, modifiable_memory_range,
                                              registers, best_stack_change, rebase_regs)
+        except angr.SimUnsatError:
+            raise RopException("Couldn't set registers :(")
 
     # TODO handle mess ups by _find_reg_setting_gadgets and see if we can set a register in a syscall preamble
     # or if a register value is explicitly set to just the right value
@@ -196,8 +199,6 @@ class ChainBuilder(object):
                 continue
             if g.stack_change <= 0:
                 continue
-            if self._containsbadbytes(g):
-                continue
             for m_access in g.mem_writes:
                 if len(m_access.addr_controllers) > 0 and len(m_access.data_controllers) > 0 and \
                         len(set(m_access.addr_controllers) & set(m_access.data_controllers)) == 0:
@@ -295,8 +296,6 @@ class ChainBuilder(object):
                 continue
             if g.stack_change <= 0:
                 continue
-            if self._containsbadbytes(g):
-                continue
             for m_access in g.mem_changes:
                 if len(m_access.addr_controllers) > 0 and len(m_access.data_controllers) > 0 and \
                         len(set(m_access.addr_controllers) & set(m_access.data_controllers)) == 0 and \
@@ -348,8 +347,6 @@ class ChainBuilder(object):
             if g.bp_moves_to_sp:
                 continue
             if g.stack_change <= 0:
-                continue
-            if self._containsbadbytes(g):
                 continue
             for m_access in g.mem_changes:
                 if len(m_access.addr_controllers) > 0 and len(m_access.data_controllers) > 0 and \
@@ -480,8 +477,6 @@ class ChainBuilder(object):
         stack_cleaner = None
         if len(stack_arguments) > 0:
             for g in self._gadgets:
-                if self._containsbadbytes(g):
-                    continue
                 if len(g.mem_reads) > 0 or len(g.mem_writes) > 0 or len(g.mem_changes) > 0:
                     continue
                 if g.stack_change >= bytes_per_arg * (len(stack_arguments) + 1):
@@ -585,8 +580,6 @@ class ChainBuilder(object):
     def _get_sufficient_partial_controllers(self, registers):
         sufficient_partial_controllers = defaultdict(set)
         for g in self._gadgets:
-            if self._containsbadbytes(g):
-                continue
             for reg in g.changed_regs:
                 if reg in registers:
                     if self._check_if_sufficient_partial_control(g, reg, registers[reg]):
@@ -657,8 +650,6 @@ class ChainBuilder(object):
         # start with a ret instruction
         ret_addr = None
         for g in self._gadgets:
-            if self._containsbadbytes(g):
-                continue
             if len(g.changed_regs) == 0 and len(g.mem_writes) == 0 and \
                     len(g.mem_reads) == 0 and len(g.mem_changes) == 0 and \
                     g.stack_change == self.project.arch.bytes:
@@ -705,7 +696,7 @@ class ChainBuilder(object):
             for i, addr in enumerate(dups):
                 if i != 0:
                     to_remove.add(addr)
-        gadgets = [g for g in gadgets if g.addr not in to_remove and not self._containsbadbytes(g)]
+        gadgets = [g for g in gadgets if g.addr not in to_remove]
         gadgets = [g for g in gadgets if len(g.popped_regs) != 0 or len(g.reg_controllers) != 0]
         gadget_dict = defaultdict(set)
         for g in gadgets:
@@ -850,6 +841,7 @@ class ChainBuilder(object):
         :param registers:
         :return:
         """
+
         if modifiable_memory_range is not None and len(modifiable_memory_range) != 2:
             raise Exception("modifiable_memory_range should be a tuple (low, high)")
 
@@ -911,8 +903,6 @@ class ChainBuilder(object):
                 # ignore gadgets which don't have a positive stack change
                 if g.stack_change <= 0:
                     continue
-                if self._containsbadbytes(g):
-                    continue
 
                 stack_change = data[regs][1]
                 new_stack_change = stack_change + g.stack_change
@@ -960,7 +950,6 @@ class ChainBuilder(object):
             curr_tuple = data[curr_tuple][0]
 
         gadgets = gadgets_reverse[::-1]
-
         return gadgets, best_stack_change, data
 
     def _write_to_mem_with_gadget(self, gadget, addr, data, use_partial_controllers=False):
@@ -1111,22 +1100,6 @@ class ChainBuilder(object):
 
     def _set_roparg_filler(self, roparg_filler):
         self._roparg_filler = roparg_filler
-
-    # inspired by ropper
-    def _containsbadbytes(self, gadget):
-        n_bytes = self.project.arch.bytes
-        addr = gadget.addr
-
-        for b in self.badbytes:
-            address = addr
-            if type(b) == str:
-                b = ord(b)
-
-            for _ in range(n_bytes):
-                if (address & 0xff) == b:
-                    return True
-                address >>= 8
-
 
     # should also be able to do execve by providing writable memory
     # todo pivot stack
