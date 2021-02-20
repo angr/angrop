@@ -6,7 +6,7 @@ class RopChain(object):
     """
     This class holds rop chains returned by the rop chain building methods such as rop.set_regs()
     """
-    def __init__(self, project, rop, state=None, rebase=True):
+    def __init__(self, project, rop, state=None, rebase=True, badbytes=None):
         """
         rebase=False will force everything to use the addresses in angr
         """
@@ -22,6 +22,7 @@ class RopChain(object):
         self._pie = self._p.loader.main_object.image_base_delta != 0
         self._rebase_val = self._blank_state.solver.BVS("base", self._p.arch.bits)
         self._rebase = rebase
+        self.badbytes = badbytes if badbytes else []
 
     def __add__(self, other):
         # need to add the values from the other's stack and the constraints to the result state
@@ -72,10 +73,21 @@ class RopChain(object):
 
         concrete_vals = []
         for val, needs_rebase in self._values:
+            # if it is int, easy
             if isinstance(val, int):
                 concrete_vals.append((val, needs_rebase))
-            else:
-                concrete_vals.append((solver_state.solver.eval(val), needs_rebase))
+                continue
+
+            # if it is symbolic, make sure it does not have badbytes in it
+            constraints = []
+            # for each byte, it should not be equal to any bad bytes
+            for idx in range(val.length//8):
+                b = val.get_byte(idx)
+                constraints += [ b != c for c in self.badbytes]
+            # apply the constraints
+            for expr in constraints:
+                solver_state.solver.add(expr)
+            concrete_vals.append((solver_state.solver.eval(val), needs_rebase))
 
         return concrete_vals
 
@@ -157,6 +169,7 @@ class RopChain(object):
         cp._pie = self._pie
         cp._rebase_val = self._rebase_val
         cp._rebase = self._rebase
+        cp.badbytes = self.badbytes
 
         return cp
 

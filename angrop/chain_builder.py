@@ -31,7 +31,7 @@ class ChainBuilder(object):
         :param duplicates:
         :param reg_list: A list of multipurpose registers
         :param base_pointer: The name ("offset") for base pointer register
-        :param badbytes: A list with badbytes, which we should avaoid
+        :param badbytes: A list with badbytes, which we should avoid
         :param roparg_filler: An integer used when popping superfluous registers
         """
         self.project = project
@@ -75,7 +75,7 @@ class ChainBuilder(object):
         """
 
         if len(registers) == 0:
-            return RopChain(self.project, self, rebase=self._rebase)
+            return RopChain(self.project, self, rebase=self._rebase, badbytes=self.badbytes)
 
         if rebase_regs is None:
             rebase_regs = set()
@@ -261,7 +261,7 @@ class ChainBuilder(object):
         l.debug("Now building the mem write chain")
 
         # build the chain
-        chain = RopChain(self.project, self, rebase=self._rebase)
+        chain = RopChain(self.project, self, rebase=self._rebase, badbytes=self.badbytes)
         for i in range(0, len(string_data), bytes_per_write):
             to_write = string_data[i: i+bytes_per_write]
             # pad if needed
@@ -392,7 +392,7 @@ class ChainBuilder(object):
             final_value = 0
         else:
             raise Exception("This shouldn't happen")
-        chain = RopChain(self.project, self, rebase=self._rebase)
+        chain = RopChain(self.project, self, rebase=self._rebase, badbytes=self.badbytes)
         for i in range(0, len(data), bytes_per_write):
             chain = chain + self._change_mem_with_gadget(best_gadget, addr + i,
                                                          mem_change.data_size, final_val=final_value)
@@ -472,7 +472,7 @@ class ChainBuilder(object):
         if len(registers) > 0:
             chain = self.set_regs(use_partial_controllers=use_partial_controllers, **registers)
         else:
-            chain = RopChain(self.project, self, rebase=self._rebase)
+            chain = RopChain(self.project, self, rebase=self._rebase, badbytes=self.badbytes)
 
         # stack arguments
         bytes_per_arg = self.project.arch.bytes
@@ -803,7 +803,7 @@ class ChainBuilder(object):
                     rebase_state.add_constraints(sym_word == self._roparg_filler)
 
         # create the ropchain
-        res = RopChain(self.project, self, state=test_symbolic_state.copy(), rebase=self._rebase)
+        res = RopChain(self.project, self, state=test_symbolic_state.copy(), rebase=self._rebase, badbytes=self.badbytes)
         for g in gadgets:
             res.add_gadget(g)
 
