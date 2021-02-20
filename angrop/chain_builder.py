@@ -22,7 +22,7 @@ class ChainBuilder(object):
     This class provides functions to generate common ropchains based on existing gadgets.
     """
 
-    def __init__(self, project, gadgets, duplicates, reg_list, base_pointer, badbytes, roparg_filler):
+    def __init__(self, project, gadgets, duplicates, reg_list, base_pointer, badbytes, roparg_filler, rebase=True):
         """
         Initializes the chain builder.
 
@@ -42,6 +42,7 @@ class ChainBuilder(object):
         self._base_pointer = base_pointer
         self.badbytes = badbytes
         self._roparg_filler = roparg_filler
+        self._rebase = rebase
 
         self._syscall_instruction = None
         if self.project.arch.linux_name == "x86_64":
@@ -74,7 +75,7 @@ class ChainBuilder(object):
         """
 
         if len(registers) == 0:
-            return RopChain(self.project, self)
+            return RopChain(self.project, self, rebase=self._rebase)
 
         if rebase_regs is None:
             rebase_regs = set()
@@ -260,7 +261,7 @@ class ChainBuilder(object):
         l.debug("Now building the mem write chain")
 
         # build the chain
-        chain = RopChain(self.project, self)
+        chain = RopChain(self.project, self, rebase=self._rebase)
         for i in range(0, len(string_data), bytes_per_write):
             to_write = string_data[i: i+bytes_per_write]
             # pad if needed
@@ -391,7 +392,7 @@ class ChainBuilder(object):
             final_value = 0
         else:
             raise Exception("This shouldn't happen")
-        chain = RopChain(self.project, self)
+        chain = RopChain(self.project, self, rebase=self._rebase)
         for i in range(0, len(data), bytes_per_write):
             chain = chain + self._change_mem_with_gadget(best_gadget, addr + i,
                                                          mem_change.data_size, final_val=final_value)
@@ -471,7 +472,7 @@ class ChainBuilder(object):
         if len(registers) > 0:
             chain = self.set_regs(use_partial_controllers=use_partial_controllers, **registers)
         else:
-            chain = RopChain(self.project, self)
+            chain = RopChain(self.project, self, rebase=self._rebase)
 
         # stack arguments
         bytes_per_arg = self.project.arch.bytes
@@ -802,7 +803,7 @@ class ChainBuilder(object):
                     rebase_state.add_constraints(sym_word == self._roparg_filler)
 
         # create the ropchain
-        res = RopChain(self.project, self, state=test_symbolic_state.copy())
+        res = RopChain(self.project, self, state=test_symbolic_state.copy(), rebase=self._rebase)
         for g in gadgets:
             res.add_gadget(g)
 

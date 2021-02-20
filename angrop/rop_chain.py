@@ -6,7 +6,10 @@ class RopChain(object):
     """
     This class holds rop chains returned by the rop chain building methods such as rop.set_regs()
     """
-    def __init__(self, project, rop, state=None):
+    def __init__(self, project, rop, state=None, rebase=True):
+        """
+        rebase=False will force everything to use the addresses in angr
+        """
         self._p = project
         self._rop = rop
 
@@ -18,6 +21,7 @@ class RopChain(object):
         self._blank_state = self._p.factory.blank_state() if state is None else state
         self._pie = self._p.loader.main_object.image_base_delta != 0
         self._rebase_val = self._blank_state.solver.BVS("base", self._p.arch.bits)
+        self._rebase = rebase
 
     def __add__(self, other):
         # need to add the values from the other's stack and the constraints to the result state
@@ -34,7 +38,7 @@ class RopChain(object):
 
     def add_value(self, value, needs_rebase=False):
         # override rebase if its not pie
-        if not self._pie:
+        if not self._rebase or not self._pie:
             needs_rebase = False
         if needs_rebase:
             value -= self._p.loader.main_object.mapped_base
@@ -152,6 +156,7 @@ class RopChain(object):
         cp._blank_state = self._blank_state.copy()
         cp._pie = self._pie
         cp._rebase_val = self._rebase_val
+        cp._rebase = self._rebase
 
         return cp
 

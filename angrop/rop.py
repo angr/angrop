@@ -45,7 +45,7 @@ class ROP(Analysis):
     Additionally, all public methods from ChainBuilder are copied into ROP.
     """
 
-    def __init__(self, only_check_near_rets=True, max_block_size=None, max_sym_mem_accesses=None, fast_mode=None):
+    def __init__(self, only_check_near_rets=True, max_block_size=None, max_sym_mem_accesses=None, fast_mode=None, rebase=True):
         """
         Initializes the rop gadget finder
         :param only_check_near_rets: If true we skip blocks that are not near rets
@@ -53,6 +53,8 @@ class ROP(Analysis):
                                gadgets so we limit the size we consider
         :param fast_mode: if set to True sets options to run fast, if set to False sets options to find more gadgets
                           if set to None makes a decision based on the size of the binary
+        :param rebase:    if set to True, angrop will try to rebase the gadgets with its best effort
+                          if set to False, angrop will use the memory mapping in angr in the ropchain
         :return:
         """
 
@@ -63,6 +65,7 @@ class ROP(Analysis):
         if max_sym_mem_accesses:
             self._max_sym_mem_accesses = max_sym_mem_accesses
         self._only_check_near_rets = only_check_near_rets
+        self._rebase = rebase
 
         a = self.project.arch
         self._sp_reg = a.register_names[a.sp_offset]
@@ -273,7 +276,7 @@ class ROP(Analysis):
         elif len(self.gadgets) > 0:
             self._chain_builder = chain_builder.ChainBuilder(self.project, self.gadgets, self._duplicates,
                                                              self._reg_list, self._base_pointer, self.badbytes,
-                                                             self.roparg_filler)
+                                                             self.roparg_filler, rebase=self._rebase)
             return self._chain_builder
         else:
             raise Exception("No gadgets available, call find_gadgets() or load_gadgets() if you haven't already.")
