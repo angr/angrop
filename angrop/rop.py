@@ -45,7 +45,7 @@ class ROP(Analysis):
     Additionally, all public methods from ChainBuilder are copied into ROP.
     """
 
-    def __init__(self, only_check_near_rets=True, max_block_size=20, max_sym_mem_accesses=4, fast_mode=None):
+    def __init__(self, only_check_near_rets=True, max_block_size=None, max_sym_mem_accesses=None, fast_mode=None):
         """
         Initializes the rop gadget finder
         :param only_check_near_rets: If true we skip blocks that are not near rets
@@ -57,9 +57,12 @@ class ROP(Analysis):
         """
 
         # params
-        self._max_block_size = max_block_size
+        self._max_block_size, self._max_sym_mem_accesses = self._get_default_config()
+        if max_block_size:
+            self._max_block_size = max_block_size
+        if max_sym_mem_accesses:
+            self._max_sym_mem_accesses = max_sym_mem_accesses
         self._only_check_near_rets = only_check_near_rets
-        self._max_sym_mem_accesses = max_sym_mem_accesses
 
         a = self.project.arch
         self._sp_reg = a.register_names[a.sp_offset]
@@ -115,6 +118,25 @@ class ROP(Analysis):
         logging.getLogger('angr.state_plugins.symbolic_memory').setLevel(logging.CRITICAL)
         logging.getLogger('pyvex.lifting.libvex').setLevel(logging.CRITICAL)
         logging.getLogger('angr.procedures.cgc.deallocate').setLevel(logging.CRITICAL)
+
+    def _get_default_config(self):
+        # not all architecture has "pop" instruction
+        # for example, in mips, memory load is the only way to set registers
+        # in those architectures without "pop", we should allow more memory accesses
+
+        if self.project.arch.name in ["AMD64", "X86"]:
+            max_block_size = 20
+        else:
+            max_block_size = self.project.arch.bytes * 8
+
+        if self.project.arch.name in ["AMD64", "X86"] or self.project.arch.name.startswith("ARM"):
+            access = 4
+        else:
+            # allows "pop" chain in architectures without "pop" instructions
+            access = 8
+
+        return max_block_size, access
+
 
     def find_gadgets(self, processes=4, show_progress=True):
         """
