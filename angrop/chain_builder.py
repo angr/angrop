@@ -259,6 +259,9 @@ class ChainBuilder(object):
         if not (isinstance(fill_byte, bytes) and len(fill_byte) == 1):
             print("fill_byte is not a one byte string, aborting")
             return
+        if not isinstance(string_data, bytes):
+            print("string_data is not a byte string, aborting")
+            return
 
         gen = self._gen_mem_write_gadgets(string_data)
         gadget, use_partial_controllers = next(gen, (None, None))
