@@ -52,22 +52,21 @@ class GadgetAnalyzer(object):
                 return None
 
             # create the symbolic state at the address
-            symbolic_state = self._test_symbolic_state.copy()
-            symbolic_state.ip = addr
-            orig_sp = symbolic_state.regs.sp
-            symbolic_p = rop_utils.step_to_unconstrained_successor(self.project, state=symbolic_state)
+            init_state = self._test_symbolic_state.copy()
+            init_state.ip = addr
+            final_state = rop_utils.step_to_unconstrained_successor(self.project, state=init_state)
 
             l.debug("... analyzing rop potential of block")
 
             # filter out those that dont get to a controlled successor
             l.info("... check for controlled successor")
-            gadget_type = self._check_for_controlled_successor(symbolic_p, symbolic_state, orig_sp)
+            gadget_type = self._check_for_controlled_successor(final_state, init_state)
             if not gadget_type:
-                pivot = self._check_pivot(symbolic_p, symbolic_state, addr)
+                pivot = self._check_pivot(final_state, init_state, addr)
                 return pivot
 
             # filter out if too many mem accesses
-            if not self._satisfies_mem_access_limits(symbolic_p):
+            if not self._satisfies_mem_access_limits(final_state):
                 l.debug("... too many symbolic memory accesses")
                 return None
 
@@ -90,15 +89,17 @@ class GadgetAnalyzer(object):
                 jump_inst_addr = insns[idx].address
                 state.ip = jump_inst_addr
                 succ = rop_utils.step_to_unconstrained_successor(self.project, state=state)
-                reg = list(succ.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
-                this_gadget.jump_reg = reg
+                jump_reg = list(succ.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
+                pc_reg = list(final_state.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
+                this_gadget.pc_reg = pc_reg
+                this_gadget.jump_reg = jump_reg
 
             # compute sp change
             l.debug("... computing sp change")
             if gadget_type == "jump":
                 this_gadget.stack_change = 0
             else:
-                self._compute_sp_change(symbolic_state, this_gadget)
+                self._compute_sp_change(init_state, this_gadget)
 
                 if this_gadget.stack_change % (self.project.arch.bytes) != 0:
                     l.debug("... uneven sp change")
@@ -110,30 +111,30 @@ class GadgetAnalyzer(object):
 
                 # if the sp moves to the bp we have to handle it differently
                 if not this_gadget.bp_moves_to_sp and self._base_pointer != self._sp_reg:
-                    rop_utils.make_reg_symbolic(symbolic_state, self._base_pointer)
-                    symbolic_p = rop_utils.step_to_unconstrained_successor(self.project, symbolic_state)
+                    rop_utils.make_reg_symbolic(init_state, self._base_pointer)
+                    final_state = rop_utils.step_to_unconstrained_successor(self.project, init_state)
 
-                    if not self._satisfies_mem_access_limits(symbolic_p):
+                    if not self._satisfies_mem_access_limits(final_state):
                         l.debug("... too many symbolic memory accesses")
                         return None
 
             l.info("... checking for syscall availability")
-            this_gadget.makes_syscall = self._does_syscall(symbolic_p)
+            this_gadget.makes_syscall = self._does_syscall(final_state)
             this_gadget.starts_with_syscall = self._starts_with_syscall(addr)
 
             l.info("... checking for controlled regs")
-            self._check_reg_changes(symbolic_p, symbolic_state, this_gadget)
+            self._check_reg_changes(final_state, init_state, this_gadget)
 
             # check for reg moves
             # get reg reads
-            reg_reads = self._get_reg_reads(symbolic_p)
+            reg_reads = self._get_reg_reads(final_state)
             l.debug("... checking for reg moves")
-            self._check_reg_change_dependencies(symbolic_state, symbolic_p, this_gadget)
-            self._check_reg_movers(symbolic_state, symbolic_p, reg_reads, this_gadget)
+            self._check_reg_change_dependencies(init_state, final_state, this_gadget)
+            self._check_reg_movers(init_state, final_state, reg_reads, this_gadget)
 
             # check mem accesses
             l.debug("... analyzing mem accesses")
-            self._analyze_mem_accesses(symbolic_p, symbolic_state, this_gadget)
+            self._analyze_mem_accesses(final_state, init_state, this_gadget)
             for m_access in this_gadget.mem_writes + this_gadget.mem_reads + this_gadget.mem_changes:
                 if len(m_access.addr_dependencies) == 0 and m_access.addr_constant is None:
                     l.debug("... mem access with no addr dependencies")
@@ -330,20 +331,20 @@ class GadgetAnalyzer(object):
                     if ast_1 is ast_2:
                         gadget.reg_moves.append(RopRegMove(from_reg, reg, half_bits))
 
-    # TODO: need to handle reg calls/jumps
-    def _check_for_controlled_successor(self, symbolic_p, symbolic_s, orig_sp):
+    # TODO: need to handle reg calls
+    def _check_for_controlled_successor(self, final_state, init_state):
         """
         :param symbolic_p: the symbolic successor path of symbolic_s
         :param symbolic_s: the symbolic state
         :return: True if the address of symbolic_p is controlled by the stack
         """
-        if self._check_if_stack_controls_ast(symbolic_p.ip, symbolic_s):
+        if self._check_if_stack_controls_ast(final_state.ip, init_state):
             return "ret"
-        if self._check_if_jump_gadget(symbolic_p.ip, symbolic_s, orig_sp):
+        if self._check_if_jump_gadget(final_state, init_state):
             return "jump"
         return None
 
-    def _check_if_jump_gadget(self, ip, state, orig_sp):
+    def _check_if_jump_gadget(self, final_state, init_state):
         """
         FIXME: this constraint is too strict, it can be less strict
         a gadget is a jump gadget if
@@ -351,10 +352,11 @@ class GadgetAnalyzer(object):
             2. ip is overwritten by a general purpose register
         """
         # constraint 1
-        if not state.solver.eval(state.regs.sp == orig_sp):
+        if not init_state.solver.eval(final_state.regs.sp == init_state.regs.sp):
             return False
 
         # constraint 2
+        ip = final_state.ip
         if len(ip.variables) > 1 or len(ip.variables) == 0:
             return False
         var = list(ip.variables)[0]

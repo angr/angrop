@@ -78,6 +78,7 @@ class RopGadget(object):
         self.starts_with_syscall = False
         self.gadget_type = None
         self.jump_reg = None
+        self.pc_reg = None
 
     def __str__(self):
         s = "Gadget %#x\n" % self.addr
@@ -158,6 +159,7 @@ class RopGadget(object):
         out.starts_with_syscall = self.starts_with_syscall
         out.gadget_type = self.gadget_type
         out.jump_reg = self.jump_reg
+        out.pc_reg = self.pc_reg
         return out
 
 
