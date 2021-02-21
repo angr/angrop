@@ -90,6 +90,7 @@ class ChainBuilder(object):
                                              registers, best_stack_change, rebase_regs)
         except angr.SimUnsatError:
             raise RopException("Couldn't set registers :(")
+        return chain
 
     # TODO handle mess ups by _find_reg_setting_gadgets and see if we can set a register in a syscall preamble
     # or if a register value is explicitly set to just the right value
@@ -176,18 +177,7 @@ class ChainBuilder(object):
 
         return chain
 
-    def write_to_mem(self, addr, string_data, fill_byte=b"\xff"):
-        """
-        :param addr: address to store the string
-        :param string_data: string to store
-        :param fill_byte: a byte to use to fill up the string if necessary
-        :return: a rop chain
-        """
-
-        if not (isinstance(fill_byte, bytes) and len(fill_byte) == 1):
-            print("fill_byte is not a one byte string, aborting")
-            return
-
+    def _gen_mem_write_gadgets(self, string_data):
         # create a dict of bytes per write to gadgets
         # assume we need intersection of addr_dependencies and data_dependencies to be 0
         # TODO could allow mem_reads as long as we control the address?
@@ -204,73 +194,98 @@ class ChainBuilder(object):
                         len(set(m_access.addr_controllers) & set(m_access.data_controllers)) == 0:
                     possible_gadgets.add(g)
 
-        # get the data from trying to set all the registers
-        registers = dict((reg, 0x41) for reg in self._reg_list)
-        l.debug("getting reg data for mem writes")
-        _, _, reg_data = self._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
-        l.debug("trying mem_write gadgets")
-
-        # limit the maximum size of the chain
-        best_stack_change = 0x400
-        best_gadget = None
-        for t, vals in reg_data.items():
-            if vals[1] >= best_stack_change:
-                continue
-            for g in possible_gadgets:
-                mem_write = g.mem_writes[0]
-                if (set(mem_write.addr_dependencies) | set(mem_write.data_dependencies)).issubset(set(t)):
-                    stack_change = g.stack_change + vals[1]
-                    bytes_per_write = mem_write.data_size // 8
-                    num_writes = (len(string_data) + bytes_per_write - 1)//bytes_per_write
-                    stack_change *= num_writes
-                    if stack_change < best_stack_change:
-                        best_gadget = g
-                        best_stack_change = stack_change
-
-        # try again using partial_controllers
-        use_partial_controllers = False
-        best_stack_change = 0x400
-        if best_gadget is None:
-            use_partial_controllers = True
-            l.warning("Trying to use partial controllers for memory write")
+        while possible_gadgets:
+            # get the data from trying to set all the registers
+            registers = dict((reg, 0x41) for reg in self._reg_list)
             l.debug("getting reg data for mem writes")
-            _, _, reg_data = self._find_reg_setting_gadgets(max_stack_change=0x50, use_partial_controllers=True,
-                                                            **registers)
+            _, _, reg_data = self._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
             l.debug("trying mem_write gadgets")
+
+            # limit the maximum size of the chain
+            best_stack_change = 0x400
+            best_gadget = None
             for t, vals in reg_data.items():
                 if vals[1] >= best_stack_change:
                     continue
                 for g in possible_gadgets:
                     mem_write = g.mem_writes[0]
-                    # we need the addr to not be partially controlled
-                    if (set(mem_write.addr_dependencies) | set(mem_write.data_dependencies)).issubset(set(t)) and \
-                            len(set(mem_write.addr_dependencies) & vals[3]) == 0:
+                    if (set(mem_write.addr_dependencies) | set(mem_write.data_dependencies)).issubset(set(t)):
                         stack_change = g.stack_change + vals[1]
-                        # only one byte at a time
-                        bytes_per_write = 1
+                        bytes_per_write = mem_write.data_size // 8
                         num_writes = (len(string_data) + bytes_per_write - 1)//bytes_per_write
                         stack_change *= num_writes
                         if stack_change < best_stack_change:
                             best_gadget = g
                             best_stack_change = stack_change
 
-        if best_gadget is None:
-            raise RopException("Couldnt set registers for any memory write gadget")
+            # try again using partial_controllers
+            use_partial_controllers = False
+            best_stack_change = 0x400
+            if best_gadget is None:
+                use_partial_controllers = True
+                l.warning("Trying to use partial controllers for memory write")
+                l.debug("getting reg data for mem writes")
+                _, _, reg_data = self._find_reg_setting_gadgets(max_stack_change=0x50, use_partial_controllers=True,
+                                                                **registers)
+                l.debug("trying mem_write gadgets")
+                for t, vals in reg_data.items():
+                    if vals[1] >= best_stack_change:
+                        continue
+                    for g in possible_gadgets:
+                        mem_write = g.mem_writes[0]
+                        # we need the addr to not be partially controlled
+                        if (set(mem_write.addr_dependencies) | set(mem_write.data_dependencies)).issubset(set(t)) and \
+                                len(set(mem_write.addr_dependencies) & vals[3]) == 0:
+                            stack_change = g.stack_change + vals[1]
+                            # only one byte at a time
+                            bytes_per_write = 1
+                            num_writes = (len(string_data) + bytes_per_write - 1)//bytes_per_write
+                            stack_change *= num_writes
+                            if stack_change < best_stack_change:
+                                best_gadget = g
+                                best_stack_change = stack_change
 
-        mem_write = best_gadget.mem_writes[0]
-        bytes_per_write = mem_write.data_size//8 if not use_partial_controllers else 1
-        l.debug("Now building the mem write chain")
+            yield best_gadget, use_partial_controllers
+            possible_gadgets.remove(best_gadget)
 
-        # build the chain
-        chain = RopChain(self.project, self, rebase=self._rebase, badbytes=self.badbytes)
-        for i in range(0, len(string_data), bytes_per_write):
-            to_write = string_data[i: i+bytes_per_write]
-            # pad if needed
-            if len(to_write) < bytes_per_write:
-                to_write += fill_byte * (bytes_per_write-len(to_write))
-            chain = chain + self._write_to_mem_with_gadget(best_gadget, addr + i, to_write, use_partial_controllers)
+    def write_to_mem(self, addr, string_data, fill_byte=b"\xff"):
+        """
+        :param addr: address to store the string
+        :param string_data: string to store
+        :param fill_byte: a byte to use to fill up the string if necessary
+        :return: a rop chain
+        """
 
-        return chain
+        if not (isinstance(fill_byte, bytes) and len(fill_byte) == 1):
+            print("fill_byte is not a one byte string, aborting")
+            return
+
+        gen = self._gen_mem_write_gadgets(string_data)
+        gadget, use_partial_controllers = next(gen, (None, None))
+
+        while gadget:
+            mem_write = gadget.mem_writes[0]
+            bytes_per_write = mem_write.data_size//8 if not use_partial_controllers else 1
+            l.debug("Now building the mem write chain")
+
+            try:
+                # build the chain
+                chain = RopChain(self.project, self, rebase=self._rebase, badbytes=self.badbytes)
+                for i in range(0, len(string_data), bytes_per_write):
+                    to_write = string_data[i: i+bytes_per_write]
+                    # pad if needed
+                    if len(to_write) < bytes_per_write:
+                        to_write += fill_byte * (bytes_per_write-len(to_write))
+                    chain = chain + self._write_to_mem_with_gadget(gadget, addr + i, to_write, use_partial_controllers)
+                return chain
+            except RopException:
+                pass
+
+            gadget, use_partial_controllers  = next(gen, (None, None))
+            if not gadget:
+                break
+
+        raise RopException("Fail to write data to memory :(")
 
     def add_to_mem(self, addr, value, data_size=None):
         """
