@@ -80,11 +80,15 @@ class GadgetAnalyzer(object):
             # for jump gadget, record the jump target register
             if gadget_type == "jump":
                 state = self._test_symbolic_state.copy()
+                insns = self.project.factory.block(addr).capstone.insns
                 if state.project.arch.name.startswith("MIPS"):
-                    last_inst_addr = self.project.factory.block(addr).capstone.insns[-2].address
+                    idx = -2 # delayed slot
                 else:
-                    last_inst_addr = self.project.factory.block(addr).capstone.insns[-1].address
-                state.ip = last_inst_addr
+                    idx = -1
+                if len(insns) < abs(idx):
+                    return None
+                jump_inst_addr = insns[idx].address
+                state.ip = jump_inst_addr
                 succ = rop_utils.step_to_unconstrained_successor(self.project, state=state)
                 reg = list(succ.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
                 this_gadget.jump_reg = reg
