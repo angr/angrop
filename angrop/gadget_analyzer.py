@@ -54,13 +54,15 @@ class GadgetAnalyzer(object):
             # create the symbolic state at the address
             symbolic_state = self._test_symbolic_state.copy()
             symbolic_state.ip = addr
+            orig_sp = symbolic_state.regs.sp
             symbolic_p = rop_utils.step_to_unconstrained_successor(self.project, state=symbolic_state)
 
             l.debug("... analyzing rop potential of block")
 
             # filter out those that dont get to a controlled successor
             l.info("... check for controlled successor")
-            if not self._check_for_controlled_successor(symbolic_p, symbolic_state):
+            gadget_type = self._check_for_controlled_successor(symbolic_p, symbolic_state, orig_sp)
+            if not gadget_type:
                 pivot = self._check_pivot(symbolic_p, symbolic_state, addr)
                 return pivot
 
@@ -73,27 +75,43 @@ class GadgetAnalyzer(object):
             this_gadget = RopGadget(addr=addr)
             # FIXME this doesnt handle multiple steps
             this_gadget.block_length = self.project.factory.block(addr).size
+            this_gadget.gadget_type = gadget_type
+
+            # for jump gadget, record the jump target register
+            if gadget_type == "jump":
+                state = self._test_symbolic_state.copy()
+                if state.project.arch.name.startswith("MIPS"):
+                    last_inst_addr = self.project.factory.block(addr).capstone.insns[-2].address
+                else:
+                    last_inst_addr = self.project.factory.block(addr).capstone.insns[-1].address
+                state.ip = last_inst_addr
+                succ = rop_utils.step_to_unconstrained_successor(self.project, state=state)
+                reg = list(succ.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
+                this_gadget.jump_reg = reg
 
             # compute sp change
             l.debug("... computing sp change")
-            self._compute_sp_change(symbolic_state, this_gadget)
+            if gadget_type == "jump":
+                this_gadget.stack_change = 0
+            else:
+                self._compute_sp_change(symbolic_state, this_gadget)
 
-            if this_gadget.stack_change % (self.project.arch.bytes) != 0:
-                l.debug("... uneven sp change")
-                return None
-
-            if this_gadget.stack_change <= 0:
-                l.debug("stack change isn't positive")
-                return None
-
-            # if the sp moves to the bp we have to handle it differently
-            if not this_gadget.bp_moves_to_sp and self._base_pointer != self._sp_reg:
-                rop_utils.make_reg_symbolic(symbolic_state, self._base_pointer)
-                symbolic_p = rop_utils.step_to_unconstrained_successor(self.project, symbolic_state)
-
-                if not self._satisfies_mem_access_limits(symbolic_p):
-                    l.debug("... too many symbolic memory accesses")
+                if this_gadget.stack_change % (self.project.arch.bytes) != 0:
+                    l.debug("... uneven sp change")
                     return None
+
+                if this_gadget.stack_change <= 0:
+                    l.debug("stack change isn't positive")
+                    return None
+
+                # if the sp moves to the bp we have to handle it differently
+                if not this_gadget.bp_moves_to_sp and self._base_pointer != self._sp_reg:
+                    rop_utils.make_reg_symbolic(symbolic_state, self._base_pointer)
+                    symbolic_p = rop_utils.step_to_unconstrained_successor(self.project, symbolic_state)
+
+                    if not self._satisfies_mem_access_limits(symbolic_p):
+                        l.debug("... too many symbolic memory accesses")
+                        return None
 
             l.info("... checking for syscall availability")
             this_gadget.makes_syscall = self._does_syscall(symbolic_p)
@@ -308,14 +326,38 @@ class GadgetAnalyzer(object):
                     if ast_1 is ast_2:
                         gadget.reg_moves.append(RopRegMove(from_reg, reg, half_bits))
 
-    # todo need to handle reg calls/jumps
-    def _check_for_controlled_successor(self, symbolic_p, symbolic_s):
+    # TODO: need to handle reg calls/jumps
+    def _check_for_controlled_successor(self, symbolic_p, symbolic_s, orig_sp):
         """
         :param symbolic_p: the symbolic successor path of symbolic_s
         :param symbolic_s: the symbolic state
         :return: True if the address of symbolic_p is controlled by the stack
         """
-        return self._check_if_stack_controls_ast(symbolic_p.ip, symbolic_s)
+        if self._check_if_stack_controls_ast(symbolic_p.ip, symbolic_s):
+            return "ret"
+        if self._check_if_jump_gadget(symbolic_p.ip, symbolic_s, orig_sp):
+            return "jump"
+        return None
+
+    def _check_if_jump_gadget(self, ip, state, orig_sp):
+        """
+        FIXME: this constraint is too strict, it can be less strict
+        a gadget is a jump gadget if
+            1. it does not modify sp
+            2. ip is overwritten by a general purpose register
+        """
+        # constraint 1
+        if not state.solver.eval(state.regs.sp == orig_sp):
+            return False
+
+        # constraint 2
+        if len(ip.variables) > 1 or len(ip.variables) == 0:
+            return False
+        var = list(ip.variables)[0]
+        if not var.startswith('sreg_'):
+            return False
+
+        return True
 
     def _check_if_stack_controls_ast(self, ast, initial_state, gadget_stack_change=None):
         if gadget_stack_change is not None and gadget_stack_change <= 0:
@@ -651,7 +693,7 @@ class GadgetAnalyzer(object):
                     if reg_name in self._reg_list:
                         all_reg_writes.add(reg_name)
                     elif reg_name != self._sp_reg:
-                        l.info("reg read from register not in reg_list: %s", reg_name)
+                        l.info("reg write from register not in reg_list: %s", reg_name)
                 except RegNotFoundException as e:
                     l.debug(e)
         return all_reg_writes
