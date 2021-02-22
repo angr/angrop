@@ -119,7 +119,7 @@ class RopChain(object):
         sp = test_state.regs.sp
         return test_state.memory.load(sp, self.payload_len)
 
-    def print_payload_code(self, constraints=None, print_instructions=True):
+    def payload_code(self, constraints=None, print_instructions=True):
         """
         :param print_instructions: prints the instructions that the rop gadgets use
         :return: prints the code for the rop payload
@@ -158,7 +158,10 @@ class RopChain(object):
             else:
                 payload += "chain += " + pack % value + instruction_code
             payload += "\n"
-        print(payload)
+        return payload
+
+    def print_payload_code(self, constraints=None, print_instructions=True):
+        print(self.payload_code(constraints=constraints, print_instructions=print_instructions))
 
     def copy(self):
         cp = RopChain(self._p, self._rop)
@@ -174,4 +177,4 @@ class RopChain(object):
         return cp
 
     def __str__(self):
-        return self.payload_str()
+        return self.payload_code()
