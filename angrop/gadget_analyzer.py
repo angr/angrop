@@ -12,6 +12,7 @@ from .errors import RopException, RegNotFoundException
 l = logging.getLogger("angrop.gadget_analyzer")
 
 
+
 class GadgetAnalyzer(object):
     def __init__(self, project, reg_list, max_block_size, fast_mode, max_sym_mem_accesses):
         # params
@@ -34,6 +35,7 @@ class GadgetAnalyzer(object):
         # solve cache
         self._solve_cache = dict()
 
+    @rop_utils.timeout(3)
     def analyze_gadget(self, addr):
         """
         :param addr: address to analyze for a gadget
