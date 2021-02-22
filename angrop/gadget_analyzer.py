@@ -146,6 +146,9 @@ class GadgetAnalyzer(object):
         except (claripy.ClaripyFrontendError, angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e:
             l.warning("... claripy error: %s", e)
             return None
+        except Exception as e:
+            l.exception(e)
+            return None
 
         l.debug("... Appending gadget!")
         return this_gadget
@@ -254,26 +257,29 @@ class GadgetAnalyzer(object):
                 return True
         return False
 
-    def _check_reg_changes(self, symbolic_p, symbolic_state, gadget):
+    def _check_reg_changes(self, final_state, init_state, gadget):
         """
         Checks which registers were changed and which ones were popped
-        :param symbolic_p: the stepped path, symbolic_state is an ancestor of it.
-        :param symbolic_state: the input state for testing
+        :param final_state: the stepped path, init_state is an ancestor of it.
+        :param init_state: the input state for testing
         :param gadget: the gadget to store register change information
         """
-        exit_target = symbolic_p.history.actions[-1].target.ast
+        exit_action = final_state.history.actions[-1]
+        if not isinstance(exit_action, angr.state_plugins.sim_action.SimActionExit):
+            raise RopException("unexpected SimAction")
 
-        succ_state = symbolic_p
+        exit_target = exit_action.target.ast
+
         stack_change = gadget.stack_change if not gadget.bp_moves_to_sp else None
 
-        for reg in self._get_reg_writes(symbolic_p):
+        for reg in self._get_reg_writes(final_state):
             # we assume any register in reg_writes changed
             # verify the stack controls it
             # we need to make sure they arent equal to the exit target otherwise they arent controlled
             # TODO what to do about moves to bp
-            if symbolic_p.registers.load(reg) is exit_target:
+            if final_state.registers.load(reg) is exit_target:
                 gadget.changed_regs.add(reg)
-            elif self._check_if_stack_controls_ast(succ_state.registers.load(reg), symbolic_state, stack_change):
+            elif self._check_if_stack_controls_ast(final_state.registers.load(reg), init_state, stack_change):
                 gadget.popped_regs.add(reg)
                 gadget.changed_regs.add(reg)
             else:
