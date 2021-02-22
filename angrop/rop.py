@@ -78,7 +78,7 @@ class ROP(Analysis):
         self._reg_list = [r for r in self._reg_list if r not in (self._sp_reg, self._ip_reg)]
 
         # get ret locations
-        self._ret_locations = self._get_ret_locations()
+        self._ret_locations = None
 
         # list of RopGadget's
         self.gadgets = []
@@ -89,28 +89,11 @@ class ROP(Analysis):
         self.badbytes = []
         self.roparg_filler = None
 
-        num_to_check = self._num_addresses_to_check()
-        # fast mode
-        if fast_mode is None:
-            if num_to_check > 20000:
-                fast_mode = True
-                l.warning("Enabling fast mode for large binary")
-            else:
-                fast_mode = False
         self._fast_mode = fast_mode
 
-        if self._fast_mode:
-            self._max_block_size = 12
-            self._max_sym_mem_accesses = 1
-            # Recalculate num addresses to check based on fast_mode settings
-            num_to_check = self._num_addresses_to_check()
-
-        l.info("There are %d addresses within %d bytes of a ret",
-               num_to_check, self._max_block_size)
-
         # gadget analyzer
-        self._gadget_analyzer = gadget_analyzer.GadgetAnalyzer(self.project, self._reg_list, self._max_block_size,
-                                                               self._fast_mode, self._max_sym_mem_accesses)
+        self._gadget_analyzer = None
+
         # chain builder
         self._chain_builder = None
 
@@ -130,7 +113,7 @@ class ROP(Analysis):
         if self.project.arch.name in ["AMD64", "X86"]:
             max_block_size = 20
         else:
-            max_block_size = self.project.arch.bytes * 8
+            max_block_size = self.project.arch.instruction_alignment * 8
 
         if self.project.arch.name in ["AMD64", "X86"] or self.project.arch.name.startswith("ARM"):
             access = 4
@@ -140,6 +123,30 @@ class ROP(Analysis):
 
         return max_block_size, access
 
+    def _initialize_gadget_analyzer(self):
+
+        # find locations to analyze
+        self._ret_locations = self._get_ret_locations()
+        num_to_check = self._num_addresses_to_check()
+
+        # fast mode
+        if self._fast_mode is None:
+            if num_to_check > 20000:
+                self._fast_mode = True
+                l.warning("Enabling fast mode for large binary")
+            else:
+                self._fast_mode = False
+        if self._fast_mode:
+            self._max_block_size = 12
+            self._max_sym_mem_accesses = 1
+            # Recalculate num addresses to check based on fast_mode settings
+            num_to_check = self._num_addresses_to_check()
+
+        l.info("There are %d addresses within %d bytes of a ret",
+               num_to_check, self._max_block_size)
+
+        self._gadget_analyzer = gadget_analyzer.GadgetAnalyzer(self.project, self._reg_list, self._max_block_size,
+                                                               self._fast_mode, self._max_sym_mem_accesses)
 
     def find_gadgets(self, processes=4, show_progress=True):
         """
@@ -148,6 +155,7 @@ class ROP(Analysis):
         Saves stack pivots in self.stack_pivots
         :param processes: number of processes to use
         """
+        self._initialize_gadget_analyzer()
         self.gadgets = []
 
         pool = Pool(processes=processes, initializer=_set_global_gadget_analyzer, initargs=(self._gadget_analyzer,))
@@ -181,6 +189,7 @@ class ROP(Analysis):
         Saves gadgets in self.gadgets
         Saves stack pivots in self.stack_pivots
         """
+        self._initialize_gadget_analyzer()
         self.gadgets = []
 
         _set_global_gadget_analyzer(self._gadget_analyzer)
@@ -257,10 +266,12 @@ class ROP(Analysis):
         return self.badbytes
 
     def _get_cache_tuple(self):
-        return self.gadgets, self.stack_pivots, self._duplicates
+        return self.gadgets, self.stack_pivots, self._duplicates, self._ret_locations, self._fast_mode, \
+                self._max_block_size,  self._max_sym_mem_accesses, self._gadget_analyzer
 
     def _load_cache_tuple(self, cache_tuple):
-        self.gadgets, self.stack_pivots, self._duplicates = cache_tuple
+        self.gadgets, self.stack_pivots, self._duplicates, self._ret_locations, self._fast_mode, \
+        self._max_block_size, self._max_sym_mem_accesses, self._gadget_analyzer = cache_tuple
         self._reload_chain_funcs()
 
     def _reload_chain_funcs(self):
