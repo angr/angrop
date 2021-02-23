@@ -267,6 +267,7 @@ class ChainBuilder(object):
         gadget, use_partial_controllers = next(gen, (None, None))
 
         while gadget:
+            l.debug("[write_to_mem] trying mem_write gadget %s", gadget)
             mem_write = gadget.mem_writes[0]
             bytes_per_write = mem_write.data_size//8 if not use_partial_controllers else 1
             l.debug("Now building the mem write chain")

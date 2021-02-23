@@ -61,6 +61,7 @@ class ROP(Analysis):
         """
 
         # params
+        self._is_thumb = is_thumb
         self._max_block_size, self._max_sym_mem_accesses = self._get_default_config()
         if max_block_size:
             self._max_block_size = max_block_size
@@ -68,7 +69,6 @@ class ROP(Analysis):
             self._max_sym_mem_accesses = max_sym_mem_accesses
         self._only_check_near_rets = only_check_near_rets
         self._rebase = rebase
-        self._is_thumb = is_thumb
 
         a = self.project.arch
         self._sp_reg = a.register_names[a.sp_offset]
