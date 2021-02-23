@@ -14,13 +14,14 @@ l = logging.getLogger("angrop.gadget_analyzer")
 
 
 class GadgetAnalyzer(object):
-    def __init__(self, project, reg_list, max_block_size, fast_mode, max_sym_mem_accesses):
+    def __init__(self, project, reg_list, max_block_size, fast_mode, max_sym_mem_accesses, badbytes):
         # params
         self.project = project
         self._reg_list = reg_list
         self._max_block_size = max_block_size
         self._fast_mode = fast_mode
         self._max_sym_mem_accesses = max_sym_mem_accesses
+        self._badbytes = badbytes
 
         # initial state that others are based off
         self._stack_length = 80
@@ -45,6 +46,8 @@ class GadgetAnalyzer(object):
 
         # first check if the block makes sense
         if not self._block_makes_sense(addr):
+            return None
+        if self._contain_badbytes(addr):
             return None
 
         try:
@@ -711,5 +714,18 @@ class GadgetAnalyzer(object):
                 except RegNotFoundException as e:
                     l.debug(e)
         return all_reg_writes
+
+    # inspired by ropper
+    def _contain_badbytes(self, addr):
+        n_bytes = self.project.arch.bytes
+
+        for b in self._badbytes:
+            tmp_addr = addr
+            for _ in range(n_bytes):
+                if (tmp_addr & 0xff) == b:
+                    return True
+                tmp_addr >>= 8
+        return False
+
 
 # TODO ip setters, ie call rax

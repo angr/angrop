@@ -154,7 +154,7 @@ class ROP(Analysis):
                num_to_check, self._max_block_size)
 
         self._gadget_analyzer = gadget_analyzer.GadgetAnalyzer(self.project, self._reg_list, self._max_block_size,
-                                                               self._fast_mode, self._max_sym_mem_accesses)
+                                                               self._fast_mode, self._max_sym_mem_accesses, self.badbytes)
 
     def find_gadgets(self, processes=4, show_progress=True):
         """
@@ -246,6 +246,7 @@ class ROP(Analysis):
         if not isinstance(badbytes, list):
             print("Require a list, e.g: [0x00, 0x09]")
             return
+        badbytes = [x if type(x) == int else ord(x) for x in badbytes]
         self.badbytes = badbytes
         if len(self.gadgets) > 0:
             self.chain_builder._set_badbytes(self.badbytes)
