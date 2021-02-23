@@ -1,4 +1,5 @@
 from . import rop_utils
+from .errors import RopException
 
 from cle.address_translator import AT
 
@@ -107,6 +108,8 @@ class RopChain(object):
                 test_state.stack_push(value)
         sp = test_state.regs.sp
         rop_str = test_state.solver.eval(test_state.memory.load(sp, self.payload_len), cast_to=bytes)
+        if any(bytes([c]) in rop_str for c in self.badbytes):
+            raise RopException()
         return rop_str
 
     def payload_bv(self):

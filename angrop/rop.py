@@ -45,7 +45,7 @@ class ROP(Analysis):
     Additionally, all public methods from ChainBuilder are copied into ROP.
     """
 
-    def __init__(self, only_check_near_rets=True, max_block_size=None, max_sym_mem_accesses=None, fast_mode=None, rebase=True):
+    def __init__(self, only_check_near_rets=True, max_block_size=None, max_sym_mem_accesses=None, fast_mode=None, rebase=True, is_thumb=False):
         """
         Initializes the rop gadget finder
         :param only_check_near_rets: If true we skip blocks that are not near rets
@@ -55,6 +55,8 @@ class ROP(Analysis):
                           if set to None makes a decision based on the size of the binary
         :param rebase:    if set to True, angrop will try to rebase the gadgets with its best effort
                           if set to False, angrop will use the memory mapping in angr in the ropchain
+        :param is_thumb:  execute ROP chain in thumb mode. Only makes difference on ARM architecture.
+                          angrop does not switch mode within a rop chain
         :return:
         """
 
@@ -66,6 +68,7 @@ class ROP(Analysis):
             self._max_sym_mem_accesses = max_sym_mem_accesses
         self._only_check_near_rets = only_check_near_rets
         self._rebase = rebase
+        self._is_thumb = is_thumb
 
         a = self.project.arch
         self._sp_reg = a.register_names[a.sp_offset]
@@ -113,7 +116,7 @@ class ROP(Analysis):
         if self.project.arch.name in ["AMD64", "X86"]:
             max_block_size = 20
         else:
-            max_block_size = self.project.arch.instruction_alignment * 8
+            max_block_size = self._get_alignment() * 8
 
         if self.project.arch.name in ["AMD64", "X86"] or self.project.arch.name.startswith("ARM"):
             access = 4
@@ -122,6 +125,11 @@ class ROP(Analysis):
             access = 8
 
         return max_block_size, access
+
+    def _get_alignment(self):
+        if not self.project.arch.name.startswith("ARM"):
+            return self.project.arch.instruction_alignment
+        return 2 if self._is_thumb else 4
 
     def _initialize_gadget_analyzer(self):
 
@@ -352,7 +360,7 @@ class ROP(Analysis):
         """
         if self._only_check_near_rets:
             # align block size
-            alignment = self.project.arch.instruction_alignment
+            alignment = self._get_alignment()
             block_size = (self._max_block_size & ((1 << self.project.arch.bits) - alignment)) + alignment
             slices = [(addr-block_size, addr) for addr in self._ret_locations]
             current_addr = 0
@@ -400,10 +408,7 @@ class ROP(Analysis):
             if segment.is_executable:
                 num_bytes = segment.max_addr-segment.min_addr
 
-                alignment = self.project.arch.instruction_alignment
-                # hack for arm thumb
-                if self.project.arch.linux_name == "aarch64" or self.project.arch.linux_name == "arm":
-                    alignment = 1
+                alignment = self._get_alignment()
 
                 # iterate through the code looking for rets
                 for addr in range(segment.min_addr, segment.min_addr + num_bytes, alignment):
