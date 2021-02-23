@@ -232,7 +232,7 @@ class TimeoutError(Exception):
 def timeout(seconds_before_timeout):
     def decorate(f):
         def handler(signum, frame):
-            raise RopException("timeout")
+            raise RopException("[angrop] Timeout!")
         def new_f(*args, **kwargs):
             old = signal.signal(signal.SIGALRM, handler)
             old_time_left = signal.alarm(seconds_before_timeout)

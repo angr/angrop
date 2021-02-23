@@ -248,6 +248,22 @@ class ChainBuilder(object):
             yield best_gadget, use_partial_controllers
             possible_gadgets.remove(best_gadget)
 
+    @rop_utils.timeout(5)
+    def _try_write_to_mem(self, gadget, use_partial_controllers, addr, string_data, fill_byte):
+        l.debug("building mem_write chain with gadget:\n%s", gadget)
+        mem_write = gadget.mem_writes[0]
+        bytes_per_write = mem_write.data_size//8 if not use_partial_controllers else 1
+
+        # build the chain
+        chain = RopChain(self.project, self, rebase=self._rebase, badbytes=self.badbytes)
+        for i in range(0, len(string_data), bytes_per_write):
+            to_write = string_data[i: i+bytes_per_write]
+            # pad if needed
+            if len(to_write) < bytes_per_write:
+                to_write += fill_byte * (bytes_per_write-len(to_write))
+            chain = chain + self._write_to_mem_with_gadget(gadget, addr + i, to_write, use_partial_controllers)
+        return chain
+
     def write_to_mem(self, addr, string_data, fill_byte=b"\xff"):
         """
         :param addr: address to store the string
@@ -267,27 +283,11 @@ class ChainBuilder(object):
         gadget, use_partial_controllers = next(gen, (None, None))
 
         while gadget:
-            l.debug("[write_to_mem] trying mem_write gadget %s", gadget)
-            mem_write = gadget.mem_writes[0]
-            bytes_per_write = mem_write.data_size//8 if not use_partial_controllers else 1
-            l.debug("Now building the mem write chain")
-
             try:
-                # build the chain
-                chain = RopChain(self.project, self, rebase=self._rebase, badbytes=self.badbytes)
-                for i in range(0, len(string_data), bytes_per_write):
-                    to_write = string_data[i: i+bytes_per_write]
-                    # pad if needed
-                    if len(to_write) < bytes_per_write:
-                        to_write += fill_byte * (bytes_per_write-len(to_write))
-                    chain = chain + self._write_to_mem_with_gadget(gadget, addr + i, to_write, use_partial_controllers)
-                return chain
-            except RopException:
+                return self._try_write_to_mem(gadget, use_partial_controllers, addr, string_data, fill_byte)
+            except RopException as e:
                 pass
-
             gadget, use_partial_controllers  = next(gen, (None, None))
-            if not gadget:
-                break
 
         raise RopException("Fail to write data to memory :(")
 

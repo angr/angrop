@@ -56,6 +56,7 @@ class RopChain(object):
         """
         self._blank_state.add_constraints(cons)
 
+    @rop_utils.timeout(3)
     def _concretize_chain_values(self, constraints=None):
         """
         we all the flexibilty of chains to have symbolic values, this helper function
