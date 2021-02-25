@@ -1,6 +1,7 @@
 from angr.errors import SimEngineError, SimMemoryError
 from angr.analyses.bindiff import differing_constants
 from angr.analyses.bindiff import UnmatchedStatementsException
+from angr.misc.loggers import CuteHandler
 from angr import Analysis, register_analysis
 
 from . import chain_builder
@@ -10,7 +11,7 @@ from . import common
 import pickle
 import inspect
 import logging
-import progressbar
+import tqdm
 
 from .errors import RopException
 from .rop_gadget import RopGadget, StackPivot
@@ -22,12 +23,18 @@ l = logging.getLogger('angrop.rop')
 
 _global_gadget_analyzer = None
 
+# disable loggers in each worker
+def _disable_loggers():
+    for handler in logging.root.handlers:
+        if type(handler) == CuteHandler:
+            logging.root.removeHandler(handler)
+            return
 
 # global initializer for multiprocessing
 def _set_global_gadget_analyzer(rop_gadget_analyzer):
     global _global_gadget_analyzer
     _global_gadget_analyzer = rop_gadget_analyzer
-
+    _disable_loggers()
 
 def run_worker(addr):
     return _global_gadget_analyzer.analyze_gadget(addr)
@@ -163,7 +170,7 @@ class ROP(Analysis):
     def find_gadgets(self, processes=4, show_progress=True):
         """
         Finds all the gadgets in the binary by calling analyze_gadget on every address near a ret.
-        Saves gadgets in self.gadgets
+        Saves gadgets in self._gadgets
         Saves stack pivots in self.stack_pivots
         :param processes: number of processes to use
         """
@@ -328,17 +335,15 @@ class ROP(Analysis):
 
     def _addresses_to_check_with_caching(self, show_progress=True):
         num_addrs = self._num_addresses_to_check()
-        widgets = ['ROP: ', progressbar.Percentage(), ' ',
-                   progressbar.Bar(marker=progressbar.RotatingMarker()),
-                   ' ', progressbar.ETA(), ' ', progressbar.FileTransferSpeed()]
-        progress = progressbar.ProgressBar(widgets=widgets, maxval=num_addrs)
-        if show_progress:
-            progress.start()
         self._cache = dict()
         seen = dict()
-        for i, a in enumerate(self._addresses_to_check()):
-            if show_progress:
-                progress.update(i)
+
+        iterable = self._addresses_to_check()
+        if show_progress:
+            iterable = tqdm.tqdm(iterable=iterable, smoothing=0, total=num_addrs,
+                                 desc="ROP", maxinterval=0.5, dynamic_ncols=True)
+
+        for a in iterable:
             try:
                 bl = self.project.factory.block(a)
                 if bl.size > self._max_block_size:
@@ -356,8 +361,6 @@ class ROP(Analysis):
                     seen[block_data] = a
                     self._cache[a] = set()
                 yield a
-        if show_progress:
-            progress.finish()
 
     def _addresses_to_check(self):
         """
