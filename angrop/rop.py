@@ -84,7 +84,7 @@ class ROP(Analysis):
         self._ret_locations = None
 
         # list of RopGadget's
-        self.gadgets = []
+        self._gadgets = []
         self.stack_pivots = []
         self._duplicates = []
 
@@ -107,6 +107,10 @@ class ROP(Analysis):
         logging.getLogger('angr.state_plugins.symbolic_memory').setLevel(logging.CRITICAL)
         logging.getLogger('pyvex.lifting.libvex').setLevel(logging.CRITICAL)
         logging.getLogger('angr.procedures.cgc.deallocate').setLevel(logging.CRITICAL)
+
+    @property
+    def gadgets(self):
+        return [x for x in self._gadgets if not self._contain_badbytes(x.addr)]
 
     def _get_default_config(self):
         # not all architecture has "pop" instruction
@@ -154,7 +158,7 @@ class ROP(Analysis):
                num_to_check, self._max_block_size)
 
         self._gadget_analyzer = gadget_analyzer.GadgetAnalyzer(self.project, self._reg_list, self._max_block_size,
-                                                               self._fast_mode, self._max_sym_mem_accesses, self.badbytes)
+                                                               self._fast_mode, self._max_sym_mem_accesses)
 
     def find_gadgets(self, processes=4, show_progress=True):
         """
@@ -164,7 +168,7 @@ class ROP(Analysis):
         :param processes: number of processes to use
         """
         self._initialize_gadget_analyzer()
-        self.gadgets = []
+        self._gadgets = []
 
         pool = Pool(processes=processes, initializer=_set_global_gadget_analyzer, initargs=(self._gadget_analyzer,))
 
@@ -172,23 +176,23 @@ class ROP(Analysis):
         for gadget in it:
             if gadget is not None:
                 if isinstance(gadget, RopGadget):
-                    self.gadgets.append(gadget)
+                    self._gadgets.append(gadget)
                 elif isinstance(gadget, StackPivot):
                     self.stack_pivots.append(gadget)
 
         pool.close()
 
         # fix up gadgets from cache
-        for g in self.gadgets:
+        for g in self._gadgets:
             if g.addr in self._cache:
                 dups = {g.addr}
                 for addr in self._cache[g.addr]:
                     dups.add(addr)
                     g_copy = g.copy()
                     g_copy.addr = addr
-                    self.gadgets.append(g_copy)
+                    self._gadgets.append(g_copy)
                 self._duplicates.append(dups)
-        self.gadgets = sorted(self.gadgets, key=lambda x: x.addr)
+        self._gadgets = sorted(self._gadgets, key=lambda x: x.addr)
         self._reload_chain_funcs()
 
     def find_gadgets_single_threaded(self, show_progress=True):
@@ -198,28 +202,28 @@ class ROP(Analysis):
         Saves stack pivots in self.stack_pivots
         """
         self._initialize_gadget_analyzer()
-        self.gadgets = []
+        self._gadgets = []
 
         _set_global_gadget_analyzer(self._gadget_analyzer)
         for _, addr in enumerate(self._addresses_to_check_with_caching(show_progress)):
             gadget = _global_gadget_analyzer.analyze_gadget(addr)
             if gadget is not None:
                 if isinstance(gadget, RopGadget):
-                    self.gadgets.append(gadget)
+                    self._gadgets.append(gadget)
                 elif isinstance(gadget, StackPivot):
                     self.stack_pivots.append(gadget)
 
         # fix up gadgets from cache
-        for g in self.gadgets:
+        for g in self._gadgets:
             if g.addr in self._cache:
                 dups = {g.addr}
                 for addr in self._cache[g.addr]:
                     dups.add(addr)
                     g_copy = g.copy()
                     g_copy.addr = addr
-                    self.gadgets.append(g_copy)
+                    self._gadgets.append(g_copy)
                 self._duplicates.append(dups)
-        self.gadgets = sorted(self.gadgets, key=lambda x: x.addr)
+        self._gadgets = sorted(self._gadgets, key=lambda x: x.addr)
         self._reload_chain_funcs()
 
     def save_gadgets(self, path):
@@ -248,7 +252,7 @@ class ROP(Analysis):
             return
         badbytes = [x if type(x) == int else ord(x) for x in badbytes]
         self.badbytes = badbytes
-        if len(self.gadgets) > 0:
+        if len(self._gadgets) > 0:
             self.chain_builder._set_badbytes(self.badbytes)
 
     def set_roparg_filler(self, roparg_filler):
@@ -264,7 +268,7 @@ class ROP(Analysis):
             return
 
         self.roparg_filler = roparg_filler
-        if len(self.gadgets) > 0:
+        if len(self._gadgets) > 0:
             self.chain_builder._set_roparg_filler(self.roparg_filler)
 
     def get_badbytes(self):
@@ -275,11 +279,11 @@ class ROP(Analysis):
         return self.badbytes
 
     def _get_cache_tuple(self):
-        return self.gadgets, self.stack_pivots, self._duplicates, self._ret_locations, self._fast_mode, \
+        return self._gadgets, self.stack_pivots, self._duplicates, self._ret_locations, self._fast_mode, \
                 self._max_block_size,  self._max_sym_mem_accesses, self._gadget_analyzer
 
     def _load_cache_tuple(self, cache_tuple):
-        self.gadgets, self.stack_pivots, self._duplicates, self._ret_locations, self._fast_mode, \
+        self._gadgets, self.stack_pivots, self._duplicates, self._ret_locations, self._fast_mode, \
         self._max_block_size, self._max_sym_mem_accesses, self._gadget_analyzer = cache_tuple
         self._reload_chain_funcs()
 
@@ -293,7 +297,7 @@ class ROP(Analysis):
     def chain_builder(self):
         if self._chain_builder is not None:
             return self._chain_builder
-        elif len(self.gadgets) > 0:
+        elif len(self._gadgets) > 0:
             self._chain_builder = chain_builder.ChainBuilder(self.project, self.gadgets, self._duplicates,
                                                              self._reg_list, self._base_pointer, self.badbytes,
                                                              self.roparg_filler, rebase=self._rebase)
@@ -474,5 +478,16 @@ class ROP(Analysis):
             return True
         return False
 
+    # inspired by ropper
+    def _contain_badbytes(self, addr):
+        n_bytes = self.project.arch.bytes
+
+        for b in self.badbytes:
+            tmp_addr = addr
+            for _ in range(n_bytes):
+                if (tmp_addr & 0xff) == b:
+                    return True
+                tmp_addr >>= 8
+        return False
 
 register_analysis(ROP, 'ROP')
