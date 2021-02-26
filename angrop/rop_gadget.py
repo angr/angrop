@@ -80,6 +80,10 @@ class RopGadget(object):
         self.jump_reg = None
         self.pc_reg = None
 
+    @property
+    def num_mem_access(self):
+        return len(self.mem_reads) + len(self.mem_writes) + len(self.mem_changes)
+
     def __str__(self):
         s = "Gadget %#x\n" % self.addr
         if self.bp_moves_to_sp:

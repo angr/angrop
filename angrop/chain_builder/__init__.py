@@ -1,18 +1,18 @@
-import angr
+import types
 import heapq
 import struct
-import claripy
-
-from . import rop_utils
-from . import common
-
-from .errors import RopException
-from .rop_chain import RopChain
-from .rop_gadget import RopGadget
-
-import types
 import logging
 from collections import defaultdict
+
+import angr
+import claripy
+
+from .reg_setter import RegSetter
+from .. import rop_utils
+from .. import common
+from ..errors import RopException
+from ..rop_chain import RopChain
+from ..rop_gadget import RopGadget
 
 l = logging.getLogger("angrop.chain_builder")
 
@@ -65,7 +65,10 @@ class ChainBuilder(object):
         # filtered gadget cache
         self._filtered_reg_gadgets = None
 
-    def set_regs(self, modifiable_memory_range=None, use_partial_controllers=False, rebase_regs=None, **registers):
+        self._reg_setter = RegSetter(project, gadgets, reg_list=reg_list, badbytes=badbytes,
+                                     rebase=self._rebase, filler=self._roparg_filler)
+
+    def set_regs(self, *args, **kwargs):
         """
         :param registers: dict of registers to values
         :return: a chain which will set the registers to the requested values
@@ -74,23 +77,7 @@ class ChainBuilder(object):
         chain = rop.set_regs(rax=0x1234, rcx=0x41414141)
         """
 
-        if len(registers) == 0:
-            return RopChain(self.project, self, rebase=self._rebase, badbytes=self.badbytes)
-
-        if rebase_regs is None:
-            rebase_regs = set()
-
-        gadgets, best_stack_change, _ = self._find_reg_setting_gadgets(modifiable_memory_range,
-                                                                       use_partial_controllers, **registers)
-        if gadgets is None:
-            raise RopException("Couldn't set registers :(")
-
-        try:
-            chain = self._build_reg_setting_chain(gadgets, modifiable_memory_range,
-                                             registers, best_stack_change, rebase_regs)
-        except angr.SimUnsatError:
-            raise RopException("Couldn't set registers :(")
-        return chain
+        return self._reg_setter.run(*args, **kwargs)
 
     # TODO handle mess ups by _find_reg_setting_gadgets and see if we can set a register in a syscall preamble
     # or if a register value is explicitly set to just the right value
@@ -248,7 +235,7 @@ class ChainBuilder(object):
             yield best_gadget, use_partial_controllers
             possible_gadgets.remove(best_gadget)
 
-    @rop_utils.timeout(5)
+    #@rop_utils.timeout(5)
     def _try_write_to_mem(self, gadget, use_partial_controllers, addr, string_data, fill_byte):
         l.debug("building mem_write chain with gadget:\n%s", gadget)
         mem_write = gadget.mem_writes[0]
