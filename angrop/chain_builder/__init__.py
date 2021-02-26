@@ -235,9 +235,10 @@ class ChainBuilder(object):
             yield best_gadget, use_partial_controllers
             possible_gadgets.remove(best_gadget)
 
-    #@rop_utils.timeout(5)
+    @rop_utils.timeout(5)
     def _try_write_to_mem(self, gadget, use_partial_controllers, addr, string_data, fill_byte):
-        l.debug("building mem_write chain with gadget:\n%s", gadget)
+        gadget_code = str(self.project.factory.block(gadget.addr).capstone)
+        l.debug("building mem_write chain with gadget:\n%s", gadget_code)
         mem_write = gadget.mem_writes[0]
         bytes_per_write = mem_write.data_size//8 if not use_partial_controllers else 1
 

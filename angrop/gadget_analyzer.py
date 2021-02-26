@@ -174,9 +174,11 @@ class GadgetAnalyzer(object):
                     return False
             # disable conditional jumps, for now
             # FIXME: we should handle conditional jumps, they are useful
+            conditional_postfix = ['eq', 'ne', 'cs', 'hs', 'cc', 'lo', 'mi', 'pl',
+                                  'vs', 'vc', 'hi', 'ls', 'ge', 'lt', 'gt', 'le', 'al']
             if self.project.arch.name.startswith("ARM"):
-                for stmt in block.vex.statements:
-                    if type(stmt) == pyvex.stmt.Exit:
+                for insn in block.capstone.insns:
+                    if insn.insn.mnemonic[-2:] in conditional_postfix:
                         return False
 
             if block.vex.jumpkind == 'Ijk_NoDecode':
