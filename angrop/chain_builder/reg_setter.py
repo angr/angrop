@@ -50,8 +50,10 @@ class RegSetter:
             l.debug("building reg_setting chain with chain:\n%s", chain_str)
             stack_change = sum(x.stack_change for x in chain)
             try:
-                return self._build_reg_setting_chain(chain, modifiable_memory_range,
+                chain = self._build_reg_setting_chain(chain, modifiable_memory_range,
                                                      registers, stack_change, rebase_regs)
+                chain._concretize_chain_values()
+                return chain
             except (RopException, SimUnsatError):
                 pass
 

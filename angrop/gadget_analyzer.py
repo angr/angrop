@@ -172,6 +172,12 @@ class GadgetAnalyzer(object):
                     return False
                 if block.size < 1 or block.bytes[0] == 0x4f:
                     return False
+            # disable conditional jumps, for now
+            # FIXME: we should handle conditional jumps, they are useful
+            if self.project.arch.name.startswith("ARM"):
+                for stmt in block.vex.statements:
+                    if type(stmt) == pyvex.stmt.Exit:
+                        return False
 
             if block.vex.jumpkind == 'Ijk_NoDecode':
                 l.debug("... not decodable")
