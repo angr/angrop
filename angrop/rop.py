@@ -304,13 +304,12 @@ class ROP(Analysis):
     def chain_builder(self):
         if self._chain_builder is not None:
             return self._chain_builder
-        elif len(self._gadgets) > 0:
-            self._chain_builder = chain_builder.ChainBuilder(self.project, self.gadgets, self._duplicates,
-                                                             self._reg_list, self._base_pointer, self.badbytes,
-                                                             self.roparg_filler, rebase=self._rebase)
-            return self._chain_builder
-        else:
-            raise Exception("No gadgets available, call find_gadgets() or load_gadgets() if you haven't already.")
+        if len(self._gadgets) == 0:
+            l.warning("Could not find gadgets for %s, check your badbytes and make sure find_gadgets() or load_gadgets() was called.", self.project)
+        self._chain_builder = chain_builder.ChainBuilder(self.project, self.gadgets, self._duplicates,
+                                                         self._reg_list, self._base_pointer, self.badbytes,
+                                                         self.roparg_filler, rebase=self._rebase)
+        return self._chain_builder
 
     def _block_has_ip_relative(self, addr, bl):
         """
