@@ -40,7 +40,8 @@ class RegSetter:
         best_chain, _, _ = self._find_reg_setting_gadgets(modifiable_memory_range,
                                                                        use_partial_controllers, **registers)
         chains = self._find_all_candidate_chains(gadgets, **registers)
-        chains = [best_chain] + chains
+        if best_chain:
+            chains = [best_chain] + chains
 
         if rebase_regs is None:
             rebase_regs = set()
