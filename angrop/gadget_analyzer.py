@@ -355,6 +355,26 @@ class GadgetAnalyzer(object):
         :return: True if the address of symbolic_p is controlled by the stack
         """
         if self._check_if_stack_controls_ast(final_state.ip, init_state):
+            # for MIPs, ip must be right above the current sp. this is to support angrop's current assumption where the
+            # last instruction must behave like a ret (which is not always the case in MIPS).
+            #
+            #  This requirement will exclude gadgets like the following::
+            #
+            #  0x3fc7c988:	move	$a1, $s1
+            #  0x3fc7c98c:	lw	$gp, 0x10($sp)
+            #  0x3fc7c990:	sltu	$v0, $zero, $v0
+            #  0x3fc7c994:	lw	$ra, 0x20($sp)
+            #  0x3fc7c998:	lw	$s1, 0x1c($sp)
+            #  0x3fc7c99c:	lw	$s0, 0x18($sp)
+            #  0x3fc7c9a0:	jr	$ra
+            #  0x3fc7c9a4:	addiu	$sp, $sp, 0x28
+            #
+            if init_state.arch.name == "MIPS32":
+                v = final_state.memory.load(final_state.regs.sp - final_state.arch.bytes,
+                                            size=final_state.arch.bytes,
+                                            endness=final_state.arch.memory_endness)
+                if v is not final_state.ip:
+                    return None
             return "ret"
         if self._check_if_jump_gadget(final_state, init_state):
             return "jump"
