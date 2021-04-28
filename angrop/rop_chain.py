@@ -3,7 +3,7 @@ from .errors import RopException
 
 from cle.address_translator import AT
 
-class RopChain(object):
+class RopChain:
     """
     This class holds rop chains returned by the rop chain building methods such as rop.set_regs()
     """
