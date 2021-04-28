@@ -17,7 +17,7 @@ from ..rop_gadget import RopGadget
 l = logging.getLogger("angrop.chain_builder")
 
 
-class ChainBuilder(object):
+class ChainBuilder:
     """
     This class provides functions to generate common ropchains based on existing gadgets.
     """
@@ -252,7 +252,7 @@ class ChainBuilder(object):
             chain = chain + self._write_to_mem_with_gadget(gadget, addr + i, to_write, use_partial_controllers)
         return chain
 
-    def write_to_mem(self, addr, string_data, fill_byte=b"\xff"):
+    def write_to_mem(self, addr, string_data, fill_byte=b"\xff"):# pylint:disable=inconsistent-return-statements
         """
         :param addr: address to store the string
         :param string_data: string to store
@@ -273,7 +273,7 @@ class ChainBuilder(object):
         while gadget:
             try:
                 return self._try_write_to_mem(gadget, use_partial_controllers, addr, string_data, fill_byte)
-            except RopException as e:
+            except RopException:
                 pass
             gadget, use_partial_controllers  = next(gen, (None, None))
 
@@ -528,7 +528,7 @@ class ChainBuilder(object):
                 if g.stack_change > g2.stack_change and ChainBuilder._has_same_effects(g, g2):
                     good = False
                     break
-                elif g.stack_change == g2.stack_change and g.addr > g2.addr and ChainBuilder._has_same_effects(g, g2):
+                if g.stack_change == g2.stack_change and g.addr > g2.addr and ChainBuilder._has_same_effects(g, g2):
                     good = False
                     break
             if good:
@@ -854,7 +854,7 @@ class ChainBuilder(object):
 
         # check keys
         search_regs = set()
-        for reg in registers.keys():
+        for reg in registers:
             search_regs.add(reg)
             if reg not in self._reg_list:
                 raise RopException("Register %s not in reg list" % reg)
@@ -863,7 +863,7 @@ class ChainBuilder(object):
 
         # find gadgets with sufficient partial control
         partial_controllers = dict()
-        for r in registers.keys():
+        for r in registers:
             partial_controllers[r] = set()
         if use_partial_controllers:
             partial_controllers = self._get_sufficient_partial_controllers(registers)

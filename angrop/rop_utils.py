@@ -220,18 +220,12 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
             raise RopException("Does not get to an unconstrained successor")
         return succ.unconstrained_successors[0]
 
-    except (angr.errors.AngrError, angr.errors.SimError):
-        raise RopException("Does not get to a single unconstrained successor")
-
-class TimeoutError(Exception):
-    def __init__(self, value = "Timed Out"):
-        self.value = value
-    def __str__(self):
-        return repr(self.value)
+    except (angr.errors.AngrError, angr.errors.SimError) as e:
+        raise RopException("Does not get to a single unconstrained successor") from e
 
 def timeout(seconds_before_timeout):
     def decorate(f):
-        def handler(signum, frame):
+        def handler(signum, frame):# pylint:disable=unused-argument
             print("[angrop] Timeout")
             raise RopException("[angrop] Timeout!")
         def new_f(*args, **kwargs):

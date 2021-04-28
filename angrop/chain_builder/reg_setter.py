@@ -3,7 +3,6 @@ import logging
 from collections import defaultdict
 from functools import cmp_to_key
 
-import angr
 from angr.errors import SimUnsatError
 
 
@@ -129,7 +128,8 @@ class RegSetter:
         chains = self._recursively_find_chains(gadgets, [], set({}), regs)
         return self._sort_chains(chains)
 
-    def _same_reg_effects(self, g1, g2):
+    @staticmethod
+    def _same_reg_effects(g1, g2):
         if g1.popped_regs != g2.popped_regs:
             return False
         if g1.bp_moves_to_sp != g2.bp_moves_to_sp:
@@ -291,7 +291,7 @@ class RegSetter:
 
         # check keys
         search_regs = set()
-        for reg in registers.keys():
+        for reg in registers:
             search_regs.add(reg)
             if reg not in self._reg_set:
                 raise RopException("Register %s not in reg list" % reg)
@@ -300,7 +300,7 @@ class RegSetter:
 
         # find gadgets with sufficient partial control
         partial_controllers = dict()
-        for r in registers.keys():
+        for r in registers:
             partial_controllers[r] = set()
         if use_partial_controllers:
             partial_controllers = self._get_sufficient_partial_controllers(registers)

@@ -13,7 +13,7 @@ l = logging.getLogger("angrop.gadget_analyzer")
 
 
 
-class GadgetAnalyzer(object):
+class GadgetAnalyzer:
     def __init__(self, project, reg_list, max_block_size, fast_mode, max_sym_mem_accesses):
         # params
         self.project = project
@@ -148,7 +148,7 @@ class GadgetAnalyzer(object):
         except (claripy.ClaripyFrontendError, angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e:
             l.warning("... claripy error: %s", e)
             return None
-        except Exception as e:
+        except Exception as e:# pylint:disable=broad-except
             l.exception(e)
             return None
 
@@ -209,7 +209,7 @@ class GadgetAnalyzer(object):
         except pyvex.PyVEXError:
             l.debug("... some pyvex")
             return False
-        except (angr.AngrError, angr.SimCCallError):
+        except angr.SimCCallError:
             l.debug("... some other angr error")
             return False
         except angr.SimMemoryLimitError:
@@ -219,6 +219,8 @@ class GadgetAnalyzer(object):
             l.debug("... angr unsupported op error")
             return False
         except angr.UnsupportedSyscallError:
+            return False
+        except angr.AngrError:
             return False
         except AttributeError:
             return False
@@ -380,7 +382,8 @@ class GadgetAnalyzer(object):
             return "jump"
         return None
 
-    def _check_if_jump_gadget(self, final_state, init_state):
+    @staticmethod
+    def _check_if_jump_gadget(final_state, init_state):
         """
         FIXME: this constraint is too strict, it can be less strict
         a gadget is a jump gadget if
@@ -431,11 +434,8 @@ class GadgetAnalyzer(object):
             initial_state.memory.load(initial_state.regs.sp, stack_bytes_length) == concrete_stack)
         test_constraint = (ast != test_val)
         # stack must have set the register and it must be able to set the register to all 1's or all 0's
-        if not concrete_stack_s.solver.satisfiable(extra_constraints=(test_constraint,)) and \
-                rop_utils.fast_unconstrained_check(initial_state, ast):
-            ans = True
-        else:
-            ans = False
+        ans = not concrete_stack_s.solver.satisfiable(extra_constraints=(test_constraint,)) and \
+                rop_utils.fast_unconstrained_check(initial_state, ast)
 
         # only store the result if we were using the whole stack
         if gadget_stack_change is not None:
@@ -460,9 +460,10 @@ class GadgetAnalyzer(object):
         gadget.bp_moves_to_sp = False
         if len(dependencies) > 1:
             raise RopException("SP has multiple dependencies")
-        elif len(dependencies) == 0 and sp_change.symbolic:
+        if len(dependencies) == 0 and sp_change.symbolic:
             raise RopException("SP change is uncontrolled")
-        elif len(dependencies) == 0 and not sp_change.symbolic:
+
+        if len(dependencies) == 0 and not sp_change.symbolic:
             stack_changes = [ss_copy.solver.eval(sp_change)]
         elif list(dependencies)[0] == self._sp_reg:
             stack_changes = ss_copy.solver.eval_upto(sp_change, 2)
@@ -623,7 +624,7 @@ class GadgetAnalyzer(object):
             # verify no weird mem accesses
             test_p = self.project.factory.simulation_manager(symbolic_state.copy())
             # step until we find the pivot action
-            for i in range(self.project.factory.block(symbolic_state.addr).instructions):
+            for _ in range(self.project.factory.block(symbolic_state.addr).instructions):
                 test_p.step(num_inst=1)
                 if len(test_p.active) != 1:
                     return None
