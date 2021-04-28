@@ -180,8 +180,14 @@ def test_roptest_x86_64():
 
     # verifying this is a giant pain, partially because the binary is so tiny, and there's no code beyond the syscall
     assert len(c._gadgets) == 8
-    # this is the hardcoded chain...
-    assert [ g.addr for g in c._gadgets ] == [ 0x4000b0, 0x4000b2, 0x4000b4, 0x4000b0, 0x4000bb, 0x4000b2, 0x4000bf, 0x4000c1 ]
+
+    # verify the chain is valid
+    chain_addrs = [ g.addr for g in c._gadgets ]
+    assert chain_addrs[1] in [0x4000b2, 0x4000bd]
+    assert chain_addrs[5] in [0x4000b2, 0x4000bd]
+    chain_addrs[1] = 0x4000b2
+    chain_addrs[5] = 0x4000b2
+    assert chain_addrs == [ 0x4000b0, 0x4000b2, 0x4000b4, 0x4000b0, 0x4000bb, 0x4000b2, 0x4000bf, 0x4000c1 ]
 
 def run_all():
     functions = globals()
