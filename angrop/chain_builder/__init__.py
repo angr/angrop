@@ -1107,6 +1107,7 @@ class ChainBuilder:
 
     def _set_roparg_filler(self, roparg_filler):
         self._roparg_filler = roparg_filler
+        self._reg_setter._roparg_filler = roparg_filler
 
     # should also be able to do execve by providing writable memory
     # todo pivot stack
