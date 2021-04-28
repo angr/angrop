@@ -118,7 +118,6 @@ class RegSetter:
             return 0
         return sorted(chains, key=cmp_to_key(cmp_func))
 
-
     def _find_all_candidate_chains(self, gadgets, **registers):
         """
         find all pop only chains by BFS search

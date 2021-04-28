@@ -304,9 +304,11 @@ class ChainBuilder:
             if g.stack_change <= 0:
                 continue
             for m_access in g.mem_changes:
+                if m_access.op not in ["__add__", "__sub__"]:
+                    continue
                 if len(m_access.addr_controllers) > 0 and len(m_access.data_controllers) > 0 and \
                         len(set(m_access.addr_controllers) & set(m_access.data_controllers)) == 0 and \
-                        (m_access.op == "__add__" or m_access.op == "__sub__") and m_access.data_size == data_size:
+                        m_access.data_size == data_size:
                     possible_gadgets.add(g)
 
         # get the data from trying to set all the registers
@@ -673,7 +675,9 @@ class ChainBuilder:
             # make sure there are no strictly better gadgets
             for g2 in gadgets:
                 num_mem_changes2 = len(g2.mem_writes) + len(g2.mem_reads) + len(g2.mem_changes)
-                if len(g.reg_controllers) == 0 and len(g2.reg_controllers) == 0 and g.popped_regs == g2.popped_regs \
+                if len(g.reg_controllers) != 0 or len(g2.reg_controllers) != 0:
+                    continue
+                if g.popped_regs == g2.popped_regs \
                         and g.reg_controllers == g2.reg_controllers and g.reg_dependencies == g2.reg_dependencies \
                         and g.changed_regs == g2.changed_regs and g.bp_moves_to_sp == g2.bp_moves_to_sp:
                     if num_mem_changes == 0 and num_mem_changes2 == 0:
@@ -688,10 +692,10 @@ class ChainBuilder:
             # make sure we don't already have one that is as good
             for g2 in good_gadgets:
                 num_mem_changes2 = len(g2.mem_writes) + len(g2.mem_reads) + len(g2.mem_changes)
-                if g2.stack_change <= g.stack_change and g.reg_controllers == g2.reg_controllers \
-                        and g.reg_dependencies == g2.reg_dependencies and g2.changed_regs.issubset(g.changed_regs) \
-                        and g.popped_regs.issubset(g2.changed_regs) and num_mem_changes == 0 and num_mem_changes2 == 0 \
-                        and g.bp_moves_to_sp == g2.bp_moves_to_sp:
+                if g2.stack_change > g.stack_change or g.bp_moves_to_sp != g2.bp_moves_to_sp or g.reg_controllers != g2.reg_controllers:
+                    continue
+                if g.reg_dependencies == g2.reg_dependencies and g2.changed_regs.issubset(g.changed_regs) \
+                        and g.popped_regs.issubset(g2.changed_regs) and num_mem_changes == 0 and num_mem_changes2 == 0:
                     is_good = False
             if is_good:
                 good_gadgets.append(g)
@@ -1039,9 +1043,9 @@ class ChainBuilder:
         rop_utils.make_reg_symbolic(test_state, self._base_pointer)
 
         if difference is not None:
-            test_state.memory.store(addr, test_state.solver.BVV(~difference, data_size))
+            test_state.memory.store(addr, test_state.solver.BVV(~difference, data_size)) # pylint:disable=invalid-unary-operand-type
         if final_val is not None:
-            test_state.memory.store(addr, test_state.solver.BVV(~final_val, data_size))
+            test_state.memory.store(addr, test_state.solver.BVV(~final_val, data_size)) # pylint:disable=invalid-unary-operand-type
 
         test_state.regs.ip = gadget.addr
         test_state.add_constraints(
