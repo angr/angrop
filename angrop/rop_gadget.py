@@ -76,6 +76,13 @@ class RopGadget(object):
         self.block_length = None
         self.makes_syscall = False
         self.starts_with_syscall = False
+        self.gadget_type = None
+        self.jump_reg = None
+        self.pc_reg = None
+
+    @property
+    def num_mem_access(self):
+        return len(self.mem_reads) + len(self.mem_writes) + len(self.mem_changes)
 
     def __str__(self):
         s = "Gadget %#x\n" % self.addr
@@ -154,6 +161,9 @@ class RopGadget(object):
         out.block_length = self.block_length
         out.makes_syscall = self.makes_syscall
         out.starts_with_syscall = self.starts_with_syscall
+        out.gadget_type = self.gadget_type
+        out.jump_reg = self.jump_reg
+        out.pc_reg = self.pc_reg
         return out
 
 

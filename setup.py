@@ -8,6 +8,7 @@ setup(
     packages=['angrop'],
     install_requires=[
         'progressbar',
+        'tqdm',
         'angr==9.0.gitrolling',
     ],
 )
