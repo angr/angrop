@@ -19,6 +19,22 @@ def test_arm_conditional():
 
     assert all(x.addr not in cond_gadget_addrs for x in rop._gadgets)
 
+def test_jump_gadget():
+    """
+    Ensure it finds gadgets ending with jumps
+    Ensure angrop can use jump gadgets to build ROP chains
+    """
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "mipsel", "fauxware"))
+    rop = proj.analyses.ROP(rebase=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    jump_gadgets = [x for x in rop._gadgets if x.gadget_type == "jump"]
+    assert len(jump_gadgets) > 0
+
+    jump_regs = [x.jump_reg for x in jump_gadgets]
+    assert 't9' in jump_regs
+    assert 'ra' in jump_regs
+
 def run_all():
     functions = globals()
     all_functions = dict(filter((lambda kv: kv[0].startswith('test_')), functions.items()))

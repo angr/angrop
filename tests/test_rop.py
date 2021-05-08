@@ -102,7 +102,7 @@ def execute_chain(project, chain):
 def test_rop_x86_64():
     b = angr.Project(os.path.join(public_bin_location, "x86_64/datadep_test"))
     rop = b.analyses.ROP()
-    rop.find_gadgets_single_threaded()
+    rop.find_gadgets_single_threaded(show_progress=False)
 
     # check gadgets
     test_gadgets, _ = pickle.load(open(os.path.join(test_data_location, "datadep_test_gadgets"), "rb"))
@@ -126,7 +126,7 @@ def test_rop_x86_64():
 def test_rop_i386_cgc():
     b = angr.Project(os.path.join(public_bin_location, "cgc/sc1_0b32aa01_01"))
     rop = b.analyses.ROP()
-    rop.find_gadgets_single_threaded()
+    rop.find_gadgets_single_threaded(show_progress=False)
 
     # check gadgets
     test_gadgets, _, _ = pickle.load(open(os.path.join(test_data_location, "0b32aa01_01_gadgets"), "rb"))
@@ -150,7 +150,7 @@ def test_rop_i386_cgc():
 def test_rop_arm():
     b = angr.Project(os.path.join(public_bin_location, "armel/manysum"), load_options={"auto_load_libs": False})
     rop = b.analyses.ROP()
-    rop.find_gadgets_single_threaded()
+    rop.find_gadgets_single_threaded(show_progress=False)
 
     # check gadgets
     test_gadgets, _ = pickle.load(open(os.path.join(test_data_location, "arm_manysum_test_gadgets"), "rb"))
@@ -175,7 +175,7 @@ def test_rop_arm():
 def test_roptest_x86_64():
     p = angr.Project(os.path.join(public_bin_location, "x86_64/roptest"))
     r = p.analyses.ROP()
-    r.find_gadgets_single_threaded()
+    r.find_gadgets_single_threaded(show_progress=False)
     c = r.execve(b"/bin/sh")
 
     # verifying this is a giant pain, partially because the binary is so tiny, and there's no code beyond the syscall
@@ -188,6 +188,18 @@ def test_roptest_x86_64():
     chain_addrs[1] = 0x4000b2
     chain_addrs[5] = 0x4000b2
     assert chain_addrs == [ 0x4000b0, 0x4000b2, 0x4000b4, 0x4000b0, 0x4000bb, 0x4000b2, 0x4000bf, 0x4000c1 ]
+
+def test_roptest_mips():
+    proj = angr.Project(os.path.join(public_bin_location, "mipsel/darpa_ping"))
+    rop = proj.analyses.ROP()
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.set_regs(s0=0x41414141, s1=0x42424242, v0=0x43434343)
+    result_state = execute_chain(proj, chain)
+    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.s0), 0x41414141)
+    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.s1), 0x42424242)
+    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.v0), 0x43434343)
+
 
 def run_all():
     functions = globals()
