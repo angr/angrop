@@ -1,28 +1,28 @@
-import angr
+import types
 import heapq
 import struct
-import claripy
-
-from . import rop_utils
-from . import common
-
-from .errors import RopException
-from .rop_chain import RopChain
-from .rop_gadget import RopGadget
-
-import types
 import logging
 from collections import defaultdict
+
+import angr
+import claripy
+
+from .reg_setter import RegSetter
+from .. import rop_utils
+from .. import common
+from ..errors import RopException
+from ..rop_chain import RopChain
+from ..rop_gadget import RopGadget
 
 l = logging.getLogger("angrop.chain_builder")
 
 
-class ChainBuilder(object):
+class ChainBuilder:
     """
     This class provides functions to generate common ropchains based on existing gadgets.
     """
 
-    def __init__(self, project, gadgets, duplicates, reg_list, base_pointer, badbytes, roparg_filler):
+    def __init__(self, project, gadgets, duplicates, reg_list, base_pointer, badbytes, roparg_filler, rebase=True):
         """
         Initializes the chain builder.
 
@@ -31,7 +31,7 @@ class ChainBuilder(object):
         :param duplicates:
         :param reg_list: A list of multipurpose registers
         :param base_pointer: The name ("offset") for base pointer register
-        :param badbytes: A list with badbytes, which we should avaoid
+        :param badbytes: A list with badbytes, which we should avoid
         :param roparg_filler: An integer used when popping superfluous registers
         """
         self.project = project
@@ -42,6 +42,7 @@ class ChainBuilder(object):
         self._base_pointer = base_pointer
         self.badbytes = badbytes
         self._roparg_filler = roparg_filler
+        self._rebase = rebase
 
         self._syscall_instruction = None
         if self.project.arch.linux_name == "x86_64":
@@ -64,7 +65,10 @@ class ChainBuilder(object):
         # filtered gadget cache
         self._filtered_reg_gadgets = None
 
-    def set_regs(self, modifiable_memory_range=None, use_partial_controllers=False, rebase_regs=None, **registers):
+        self._reg_setter = RegSetter(project, gadgets, reg_list=reg_list, badbytes=badbytes,
+                                     rebase=self._rebase, filler=self._roparg_filler)
+
+    def set_regs(self, *args, **kwargs):
         """
         :param registers: dict of registers to values
         :return: a chain which will set the registers to the requested values
@@ -73,19 +77,7 @@ class ChainBuilder(object):
         chain = rop.set_regs(rax=0x1234, rcx=0x41414141)
         """
 
-        if len(registers) == 0:
-            return RopChain(self.project, self)
-
-        if rebase_regs is None:
-            rebase_regs = set()
-
-        gadgets, best_stack_change, _ = self._find_reg_setting_gadgets(modifiable_memory_range,
-                                                                       use_partial_controllers, **registers)
-        if gadgets is None:
-            raise RopException("Couldn't set registers :(")
-
-        return self._build_reg_setting_chain(gadgets, modifiable_memory_range,
-                                             registers, best_stack_change, rebase_regs)
+        return self._reg_setter.run(*args, **kwargs)
 
     # TODO handle mess ups by _find_reg_setting_gadgets and see if we can set a register in a syscall preamble
     # or if a register value is explicitly set to just the right value
@@ -172,18 +164,7 @@ class ChainBuilder(object):
 
         return chain
 
-    def write_to_mem(self, addr, string_data, fill_byte=b"\xff"):
-        """
-        :param addr: address to store the string
-        :param string_data: string to store
-        :param fill_byte: a byte to use to fill up the string if necessary
-        :return: a rop chain
-        """
-
-        if not (isinstance(fill_byte, bytes) and len(fill_byte) == 1):
-            print("fill_byte is not a one byte string, aborting")
-            return
-
+    def _gen_mem_write_gadgets(self, string_data):
         # create a dict of bytes per write to gadgets
         # assume we need intersection of addr_dependencies and data_dependencies to be 0
         # TODO could allow mem_reads as long as we control the address?
@@ -195,80 +176,108 @@ class ChainBuilder(object):
                 continue
             if g.stack_change <= 0:
                 continue
-            if self._containsbadbytes(g):
-                continue
             for m_access in g.mem_writes:
                 if len(m_access.addr_controllers) > 0 and len(m_access.data_controllers) > 0 and \
                         len(set(m_access.addr_controllers) & set(m_access.data_controllers)) == 0:
                     possible_gadgets.add(g)
 
-        # get the data from trying to set all the registers
-        registers = dict((reg, 0x41) for reg in self._reg_list)
-        l.debug("getting reg data for mem writes")
-        _, _, reg_data = self._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
-        l.debug("trying mem_write gadgets")
-
-        # limit the maximum size of the chain
-        best_stack_change = 0x400
-        best_gadget = None
-        for t, vals in reg_data.items():
-            if vals[1] >= best_stack_change:
-                continue
-            for g in possible_gadgets:
-                mem_write = g.mem_writes[0]
-                if (set(mem_write.addr_dependencies) | set(mem_write.data_dependencies)).issubset(set(t)):
-                    stack_change = g.stack_change + vals[1]
-                    bytes_per_write = mem_write.data_size // 8
-                    num_writes = (len(string_data) + bytes_per_write - 1)//bytes_per_write
-                    stack_change *= num_writes
-                    if stack_change < best_stack_change:
-                        best_gadget = g
-                        best_stack_change = stack_change
-
-        # try again using partial_controllers
-        use_partial_controllers = False
-        best_stack_change = 0x400
-        if best_gadget is None:
-            use_partial_controllers = True
-            l.warning("Trying to use partial controllers for memory write")
+        while possible_gadgets:
+            # get the data from trying to set all the registers
+            registers = dict((reg, 0x41) for reg in self._reg_list)
             l.debug("getting reg data for mem writes")
-            _, _, reg_data = self._find_reg_setting_gadgets(max_stack_change=0x50, use_partial_controllers=True,
-                                                            **registers)
+            _, _, reg_data = self._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
             l.debug("trying mem_write gadgets")
+
+            # limit the maximum size of the chain
+            best_stack_change = 0x400
+            best_gadget = None
             for t, vals in reg_data.items():
                 if vals[1] >= best_stack_change:
                     continue
                 for g in possible_gadgets:
                     mem_write = g.mem_writes[0]
-                    # we need the addr to not be partially controlled
-                    if (set(mem_write.addr_dependencies) | set(mem_write.data_dependencies)).issubset(set(t)) and \
-                            len(set(mem_write.addr_dependencies) & vals[3]) == 0:
+                    if (set(mem_write.addr_dependencies) | set(mem_write.data_dependencies)).issubset(set(t)):
                         stack_change = g.stack_change + vals[1]
-                        # only one byte at a time
-                        bytes_per_write = 1
+                        bytes_per_write = mem_write.data_size // 8
                         num_writes = (len(string_data) + bytes_per_write - 1)//bytes_per_write
                         stack_change *= num_writes
                         if stack_change < best_stack_change:
                             best_gadget = g
                             best_stack_change = stack_change
 
-        if best_gadget is None:
-            raise RopException("Couldnt set registers for any memory write gadget")
+            # try again using partial_controllers
+            use_partial_controllers = False
+            best_stack_change = 0x400
+            if best_gadget is None:
+                use_partial_controllers = True
+                l.warning("Trying to use partial controllers for memory write")
+                l.debug("getting reg data for mem writes")
+                _, _, reg_data = self._find_reg_setting_gadgets(max_stack_change=0x50, use_partial_controllers=True,
+                                                                **registers)
+                l.debug("trying mem_write gadgets")
+                for t, vals in reg_data.items():
+                    if vals[1] >= best_stack_change:
+                        continue
+                    for g in possible_gadgets:
+                        mem_write = g.mem_writes[0]
+                        # we need the addr to not be partially controlled
+                        if (set(mem_write.addr_dependencies) | set(mem_write.data_dependencies)).issubset(set(t)) and \
+                                len(set(mem_write.addr_dependencies) & vals[3]) == 0:
+                            stack_change = g.stack_change + vals[1]
+                            # only one byte at a time
+                            bytes_per_write = 1
+                            num_writes = (len(string_data) + bytes_per_write - 1)//bytes_per_write
+                            stack_change *= num_writes
+                            if stack_change < best_stack_change:
+                                best_gadget = g
+                                best_stack_change = stack_change
 
-        mem_write = best_gadget.mem_writes[0]
+            yield best_gadget, use_partial_controllers
+            possible_gadgets.remove(best_gadget)
+
+    @rop_utils.timeout(5)
+    def _try_write_to_mem(self, gadget, use_partial_controllers, addr, string_data, fill_byte):
+        gadget_code = str(self.project.factory.block(gadget.addr).capstone)
+        l.debug("building mem_write chain with gadget:\n%s", gadget_code)
+        mem_write = gadget.mem_writes[0]
         bytes_per_write = mem_write.data_size//8 if not use_partial_controllers else 1
-        l.debug("Now building the mem write chain")
 
         # build the chain
-        chain = RopChain(self.project, self)
+        chain = RopChain(self.project, self, rebase=self._rebase, badbytes=self.badbytes)
         for i in range(0, len(string_data), bytes_per_write):
             to_write = string_data[i: i+bytes_per_write]
             # pad if needed
             if len(to_write) < bytes_per_write:
                 to_write += fill_byte * (bytes_per_write-len(to_write))
-            chain = chain + self._write_to_mem_with_gadget(best_gadget, addr + i, to_write, use_partial_controllers)
-
+            chain = chain + self._write_to_mem_with_gadget(gadget, addr + i, to_write, use_partial_controllers)
         return chain
+
+    def write_to_mem(self, addr, string_data, fill_byte=b"\xff"):# pylint:disable=inconsistent-return-statements
+        """
+        :param addr: address to store the string
+        :param string_data: string to store
+        :param fill_byte: a byte to use to fill up the string if necessary
+        :return: a rop chain
+        """
+
+        if not (isinstance(fill_byte, bytes) and len(fill_byte) == 1):
+            print("fill_byte is not a one byte string, aborting")
+            return
+        if not isinstance(string_data, bytes):
+            print("string_data is not a byte string, aborting")
+            return
+
+        gen = self._gen_mem_write_gadgets(string_data)
+        gadget, use_partial_controllers = next(gen, (None, None))
+
+        while gadget:
+            try:
+                return self._try_write_to_mem(gadget, use_partial_controllers, addr, string_data, fill_byte)
+            except RopException:
+                pass
+            gadget, use_partial_controllers  = next(gen, (None, None))
+
+        raise RopException("Fail to write data to memory :(")
 
     def add_to_mem(self, addr, value, data_size=None):
         """
@@ -294,12 +303,12 @@ class ChainBuilder(object):
                 continue
             if g.stack_change <= 0:
                 continue
-            if self._containsbadbytes(g):
-                continue
             for m_access in g.mem_changes:
+                if m_access.op not in ["__add__", "__sub__"]:
+                    continue
                 if len(m_access.addr_controllers) > 0 and len(m_access.data_controllers) > 0 and \
                         len(set(m_access.addr_controllers) & set(m_access.data_controllers)) == 0 and \
-                        (m_access.op == "__add__" or m_access.op == "__sub__") and m_access.data_size == data_size:
+                        m_access.data_size == data_size:
                     possible_gadgets.add(g)
 
         # get the data from trying to set all the registers
@@ -348,8 +357,6 @@ class ChainBuilder(object):
                 continue
             if g.stack_change <= 0:
                 continue
-            if self._containsbadbytes(g):
-                continue
             for m_access in g.mem_changes:
                 if len(m_access.addr_controllers) > 0 and len(m_access.data_controllers) > 0 and \
                         len(set(m_access.addr_controllers) & set(m_access.data_controllers)) == 0 and \
@@ -391,7 +398,7 @@ class ChainBuilder(object):
             final_value = 0
         else:
             raise Exception("This shouldn't happen")
-        chain = RopChain(self.project, self)
+        chain = RopChain(self.project, self, rebase=self._rebase, badbytes=self.badbytes)
         for i in range(0, len(data), bytes_per_write):
             chain = chain + self._change_mem_with_gadget(best_gadget, addr + i,
                                                          mem_change.data_size, final_val=final_value)
@@ -471,7 +478,7 @@ class ChainBuilder(object):
         if len(registers) > 0:
             chain = self.set_regs(use_partial_controllers=use_partial_controllers, **registers)
         else:
-            chain = RopChain(self.project, self)
+            chain = RopChain(self.project, self, rebase=self._rebase, badbytes=self.badbytes)
 
         # stack arguments
         bytes_per_arg = self.project.arch.bytes
@@ -479,8 +486,6 @@ class ChainBuilder(object):
         stack_cleaner = None
         if len(stack_arguments) > 0:
             for g in self._gadgets:
-                if self._containsbadbytes(g):
-                    continue
                 if len(g.mem_reads) > 0 or len(g.mem_writes) > 0 or len(g.mem_changes) > 0:
                     continue
                 if g.stack_change >= bytes_per_arg * (len(stack_arguments) + 1):
@@ -525,7 +530,7 @@ class ChainBuilder(object):
                 if g.stack_change > g2.stack_change and ChainBuilder._has_same_effects(g, g2):
                     good = False
                     break
-                elif g.stack_change == g2.stack_change and g.addr > g2.addr and ChainBuilder._has_same_effects(g, g2):
+                if g.stack_change == g2.stack_change and g.addr > g2.addr and ChainBuilder._has_same_effects(g, g2):
                     good = False
                     break
             if good:
@@ -584,8 +589,6 @@ class ChainBuilder(object):
     def _get_sufficient_partial_controllers(self, registers):
         sufficient_partial_controllers = defaultdict(set)
         for g in self._gadgets:
-            if self._containsbadbytes(g):
-                continue
             for reg in g.changed_regs:
                 if reg in registers:
                     if self._check_if_sufficient_partial_control(g, reg, registers[reg]):
@@ -656,8 +659,6 @@ class ChainBuilder(object):
         # start with a ret instruction
         ret_addr = None
         for g in self._gadgets:
-            if self._containsbadbytes(g):
-                continue
             if len(g.changed_regs) == 0 and len(g.mem_writes) == 0 and \
                     len(g.mem_reads) == 0 and len(g.mem_changes) == 0 and \
                     g.stack_change == self.project.arch.bytes:
@@ -674,7 +675,9 @@ class ChainBuilder(object):
             # make sure there are no strictly better gadgets
             for g2 in gadgets:
                 num_mem_changes2 = len(g2.mem_writes) + len(g2.mem_reads) + len(g2.mem_changes)
-                if len(g.reg_controllers) == 0 and len(g2.reg_controllers) == 0 and g.popped_regs == g2.popped_regs \
+                if len(g.reg_controllers) != 0 or len(g2.reg_controllers) != 0:
+                    continue
+                if g.popped_regs == g2.popped_regs \
                         and g.reg_controllers == g2.reg_controllers and g.reg_dependencies == g2.reg_dependencies \
                         and g.changed_regs == g2.changed_regs and g.bp_moves_to_sp == g2.bp_moves_to_sp:
                     if num_mem_changes == 0 and num_mem_changes2 == 0:
@@ -689,10 +692,10 @@ class ChainBuilder(object):
             # make sure we don't already have one that is as good
             for g2 in good_gadgets:
                 num_mem_changes2 = len(g2.mem_writes) + len(g2.mem_reads) + len(g2.mem_changes)
-                if g2.stack_change <= g.stack_change and g.reg_controllers == g2.reg_controllers \
-                        and g.reg_dependencies == g2.reg_dependencies and g2.changed_regs.issubset(g.changed_regs) \
-                        and g.popped_regs.issubset(g2.changed_regs) and num_mem_changes == 0 and num_mem_changes2 == 0 \
-                        and g.bp_moves_to_sp == g2.bp_moves_to_sp:
+                if g2.stack_change > g.stack_change or g.bp_moves_to_sp != g2.bp_moves_to_sp or g.reg_controllers != g2.reg_controllers:
+                    continue
+                if g.reg_dependencies == g2.reg_dependencies and g2.changed_regs.issubset(g.changed_regs) \
+                        and g.popped_regs.issubset(g2.changed_regs) and num_mem_changes == 0 and num_mem_changes2 == 0:
                     is_good = False
             if is_good:
                 good_gadgets.append(g)
@@ -704,7 +707,7 @@ class ChainBuilder(object):
             for i, addr in enumerate(dups):
                 if i != 0:
                     to_remove.add(addr)
-        gadgets = [g for g in gadgets if g.addr not in to_remove and not self._containsbadbytes(g)]
+        gadgets = [g for g in gadgets if g.addr not in to_remove]
         gadgets = [g for g in gadgets if len(g.popped_regs) != 0 or len(g.reg_controllers) != 0]
         gadget_dict = defaultdict(set)
         for g in gadgets:
@@ -802,7 +805,7 @@ class ChainBuilder(object):
                     rebase_state.add_constraints(sym_word == self._roparg_filler)
 
         # create the ropchain
-        res = RopChain(self.project, self, state=test_symbolic_state.copy())
+        res = RopChain(self.project, self, state=test_symbolic_state.copy(), rebase=self._rebase, badbytes=self.badbytes)
         for g in gadgets:
             res.add_gadget(g)
 
@@ -849,12 +852,13 @@ class ChainBuilder(object):
         :param registers:
         :return:
         """
+
         if modifiable_memory_range is not None and len(modifiable_memory_range) != 2:
             raise Exception("modifiable_memory_range should be a tuple (low, high)")
 
         # check keys
         search_regs = set()
-        for reg in registers.keys():
+        for reg in registers:
             search_regs.add(reg)
             if reg not in self._reg_list:
                 raise RopException("Register %s not in reg list" % reg)
@@ -863,7 +867,7 @@ class ChainBuilder(object):
 
         # find gadgets with sufficient partial control
         partial_controllers = dict()
-        for r in registers.keys():
+        for r in registers:
             partial_controllers[r] = set()
         if use_partial_controllers:
             partial_controllers = self._get_sufficient_partial_controllers(registers)
@@ -909,8 +913,6 @@ class ChainBuilder(object):
                     continue
                 # ignore gadgets which don't have a positive stack change
                 if g.stack_change <= 0:
-                    continue
-                if self._containsbadbytes(g):
                     continue
 
                 stack_change = data[regs][1]
@@ -959,7 +961,6 @@ class ChainBuilder(object):
             curr_tuple = data[curr_tuple][0]
 
         gadgets = gadgets_reverse[::-1]
-
         return gadgets, best_stack_change, data
 
     def _write_to_mem_with_gadget(self, gadget, addr, data, use_partial_controllers=False):
@@ -1042,9 +1043,9 @@ class ChainBuilder(object):
         rop_utils.make_reg_symbolic(test_state, self._base_pointer)
 
         if difference is not None:
-            test_state.memory.store(addr, test_state.solver.BVV(~difference, data_size))
+            test_state.memory.store(addr, test_state.solver.BVV(~difference, data_size)) # pylint:disable=invalid-unary-operand-type
         if final_val is not None:
-            test_state.memory.store(addr, test_state.solver.BVV(~final_val, data_size))
+            test_state.memory.store(addr, test_state.solver.BVV(~final_val, data_size)) # pylint:disable=invalid-unary-operand-type
 
         test_state.regs.ip = gadget.addr
         test_state.add_constraints(
@@ -1110,22 +1111,7 @@ class ChainBuilder(object):
 
     def _set_roparg_filler(self, roparg_filler):
         self._roparg_filler = roparg_filler
-
-    # inspired by ropper
-    def _containsbadbytes(self, gadget):
-        n_bytes = self.project.arch.bytes
-        addr = gadget.addr
-
-        for b in self.badbytes:
-            address = addr
-            if type(b) == str:
-                b = ord(b)
-
-            for _ in range(n_bytes):
-                if (address & 0xff) == b:
-                    return True
-                address >>= 8
-
+        self._reg_setter._roparg_filler = roparg_filler
 
     # should also be able to do execve by providing writable memory
     # todo pivot stack

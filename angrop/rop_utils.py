@@ -1,3 +1,6 @@
+import time
+import signal
+
 import angr
 import claripy
 
@@ -217,5 +220,27 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
             raise RopException("Does not get to an unconstrained successor")
         return succ.unconstrained_successors[0]
 
-    except (angr.errors.AngrError, angr.errors.SimError):
-        raise RopException("Does not get to a single unconstrained successor")
+    except (angr.errors.AngrError, angr.errors.SimError) as e:
+        raise RopException("Does not get to a single unconstrained successor") from e
+
+def timeout(seconds_before_timeout):
+    def decorate(f):
+        def handler(signum, frame):# pylint:disable=unused-argument
+            print("[angrop] Timeout")
+            raise RopException("[angrop] Timeout!")
+        def new_f(*args, **kwargs):
+            old = signal.signal(signal.SIGALRM, handler)
+            old_time_left = signal.alarm(seconds_before_timeout)
+            if 0 < old_time_left < seconds_before_timeout: # never lengthen existing timer
+                signal.alarm(old_time_left)
+            start_time = time.time()
+            try:
+                result = f(*args, **kwargs)
+            finally:
+                if old_time_left > 0: # deduct f's run time from the saved timer
+                    old_time_left -= int(time.time() - start_time)
+                signal.signal(signal.SIGALRM, old)
+                signal.alarm(old_time_left)
+            return result
+        return new_f
+    return decorate
