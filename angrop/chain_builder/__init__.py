@@ -273,7 +273,7 @@ class ChainBuilder:
         while gadget:
             try:
                 return self._try_write_to_mem(gadget, use_partial_controllers, addr, string_data, fill_byte)
-            except RopException:
+            except (RopException, angr.errors.SimEngineError):
                 pass
             gadget, use_partial_controllers  = next(gen, (None, None))
 
