@@ -1,11 +1,10 @@
-import setuptools
-from distutils.core import setup
+from setuptools import find_packages, setup
 
 setup(
     name='angrop',
     version='9.0.gitrolling',
     description='The rop chain builder based off of angr',
-    packages=['angrop'],
+    packages=find_packages(),
     install_requires=[
         'progressbar',
         'tqdm',
