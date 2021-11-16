@@ -100,7 +100,7 @@ def execute_chain(project, chain):
 
 
 def test_rop_x86_64():
-    b = angr.Project(os.path.join(public_bin_location, "x86_64/datadep_test"))
+    b = angr.Project(os.path.join(public_bin_location, "x86_64/datadep_test"), auto_load_libs=False)
     rop = b.analyses.ROP()
     rop.find_gadgets_single_threaded(show_progress=False)
 
@@ -124,7 +124,7 @@ def test_rop_x86_64():
 
 
 def test_rop_i386_cgc():
-    b = angr.Project(os.path.join(public_bin_location, "cgc/sc1_0b32aa01_01"))
+    b = angr.Project(os.path.join(public_bin_location, "cgc/sc1_0b32aa01_01"), auto_load_libs=False)
     rop = b.analyses.ROP()
     rop.find_gadgets_single_threaded(show_progress=False)
 
@@ -173,7 +173,7 @@ def test_rop_arm():
     nose.tools.assert_equal(result_state.solver.eval(result_state.memory.load(0x41414141, 8), cast_to=bytes), b"ABCDEFGH")
 
 def test_roptest_x86_64():
-    p = angr.Project(os.path.join(public_bin_location, "x86_64/roptest"))
+    p = angr.Project(os.path.join(public_bin_location, "x86_64/roptest"), auto_load_libs=False)
     r = p.analyses.ROP()
     r.find_gadgets_single_threaded(show_progress=False)
     c = r.execve(b"/bin/sh")
@@ -190,7 +190,7 @@ def test_roptest_x86_64():
     assert chain_addrs == [ 0x4000b0, 0x4000b2, 0x4000b4, 0x4000b0, 0x4000bb, 0x4000b2, 0x4000bf, 0x4000c1 ]
 
 def test_roptest_mips():
-    proj = angr.Project(os.path.join(public_bin_location, "mipsel/darpa_ping"))
+    proj = angr.Project(os.path.join(public_bin_location, "mipsel/darpa_ping"), auto_load_libs=False)
     rop = proj.analyses.ROP()
     rop.find_gadgets_single_threaded(show_progress=False)
 

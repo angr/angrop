@@ -10,7 +10,7 @@ def test_arm_conditional():
     Currently, we don't model conditional execution in arm. So we don't allow
     conditional execution in arm at this moment.
     """
-    proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "helloworld"))
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "helloworld"), auto_load_libs=False)
     rop = proj.analyses.ROP(rebase=False)
     rop.find_gadgets_single_threaded(show_progress=False)
 
@@ -24,7 +24,7 @@ def test_jump_gadget():
     Ensure it finds gadgets ending with jumps
     Ensure angrop can use jump gadgets to build ROP chains
     """
-    proj = angr.Project(os.path.join(BIN_DIR, "tests", "mipsel", "fauxware"))
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "mipsel", "fauxware"), auto_load_libs=False)
     rop = proj.analyses.ROP(rebase=False)
     rop.find_gadgets_single_threaded(show_progress=False)
 
