@@ -7,6 +7,7 @@ from angr import Analysis, register_analysis
 from . import chain_builder
 from . import gadget_analyzer
 from . import common
+from .arch import get_arch
 
 import pickle
 import inspect
@@ -52,7 +53,7 @@ class ROP(Analysis):
     Additionally, all public methods from ChainBuilder are copied into ROP.
     """
 
-    def __init__(self, only_check_near_rets=True, max_block_size=None, max_sym_mem_accesses=None, fast_mode=None, rebase=True, is_thumb=False):
+    def __init__(self, only_check_near_rets=True, max_block_size=None, max_sym_mem_access=None, fast_mode=None, rebase=True, is_thumb=False):
         """
         Initializes the rop gadget finder
         :param only_check_near_rets: If true we skip blocks that are not near rets
@@ -68,24 +69,17 @@ class ROP(Analysis):
         """
 
         # params
-        self._is_thumb = is_thumb
-        self._max_block_size, self._max_sym_mem_accesses = self._get_default_config()
-        if max_block_size:
-            self._max_block_size = max_block_size
-        if max_sym_mem_accesses:
-            self._max_sym_mem_accesses = max_sym_mem_accesses
+        self.arch = get_arch(self.project)
         self._only_check_near_rets = only_check_near_rets
         self._rebase = rebase
 
-        a = self.project.arch
-        self._sp_reg = a.register_names[a.sp_offset]
-        self._ip_reg = a.register_names[a.ip_offset]
-        self._base_pointer = a.register_names[a.bp_offset]
-
-        # get list of multipurpose registers
-        self._reg_list = a.default_symbolic_registers
-        # prune the register list of the instruction pointer and the stack pointer
-        self._reg_list = [r for r in self._reg_list if r not in (self._sp_reg, self._ip_reg)]
+        # override parameters
+        if max_block_size:
+            self.arch.max_block_size = max_block_size
+        if max_sym_mem_access:
+            self.arch.max_sym_mem_access = max_sym_mem_access
+        if is_thumb:
+            self.arch.is_thumb = is_thumb
 
         # get ret locations
         self._ret_locations = None
@@ -119,29 +113,6 @@ class ROP(Analysis):
     def gadgets(self):
         return [x for x in self._gadgets if not self._contain_badbytes(x.addr)]
 
-    def _get_default_config(self):
-        # not all architecture has "pop" instruction
-        # for example, in mips, memory load is the only way to set registers
-        # in those architectures without "pop", we should allow more memory accesses
-
-        if self.project.arch.name in ["AMD64", "X86"]:
-            max_block_size = 20
-        else:
-            max_block_size = self._get_alignment() * 8
-
-        if self.project.arch.name in ["AMD64", "X86"] or self.project.arch.name.startswith("ARM"):
-            access = 4
-        else:
-            # allows "pop" chain in architectures without "pop" instructions
-            access = 8
-
-        return max_block_size, access
-
-    def _get_alignment(self):
-        if not self.project.arch.name.startswith("ARM"):
-            return self.project.arch.instruction_alignment
-        return 2 if self._is_thumb else 4
-
     def _initialize_gadget_analyzer(self):
 
         # find locations to analyze
@@ -156,16 +127,15 @@ class ROP(Analysis):
             else:
                 self._fast_mode = False
         if self._fast_mode:
-            self._max_block_size = 12
-            self._max_sym_mem_accesses = 1
+            self.arch.max_block_size = 12
+            self.arch.max_sym_mem_access = 1
             # Recalculate num addresses to check based on fast_mode settings
             num_to_check = self._num_addresses_to_check()
 
         l.info("There are %d addresses within %d bytes of a ret",
-               num_to_check, self._max_block_size)
+               num_to_check, self.arch.max_block_size)
 
-        self._gadget_analyzer = gadget_analyzer.GadgetAnalyzer(self.project, self._reg_list, self._max_block_size,
-                                                               self._fast_mode, self._max_sym_mem_accesses)
+        self._gadget_analyzer = gadget_analyzer.GadgetAnalyzer(self.project, self._fast_mode, arch=self.arch)
 
     def find_gadgets(self, processes=4, show_progress=True):
         """
@@ -287,11 +257,11 @@ class ROP(Analysis):
 
     def _get_cache_tuple(self):
         return self._gadgets, self.stack_pivots, self._duplicates, self._ret_locations, self._fast_mode, \
-                self._max_block_size,  self._max_sym_mem_accesses, self._gadget_analyzer
+                self.arch, self._gadget_analyzer
 
     def _load_cache_tuple(self, cache_tuple):
         self._gadgets, self.stack_pivots, self._duplicates, self._ret_locations, self._fast_mode, \
-        self._max_block_size, self._max_sym_mem_accesses, self._gadget_analyzer = cache_tuple
+        self.arch, self._gadget_analyzer = cache_tuple
         self._reload_chain_funcs()
 
     def _reload_chain_funcs(self):
@@ -307,7 +277,7 @@ class ROP(Analysis):
         if len(self._gadgets) == 0:
             l.warning("Could not find gadgets for %s, check your badbytes and make sure find_gadgets() or load_gadgets() was called.", self.project)
         self._chain_builder = chain_builder.ChainBuilder(self.project, self.gadgets, self._duplicates,
-                                                         self._reg_list, self._base_pointer, self.badbytes,
+                                                         self.arch.reg_list, self.arch.base_pointer, self.badbytes,
                                                          self.roparg_filler, rebase=self._rebase)
         return self._chain_builder
 
@@ -345,7 +315,7 @@ class ROP(Analysis):
         for a in iterable:
             try:
                 bl = self.project.factory.block(a)
-                if bl.size > self._max_block_size:
+                if bl.size > self.arch.max_block_size:
                     continue
                 block_data = bl.bytes
             except (SimEngineError, SimMemoryError):
@@ -367,8 +337,8 @@ class ROP(Analysis):
         """
         if self._only_check_near_rets:
             # align block size
-            alignment = self._get_alignment()
-            block_size = (self._max_block_size & ((1 << self.project.arch.bits) - alignment)) + alignment
+            alignment = self.arch.alignment
+            block_size = (self.arch.max_block_size & ((1 << self.project.arch.bits) - alignment)) + alignment
             slices = [(addr-block_size, addr) for addr in self._ret_locations]
             current_addr = 0
             for st, _ in slices:
@@ -415,7 +385,7 @@ class ROP(Analysis):
             if segment.is_executable:
                 num_bytes = segment.max_addr-segment.min_addr
 
-                alignment = self._get_alignment()
+                alignment = self.arch.alignment
 
                 # iterate through the code looking for rets
                 for addr in range(segment.min_addr, segment.min_addr + num_bytes, alignment):
