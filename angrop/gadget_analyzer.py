@@ -192,6 +192,9 @@ class GadgetAnalyzer:
                     or "Ity_F64" in block.vex.tyenv.types or "Ity_F128" in block.vex.tyenv.types:
                 return False
 
+        except angr.errors.SimEngineError:
+            l.debug("... some simengine error")
+            return False
         except pyvex.PyVEXError:
             l.debug("... some pyvex")
             return False
