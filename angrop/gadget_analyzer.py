@@ -6,6 +6,7 @@ import claripy
 from angr.errors import SimEngineError, SimMemoryError
 
 from . import rop_utils
+from .arch import get_arch
 from .rop_gadget import RopGadget, RopMemAccess, RopRegMove, StackPivot
 from .errors import RopException, RegNotFoundException
 
@@ -14,18 +15,16 @@ l = logging.getLogger("angrop.gadget_analyzer")
 
 
 class GadgetAnalyzer:
-    def __init__(self, project, reg_list, max_block_size, fast_mode, max_sym_mem_accesses):
+    def __init__(self, project, fast_mode, arch=None):
         # params
         self.project = project
-        self._reg_list = reg_list
-        self._max_block_size = max_block_size
+        self.arch = get_arch(project) if arch is None else arch
         self._fast_mode = fast_mode
-        self._max_sym_mem_accesses = max_sym_mem_accesses
 
         # initial state that others are based off
         self._stack_length = 80
         self._stack_length_bytes = self._stack_length * self.project.arch.bytes
-        self._test_symbolic_state = rop_utils.make_symbolic_state(self.project, reg_list)
+        self._test_symbolic_state = rop_utils.make_symbolic_state(self.project, self.arch.reg_list)
         self._stack_pointer_value = self._test_symbolic_state.solver.eval(self._test_symbolic_state.regs.sp)
 
         # architecture stuff
@@ -165,21 +164,8 @@ class GadgetAnalyzer:
             l.debug("... checking if block makes sense")
             block = self.project.factory.block(addr)
 
-            # handle stuff that is incorrectly modelled
-            if self.project.arch.linux_name == "x86_64" or self.project.arch.linux_name == "i386":
-                capstr = str(block.capstone).lower()
-                if 'cli' in capstr or 'rex' in capstr or "fs:" in capstr or "gs:" in capstr:
-                    return False
-                if block.size < 1 or block.bytes[0] == 0x4f:
-                    return False
-            # disable conditional jumps, for now
-            # FIXME: we should handle conditional jumps, they are useful
-            conditional_postfix = ['eq', 'ne', 'cs', 'hs', 'cc', 'lo', 'mi', 'pl',
-                                  'vs', 'vc', 'hi', 'ls', 'ge', 'lt', 'gt', 'le', 'al']
-            if self.project.arch.name.startswith("ARM"):
-                for insn in block.capstone.insns:
-                    if insn.insn.mnemonic[-2:] in conditional_postfix:
-                        return False
+            if not self.arch.block_make_sense(block):
+                return False
 
             if block.vex.jumpkind == 'Ijk_NoDecode':
                 l.debug("... not decodable")
@@ -197,7 +183,7 @@ class GadgetAnalyzer:
                 if op.startswith("Iop_Div"):
                     return False
 
-            if block.size > self._max_block_size:
+            if block.size > self.arch.max_block_size:
                 l.debug("... too long")
                 return False
 
@@ -206,6 +192,9 @@ class GadgetAnalyzer:
                     or "Ity_F64" in block.vex.tyenv.types or "Ity_F128" in block.vex.tyenv.types:
                 return False
 
+        except angr.errors.SimEngineError:
+            l.debug("... some simengine error")
+            return False
         except pyvex.PyVEXError:
             l.debug("... some pyvex")
             return False
@@ -256,11 +245,11 @@ class GadgetAnalyzer:
         for a in reversed(symbolic_path.history.actions):
             if a.type == 'mem' and a.addr.ast.symbolic:
                 symbolic_mem_accesses.append(a)
-        if len(symbolic_mem_accesses) <= self._max_sym_mem_accesses:
+        if len(symbolic_mem_accesses) <= self.arch.max_sym_mem_access:
             return True
 
         # allow mem changes (only add/subtract) to count as a single access
-        if len(symbolic_mem_accesses) == 2 and self._max_sym_mem_accesses == 1:
+        if len(symbolic_mem_accesses) == 2 and self.arch.max_sym_mem_access == 1:
             if symbolic_mem_accesses[0].action == "read" and symbolic_mem_accesses[1].action == "write" and \
                     (symbolic_mem_accesses[1].data.ast.op == "__sub__" or
                         symbolic_mem_accesses[1].data.ast.op == "__add__") and \
@@ -714,7 +703,7 @@ class GadgetAnalyzer:
             if a.type == "reg" and a.action == "read":
                 try:
                     reg_name = rop_utils.get_reg_name(self.project.arch, a.offset)
-                    if reg_name in self._reg_list:
+                    if reg_name in self.arch.reg_list:
                         all_reg_reads.add(reg_name)
                     elif reg_name != self._sp_reg:
                         l.info("reg read from register not in reg_list: %s", reg_name)
@@ -733,7 +722,7 @@ class GadgetAnalyzer:
             if a.type == "reg" and a.action == "write":
                 try:
                     reg_name = rop_utils.get_reg_name(self.project.arch, a.offset)
-                    if reg_name in self._reg_list:
+                    if reg_name in self.arch.reg_list:
                         all_reg_writes.add(reg_name)
                     elif reg_name != self._sp_reg:
                         l.info("reg write from register not in reg_list: %s", reg_name)
