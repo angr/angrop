@@ -6,7 +6,6 @@ setup(
     description='The rop chain builder based off of angr',
     packages=find_packages(),
     install_requires=[
-        'progressbar2',
         'tqdm',
         'angr==9.1.gitrolling',
     ],
