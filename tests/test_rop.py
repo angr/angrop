@@ -1,5 +1,4 @@
 import os
-import nose
 import angr
 import angrop  # pylint: disable=unused-import
 import pickle
@@ -27,37 +26,37 @@ Memory changes require a read action followed by a write action to the same addr
 
 
 def assert_mem_access_equal(m1, m2):
-    nose.tools.assert_equal(set(m1.addr_dependencies), set(m2.addr_dependencies))
-    nose.tools.assert_equal(set(m1.addr_controllers), set(m2.addr_controllers))
-    nose.tools.assert_equal(set(m1.data_dependencies), set(m2.data_dependencies))
-    nose.tools.assert_equal(set(m1.data_controllers), set(m2.data_controllers))
-    nose.tools.assert_equal(m1.addr_constant, m2.addr_constant)
-    nose.tools.assert_equal(m1.data_constant, m2.data_constant)
-    nose.tools.assert_equal(m1.addr_size, m2.addr_size)
-    nose.tools.assert_equal(m1.data_size, m2.data_size)
+    assert set(m1.addr_dependencies) ==set(m2.addr_dependencies)
+    assert set(m1.addr_controllers) == set(m2.addr_controllers)
+    assert set(m1.data_dependencies) == set(m2.data_dependencies)
+    assert set(m1.data_controllers) == set(m2.data_controllers)
+    assert m1.addr_constant == m2.addr_constant
+    assert m1.data_constant == m2.data_constant
+    assert m1.addr_size == m2.addr_size
+    assert m1.data_size == m2.data_size
 
 
 def assert_gadgets_equal(known_gadget, test_gadget):
-    nose.tools.assert_equal(known_gadget.addr, test_gadget.addr)
-    nose.tools.assert_equal(known_gadget.changed_regs, test_gadget.changed_regs)
-    nose.tools.assert_equal(known_gadget.popped_regs, test_gadget.popped_regs)
-    nose.tools.assert_equal(known_gadget.reg_dependencies, test_gadget.reg_dependencies)
-    nose.tools.assert_equal(known_gadget.reg_controllers, test_gadget.reg_controllers)
-    nose.tools.assert_equal(known_gadget.stack_change, test_gadget.stack_change)
-    nose.tools.assert_equal(known_gadget.makes_syscall, test_gadget.makes_syscall)
+    assert known_gadget.addr == test_gadget.addr
+    assert known_gadget.changed_regs == test_gadget.changed_regs
+    assert known_gadget.popped_regs == test_gadget.popped_regs
+    assert known_gadget.reg_dependencies == test_gadget.reg_dependencies
+    assert known_gadget.reg_controllers == test_gadget.reg_controllers
+    assert known_gadget.stack_change == test_gadget.stack_change
+    assert known_gadget.makes_syscall == test_gadget.makes_syscall
 
-    nose.tools.assert_equal(len(known_gadget.mem_reads), len(test_gadget.mem_reads))
+    assert len(known_gadget.mem_reads) == len(test_gadget.mem_reads)
     for m1, m2 in zip(known_gadget.mem_reads, test_gadget.mem_reads):
         assert_mem_access_equal(m1, m2)
-    nose.tools.assert_equal(len(known_gadget.mem_writes), len(test_gadget.mem_writes))
+    assert len(known_gadget.mem_writes) == len(test_gadget.mem_writes)
     for m1, m2 in zip(known_gadget.mem_writes, test_gadget.mem_writes):
         assert_mem_access_equal(m1, m2)
-    nose.tools.assert_equal(len(known_gadget.mem_changes), len(test_gadget.mem_changes))
+    assert len(known_gadget.mem_changes) == len(test_gadget.mem_changes)
     for m1, m2 in zip(known_gadget.mem_changes, test_gadget.mem_changes):
         assert_mem_access_equal(m1, m2)
 
-    nose.tools.assert_equal(known_gadget.addr, test_gadget.addr)
-    nose.tools.assert_equal(known_gadget.changed_regs, test_gadget.changed_regs)
+    assert known_gadget.addr == test_gadget.addr
+    assert known_gadget.changed_regs == test_gadget.changed_regs
 
 
 def compare_gadgets(test_gadgets, known_gadgets):
@@ -76,10 +75,10 @@ def compare_gadgets(test_gadgets, known_gadgets):
 
     found_addrs = set(g.addr for g in test_gadgets)
     for g in known_gadgets:
-        nose.tools.assert_in(g.addr, found_addrs)
+        assert g.addr in found_addrs
 
     # So now we should have
-    nose.tools.assert_equal(len(test_gadgets), len(known_gadgets))
+    assert len(test_gadgets) == len(known_gadgets)
 
     # check gadgets
     for g in known_gadgets:
@@ -94,7 +93,7 @@ def execute_chain(project, chain):
     goal_addr = 0x4141414141414141 % (1 << project.arch.bits)
     while p.one_active.addr != goal_addr:
         p.step()
-        nose.tools.assert_equal(len(p.active), 1)
+        assert len(p.active) == 1
 
     return p.one_active
 
@@ -111,16 +110,16 @@ def test_rop_x86_64():
     # test creating a rop chain
     chain = rop.set_regs(rbp=0x1212, rbx=0x1234567890123456)
     # smallest possible chain
-    nose.tools.assert_equal(chain.payload_len, 24)
+    assert chain.payload_len == 24
     # chain is correct
     result_state = execute_chain(b, chain)
-    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.rbp), 0x1212)
-    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.rbx), 0x1234567890123456)
+    assert result_state.solver.eval(result_state.regs.rbp) == 0x1212
+    assert result_state.solver.eval(result_state.regs.rbx) == 0x1234567890123456
 
     # test setting the filler value
     rop.set_roparg_filler(0x4141414141414141)
     chain = rop.set_regs(rbx=0x121212)
-    nose.tools.assert_equal(chain._concretize_chain_values()[2][0], 0x4141414141414141)
+    assert chain._concretize_chain_values()[2][0] == 0x4141414141414141
 
 
 def test_rop_i386_cgc():
@@ -135,16 +134,16 @@ def test_rop_i386_cgc():
     # test creating a rop chain
     chain = rop.set_regs(ebx=0x98765432, ecx=0x12345678)
     # smallest possible chain
-    nose.tools.assert_equal(chain.payload_len, 12)
+    assert chain.payload_len == 12
     # chain is correct
     result_state = execute_chain(b, chain)
-    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.ebx), 0x98765432)
-    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.ecx), 0x12345678)
+    assert result_state.solver.eval(result_state.regs.ebx) == 0x98765432
+    assert result_state.solver.eval(result_state.regs.ecx) == 0x12345678
 
     # test memwrite chain
     chain = rop.write_to_mem(0x41414141, b"ABCDEFGH")
     result_state = execute_chain(b, chain)
-    nose.tools.assert_equal(result_state.solver.eval(result_state.memory.load(0x41414141, 8), cast_to=bytes), b"ABCDEFGH")
+    assert result_state.solver.eval(result_state.memory.load(0x41414141, 8), cast_to=bytes) == b"ABCDEFGH"
 
 
 def test_rop_arm():
@@ -159,18 +158,18 @@ def test_rop_arm():
     # test creating a rop chain
     chain = rop.set_regs(r11=0x99887766)
     # smallest possible chain
-    nose.tools.assert_equal(chain.payload_len, 8)
+    assert chain.payload_len == 8
     # correct chains, using a more complicated chain here
     chain = rop.set_regs(r4=0x99887766, r9=0x44556677, r11=0x11223344)
     result_state = execute_chain(b, chain)
-    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.r4), 0x99887766)
-    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.r9), 0x44556677)
-    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.r11), 0x11223344)
+    assert result_state.solver.eval(result_state.regs.r4) == 0x99887766
+    assert result_state.solver.eval(result_state.regs.r9) == 0x44556677
+    assert result_state.solver.eval(result_state.regs.r11) == 0x11223344
 
     # test memwrite chain
     chain = rop.write_to_mem(0x41414141, b"ABCDEFGH")
     result_state = execute_chain(b, chain)
-    nose.tools.assert_equal(result_state.solver.eval(result_state.memory.load(0x41414141, 8), cast_to=bytes), b"ABCDEFGH")
+    assert result_state.solver.eval(result_state.memory.load(0x41414141, 8), cast_to=bytes) == b"ABCDEFGH"
 
 def test_roptest_x86_64():
     p = angr.Project(os.path.join(public_bin_location, "x86_64/roptest"), auto_load_libs=False)
@@ -196,9 +195,9 @@ def test_roptest_mips():
 
     chain = rop.set_regs(s0=0x41414141, s1=0x42424242, v0=0x43434343)
     result_state = execute_chain(proj, chain)
-    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.s0), 0x41414141)
-    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.s1), 0x42424242)
-    nose.tools.assert_equal(result_state.solver.eval(result_state.regs.v0), 0x43434343)
+    assert result_state.solver.eval(result_state.regs.s0) == 0x41414141
+    assert result_state.solver.eval(result_state.regs.s1) == 0x42424242
+    assert result_state.solver.eval(result_state.regs.v0) == 0x43434343
 
 
 def run_all():
