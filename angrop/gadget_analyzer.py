@@ -15,16 +15,17 @@ l = logging.getLogger("angrop.gadget_analyzer")
 
 
 class GadgetAnalyzer:
-    def __init__(self, project, fast_mode, arch=None):
+    def __init__(self, project, fast_mode, arch=None, stack_length=80):
         # params
         self.project = project
         self.arch = get_arch(project) if arch is None else arch
         self._fast_mode = fast_mode
 
         # initial state that others are based off
-        self._stack_length = 80
+        self._stack_length = stack_length
         self._stack_length_bytes = self._stack_length * self.project.arch.bytes
-        self._test_symbolic_state = rop_utils.make_symbolic_state(self.project, self.arch.reg_list)
+        self._test_symbolic_state = rop_utils.make_symbolic_state(self.project, self.arch.reg_list,
+                                                                  stack_length=self._stack_length)
         self._stack_pointer_value = self._test_symbolic_state.solver.eval(self._test_symbolic_state.regs.sp)
 
         # architecture stuff
