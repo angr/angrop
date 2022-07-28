@@ -172,6 +172,7 @@ class RopChain:
         symbolically execute the ROP chain and return the final state
         """
         state = self._blank_state.copy()
+        state.solver.reload_solver([]) # remove constraints
         state.regs.pc = self._values[0][0]
         concrete_vals = self._concretize_chain_values()
         # the assumps that the first value in the chain is a code address
