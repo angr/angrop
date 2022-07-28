@@ -89,6 +89,8 @@ class RegSetter:
                     gadgets.add(g)
                 if reg in g.reg_dependencies.keys():
                     gadgets.add(g)
+                if reg in g.concrete_regs.keys():
+                    gadgets.add(g)
         return gadgets
 
     def _recursively_find_chains(self, gadgets, chain, preserve_regs, todo_regs):
@@ -133,13 +135,23 @@ class RegSetter:
             return 0
         return sorted(chains, key=cmp_to_key(cmp_func))
 
+    def _find_concrete_chains(self, gadgets, registers):
+        chains = []
+        for g in gadgets:
+            for reg, val in registers.items():
+                if reg in g.concrete_regs and g.concrete_regs[reg] == val:
+                    chains.append([g])
+        return chains
+
     def _find_all_candidate_chains(self, gadgets, **registers):
         """
-        find all pop only chains by BFS search
+        1. find all pop only chains by BFS search
+        2. find gadgets that set concrete values to the target values, such as xor eax, eax to set eax to 0
         TODO: handle moves
         """
         regs = set(registers.keys())
         chains = self._recursively_find_chains(gadgets, [], set({}), regs)
+        chains += self._find_concrete_chains(gadgets, registers)
         return self._sort_chains(chains)
 
     @staticmethod

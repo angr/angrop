@@ -134,6 +134,9 @@ class GadgetAnalyzer:
             self._check_reg_change_dependencies(init_state, final_state, this_gadget)
             self._check_reg_movers(init_state, final_state, reg_reads, this_gadget)
 
+            # check concretized registers
+            self._analyze_concrete_regs(final_state, this_gadget)
+
             # check mem accesses
             l.debug("... analyzing mem accesses")
             self._analyze_mem_accesses(final_state, init_state, this_gadget)
@@ -258,6 +261,19 @@ class GadgetAnalyzer:
                     symbolic_mem_accesses[0].addr.ast is symbolic_mem_accesses[1].addr.ast:
                 return True
         return False
+
+    def _analyze_concrete_regs(self, state, gadget):
+        """
+        collect registers that are concretized after symbolically executing the block (for example, xor rax, rax)
+        """
+        for reg in self.arch.reg_list:
+            val = state.registers.load(reg)
+            if val.symbolic:
+                continue
+            concrete_vals = state.solver.eval_upto(val, 2)
+            if len(concrete_vals) != 1:
+                continue
+            gadget.concrete_regs[reg] = concrete_vals[0]
 
     def _check_reg_changes(self, final_state, init_state, gadget):
         """
