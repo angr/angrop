@@ -25,6 +25,20 @@ class RegSetter:
         self._reg_setting_gadgets = self._filter_gadgets(gadgets)
         self._roparg_filler = filler
 
+    def verify(self, chain, registers):
+        """
+        given a potential chain, verify whether the chain can set the registers correctly by symbolically
+        execute the chain
+        """
+        state = chain.exec()
+        for reg, val in registers.items():
+            chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in chain._gadgets])
+            bv = getattr(state.regs, reg)
+            if bv.symbolic or state.solver.eval(bv != val):
+                l.exception("Somehow angrop thinks \n%s can be used for the chain generation.", chain_str)
+                return False
+        return True
+
     def run(self, modifiable_memory_range=None, use_partial_controllers=False, rebase_regs=None, **registers):
         # TODO: nuke or support rebase_regs
         if len(registers) == 0:
@@ -53,7 +67,8 @@ class RegSetter:
                 chain = self._build_reg_setting_chain(chain, modifiable_memory_range,
                                                      registers, stack_change, rebase_regs)
                 chain._concretize_chain_values()
-                return chain
+                if self.verify(chain, registers):
+                    return chain
             except (RopException, SimUnsatError):
                 pass
 

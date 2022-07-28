@@ -167,6 +167,19 @@ class RopChain:
     def print_payload_code(self, constraints=None, print_instructions=True):
         print(self.payload_code(constraints=constraints, print_instructions=print_instructions))
 
+    def exec(self):
+        """
+        symbolically execute the ROP chain and return the final state
+        """
+        state = self._blank_state.copy()
+        state.regs.pc = self._values[0][0]
+        concrete_vals = self._concretize_chain_values()
+        # the assumps that the first value in the chain is a code address
+        # it sounds like a reasonable assumption to me. But I can be wrong.
+        for value, _ in reversed(concrete_vals[1:]):
+            state.stack_push(value)
+        return rop_utils.step_to_unconstrained_successor(self._p, state)
+
     def copy(self):
         cp = RopChain(self._p, self._rop)
         cp._values = list(self._values)
