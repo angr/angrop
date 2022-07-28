@@ -179,7 +179,7 @@ class RopChain:
         # it sounds like a reasonable assumption to me. But I can be wrong.
         for value, _ in reversed(concrete_vals[1:]):
             state.stack_push(value)
-        return rop_utils.step_to_unconstrained_successor(self._p, state)
+        return rop_utils.step_to_unconstrained_successor(self._p, state, max_steps=len(self._gadgets)*2)
 
     def copy(self):
         cp = RopChain(self._p, self._rop)
