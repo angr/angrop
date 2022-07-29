@@ -1,4 +1,5 @@
 import heapq
+import struct
 import logging
 from collections import defaultdict
 from functools import cmp_to_key
@@ -24,6 +25,15 @@ class RegSetter:
 
         self._reg_setting_gadgets = self._filter_gadgets(gadgets)
         self._roparg_filler = filler
+
+    def _contain_badbyte(self, ptr):
+        """
+        check if a pointer contains any bad byte
+        """
+        raw_bytes = struct.pack(self.project.arch.struct_fmt(), ptr)
+        if any(x in raw_bytes for x in self._badbytes):
+            return True
+        return False
 
     def verify(self, chain, registers):
         """
@@ -93,7 +103,7 @@ class RegSetter:
                     gadgets.add(g)
         return gadgets
 
-    def _recursively_find_chains(self, gadgets, chain, preserve_regs, todo_regs):
+    def _recursively_find_chains(self, gadgets, chain, preserve_regs, todo_regs, hard_preserve_regs):
         if not todo_regs:
             return [chain]
 
@@ -102,6 +112,8 @@ class RegSetter:
             set_regs = g.popped_regs.intersection(todo_regs)
             if not set_regs:
                 continue
+            if g.changed_regs.intersection(hard_preserve_regs):
+                continue
             destory_regs = g.changed_regs.intersection(preserve_regs)
             if destory_regs - set_regs:
                 continue
@@ -109,7 +121,7 @@ class RegSetter:
             new_preserve.update(set_regs)
             new_chain = chain.copy()
             new_chain.append(g)
-            todo_list.append((new_chain, new_preserve, todo_regs-set_regs))
+            todo_list.append((new_chain, new_preserve, todo_regs-set_regs, hard_preserve_regs))
 
         res = []
         for todo in todo_list:
@@ -143,20 +155,62 @@ class RegSetter:
                     chains.append([g])
         return chains
 
+    def _find_add_chain(self, gadgets, reg, val):
+        """
+        find one chain to set one single register to a specific value using concrete values only through add/dec
+        """
+        concrete_setter_gadgets = [ x for x in gadgets if reg in x.concrete_regs ]
+        delta_gadgets = [ x for x in gadgets if len(x.reg_dependencies) == 1 and reg in x.reg_dependencies\
+                            and len(x.reg_dependencies[reg]) == 1 and reg in x.reg_dependencies[reg]]
+        for g1 in concrete_setter_gadgets:
+            for g2 in delta_gadgets:
+                try:
+                    chain = self._build_reg_setting_chain([g1, g2], False,
+                                                         {reg: val}, g1.stack_change+g2.stack_change, [])
+                    state = chain.exec()
+                    bv = state.registers.load(reg)
+                    if bv.symbolic:
+                        continue
+                    if state.solver.eval(bv == val):
+                        return [g1, g2]
+                except Exception:
+                    pass
+        return None
+
     def _find_all_candidate_chains(self, gadgets, **registers):
         """
-        1. find all pop only chains by BFS search
-        2. find gadgets that set concrete values to the target values, such as xor eax, eax to set eax to 0
+        1. find gadgets that set concrete values to the target values, such as xor eax, eax to set eax to 0
+        2. find all pop only chains by BFS search
         TODO: handle moves
         """
-        regs = set(registers.keys())
-        chains = self._recursively_find_chains(gadgets, [], set({}), regs)
-        chains += self._find_concrete_chains(gadgets, registers)
+        # get the list of regs that cannot be popped (call it hard_regs)
+        hard_regs = [x for x in registers if self._contain_badbyte(registers[x])]
+        if len(hard_regs) > 1:
+            l.error("too many registers contain bad bytes! bail out! %s", registers)
+            return []
+
+        # if hard_regs exists, try to use concrete values to craft the value
+        hard_chain = []
+        if hard_regs:
+            reg = hard_regs[0]
+            hard_chains = self._find_concrete_chains(gadgets, {reg: registers[reg]})
+            if hard_chains:
+                hard_chain = hard_chains[0]
+            else:
+                hard_chain = self._find_add_chain(gadgets, reg, registers[reg])
+            if not hard_chain:
+                l.error("Fail to set register: %s to: %#x", reg, registers[reg])
+                return []
+            registers.pop(reg)
+
+        chains = self._recursively_find_chains(gadgets, hard_chain, set(hard_regs), set(registers.keys()), set(hard_regs))
         return self._sort_chains(chains)
 
     @staticmethod
     def _same_reg_effects(g1, g2):
         if g1.popped_regs != g2.popped_regs:
+            return False
+        if g1.concrete_regs != g2.concrete_regs:
             return False
         if g1.bp_moves_to_sp != g2.bp_moves_to_sp:
             return False
