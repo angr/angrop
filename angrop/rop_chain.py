@@ -139,7 +139,7 @@ class RopChain:
             payload = "base_addr = 0x0\n"
         else:
             payload = ""
-        payload += 'chain = ""\n'
+        payload += 'chain = b""\n'
 
         gadget_dict = {g.addr:g for g in self._gadgets}
         concrete_vals = self._concretize_chain_values(constraints)
