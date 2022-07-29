@@ -485,12 +485,12 @@ class ChainBuilder:
 
     def _try_invoke_execve(self, path_addr):
         # next, try to invoke execve(path, ptr, ptr), where ptr points is either NULL or nullptr
-        if 0 in self.badbytes:
+        if 0 not in self.badbytes:
             ptr = 0
         else:
             nullptr = self._get_ptr_to_null()
             ptr = nullptr
-        return self.do_syscall(self._execve_syscall, [path_addr, 0, 0],
+        return self.do_syscall(self._execve_syscall, [path_addr, ptr, ptr],
                                  use_partial_controllers=False, needs_return=False)
 
         # Try to use partial controllers
