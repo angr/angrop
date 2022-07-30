@@ -147,7 +147,8 @@ class RegSetter:
             return 0
         return sorted(chains, key=cmp_to_key(cmp_func))
 
-    def _find_concrete_chains(self, gadgets, registers):
+    @staticmethod
+    def _find_concrete_chains(gadgets, registers):
         chains = []
         for g in gadgets:
             for reg, val in registers.items():
@@ -173,7 +174,7 @@ class RegSetter:
                         continue
                     if state.solver.eval(bv == val):
                         return [g1, g2]
-                except Exception:
+                except Exception:# pylint:disable=broad-except
                     pass
         return None
 
@@ -184,7 +185,7 @@ class RegSetter:
         TODO: handle moves
         """
         # get the list of regs that cannot be popped (call it hard_regs)
-        hard_regs = [x for x in registers if type(registers[x]) == int and self._contain_badbyte(registers[x])]
+        hard_regs = [reg for reg, val in registers.items() if type(val) == int and self._contain_badbyte(val)]
         if len(hard_regs) > 1:
             l.error("too many registers contain bad bytes! bail out! %s", registers)
             return []
@@ -204,7 +205,8 @@ class RegSetter:
             registers.pop(reg)
 
         # use the original pop techniques to set other registers
-        chains = self._recursively_find_chains(gadgets, hard_chain, set(hard_regs), set(registers.keys()), set(hard_regs))
+        chains = self._recursively_find_chains(gadgets, hard_chain, set(hard_regs),
+                                               set(registers.keys()), set(hard_regs))
         return self._sort_chains(chains)
 
     @staticmethod
@@ -320,7 +322,8 @@ class RegSetter:
                     rebase_state.add_constraints(sym_word == self._roparg_filler)
 
         # create the ropchain
-        res = RopChain(self.project, self, state=test_symbolic_state.copy(), rebase=self._rebase, badbytes=self._badbytes)
+        res = RopChain(self.project, self, state=test_symbolic_state.copy(),
+                       rebase=self._rebase, badbytes=self._badbytes)
         for g in gadgets:
             res.add_gadget(g)
 

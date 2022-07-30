@@ -43,7 +43,7 @@ def test_badbyte():
 
 def run_all():
     functions = globals()
-    all_functions = dict([x for x in functions.items() if x[0].startswith('test_')])
+    all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
     for f in sorted(all_functions.keys()):
         if hasattr(all_functions[f], '__call__'):
             all_functions[f]()
