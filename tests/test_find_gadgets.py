@@ -1,9 +1,9 @@
 import os
+import logging
+
 import angr
 import angrop  # pylint: disable=unused-import
-import pickle
 
-import logging
 l = logging.getLogger(__name__)
 
 bin_path = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', '..', 'binaries'))
@@ -43,7 +43,7 @@ def test_badbyte():
 
 def run_all():
     functions = globals()
-    all_functions = dict(filter((lambda kv: kv[0].startswith('test_')), functions.items()))
+    all_functions = dict([x for x in functions.items() if x[0].startswith('test_')])
     for f in sorted(all_functions.keys()):
         if hasattr(all_functions[f], '__call__'):
             all_functions[f]()

@@ -155,7 +155,7 @@ class ChainBuilder:
 
         # find small stack change syscall gadget that also fits the stack arguments we want
         smallest = None
-        for gadget in filter(lambda g: g.starts_with_syscall, self._gadgets):
+        for gadget in [x for x in self._gadgets if x.starts_with_syscall]:
             # adjust stack change for ret
             stack_change = gadget.stack_change - self.project.arch.bytes
             required_space = len(stack_arguments) * self.project.arch.bytes
@@ -613,7 +613,7 @@ class ChainBuilder:
 
     @staticmethod
     def _filter_duplicates_helper(gadgets):
-        gadgets_copy = list()
+        gadgets_copy = []
         for g in gadgets:
             good = True
             for g2 in gadgets:
@@ -956,7 +956,7 @@ class ChainBuilder:
         # lets try doing a graph search to set registers, something like dijkstra's for minimum length
 
         # find gadgets with sufficient partial control
-        partial_controllers = dict()
+        partial_controllers = {}
         for r in registers:
             partial_controllers[r] = set()
         if use_partial_controllers:
@@ -977,9 +977,9 @@ class ChainBuilder:
 
         # each key is tuple of sorted registers
         # use tuple (prev, total_stack_change, gadget, partial_controls)
-        data = dict()
+        data = {}
 
-        to_process = list()
+        to_process = []
         to_process.append((0, ()))
         visited = set()
         data[()] = (None, 0, None, set())
@@ -1103,7 +1103,7 @@ class ChainBuilder:
 
         # get the actual register values
         all_deps = list(mem_write.addr_dependencies) + list(mem_write.data_dependencies)
-        reg_vals = dict()
+        reg_vals = {}
         for reg in set(all_deps):
             reg_vals[reg] = test_state.solver.eval(test_state.registers.load(reg))
 
@@ -1177,7 +1177,7 @@ class ChainBuilder:
 
         # get the actual register values
         all_deps = list(mem_change.addr_dependencies) + list(mem_change.data_dependencies)
-        reg_vals = dict()
+        reg_vals = {}
         for reg in set(all_deps):
             reg_vals[reg] = test_state.solver.eval(test_state.registers.load(reg))
 

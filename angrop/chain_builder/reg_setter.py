@@ -380,7 +380,7 @@ class RegSetter:
         # lets try doing a graph search to set registers, something like dijkstra's for minimum length
 
         # find gadgets with sufficient partial control
-        partial_controllers = dict()
+        partial_controllers = {}
         for r in registers:
             partial_controllers[r] = set()
         if use_partial_controllers:
@@ -398,9 +398,9 @@ class RegSetter:
 
         # each key is tuple of sorted registers
         # use tuple (prev, total_stack_change, gadget, partial_controls)
-        data = dict()
+        data = {}
 
-        to_process = list()
+        to_process = []
         to_process.append((0, ()))
         visited = set()
         data[()] = (None, 0, None, set())
