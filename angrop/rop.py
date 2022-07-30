@@ -20,6 +20,7 @@ from .rop_gadget import RopGadget, StackPivot
 from multiprocessing import Pool
 
 l = logging.getLogger('angrop.rop')
+logging.getLogger('pyvex.lifting').setLevel("ERROR")
 
 
 _global_gadget_analyzer = None
