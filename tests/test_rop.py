@@ -6,8 +6,8 @@ import pickle
 import logging
 l = logging.getLogger("angrop.tests.test_rop")
 
-public_bin_location = str(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../binaries/tests'))
-test_data_location = str(os.path.dirname(os.path.realpath(__file__)))
+public_bin_location = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../binaries/tests')
+test_data_location = os.path.join(public_bin_location, "..", "tests_data", "angrop_gadgets_cache")
 
 
 """

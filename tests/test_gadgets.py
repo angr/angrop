@@ -4,15 +4,25 @@ import angr
 import angrop # pylint: disable=unused-import
 
 BIN_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "binaries")
+CACHE_DIR = os.path.join(BIN_DIR, 'tests_data', 'angrop_gadgets_cache')
+
+def get_rop(path):
+    cache_path = os.path.join(CACHE_DIR, os.path.basename(path))
+    proj = angr.Project(path, auto_load_libs=False)
+    rop = proj.analyses.ROP(rebase=False)
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+    return rop
 
 def test_arm_conditional():
     """
     Currently, we don't model conditional execution in arm. So we don't allow
     conditional execution in arm at this moment.
     """
-    proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "helloworld"), auto_load_libs=False)
-    rop = proj.analyses.ROP(rebase=False)
-    rop.find_gadgets_single_threaded(show_progress=False)
+    rop = get_rop(os.path.join(BIN_DIR, "tests", "armel", "helloworld"))
 
     cond_gadget_addrs = [0x10368, 0x1036c, 0x10370, 0x10380, 0x10384, 0x1038c, 0x1039c,
                          0x103a0, 0x103b8, 0x103bc, 0x103c4, 0x104e8, 0x104ec]
@@ -24,9 +34,7 @@ def test_jump_gadget():
     Ensure it finds gadgets ending with jumps
     Ensure angrop can use jump gadgets to build ROP chains
     """
-    proj = angr.Project(os.path.join(BIN_DIR, "tests", "mipsel", "fauxware"), auto_load_libs=False)
-    rop = proj.analyses.ROP(rebase=False)
-    rop.find_gadgets_single_threaded(show_progress=False)
+    rop = get_rop(os.path.join(BIN_DIR, "tests", "mipsel", "fauxware"))
 
     jump_gadgets = [x for x in rop._gadgets if x.gadget_type == "jump"]
     assert len(jump_gadgets) > 0
