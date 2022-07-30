@@ -184,7 +184,7 @@ class RegSetter:
         TODO: handle moves
         """
         # get the list of regs that cannot be popped (call it hard_regs)
-        hard_regs = [x for x in registers if self._contain_badbyte(registers[x])]
+        hard_regs = [x for x in registers if type(x) == int and self._contain_badbyte(registers[x])]
         if len(hard_regs) > 1:
             l.error("too many registers contain bad bytes! bail out! %s", registers)
             return []
@@ -203,6 +203,7 @@ class RegSetter:
                 return []
             registers.pop(reg)
 
+        # use the original pop techniques to set other registers
         chains = self._recursively_find_chains(gadgets, hard_chain, set(hard_regs), set(registers.keys()), set(hard_regs))
         return self._sort_chains(chains)
 
