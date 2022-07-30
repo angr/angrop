@@ -32,9 +32,6 @@ class GadgetAnalyzer:
         self._base_pointer = self.project.arch.register_names[self.project.arch.bp_offset]
         self._sp_reg = self.project.arch.register_names[self.project.arch.sp_offset]
 
-        # solve cache
-        self._solve_cache = dict()
-
     @rop_utils.timeout(3)
     def analyze_gadget(self, addr):
         """
@@ -420,15 +417,8 @@ class GadgetAnalyzer:
         # TODO add test where we recognize a value past the end of the stack frame isn't controlled
         # this is an annoying problem but this code should handle it
 
-        # solve cache is used if it's already known to not work or
-        # if we are using the whole stack (gadget_stack_change is None)
-        if hash(ast) in self._solve_cache and \
-                (gadget_stack_change is None or not self._solve_cache[hash(ast)]):
-            return self._solve_cache[hash(ast)]
-
         # prefilter
         if len(ast.variables) != 1 or not list(ast.variables)[0].startswith("symbolic_stack"):
-            self._solve_cache[hash(ast)] = False
             return False
 
         stack_bytes_length = self._stack_length * self.project.arch.bytes
@@ -443,9 +433,6 @@ class GadgetAnalyzer:
         ans = not concrete_stack_s.solver.satisfiable(extra_constraints=(test_constraint,)) and \
                 rop_utils.fast_unconstrained_check(initial_state, ast)
 
-        # only store the result if we were using the whole stack
-        if gadget_stack_change is not None:
-            self._solve_cache[hash(ast)] = ans
         return ans
 
     def _compute_sp_change(self, symbolic_state, gadget):
