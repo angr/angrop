@@ -184,7 +184,7 @@ class RegSetter:
         TODO: handle moves
         """
         # get the list of regs that cannot be popped (call it hard_regs)
-        hard_regs = [x for x in registers if type(x) == int and self._contain_badbyte(registers[x])]
+        hard_regs = [x for x in registers if type(registers[x]) == int and self._contain_badbyte(registers[x])]
         if len(hard_regs) > 1:
             l.error("too many registers contain bad bytes! bail out! %s", registers)
             return []

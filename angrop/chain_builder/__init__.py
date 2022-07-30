@@ -304,7 +304,7 @@ class ChainBuilder:
             gadget, use_partial_controllers  = next(gen, (None, None))
 
         try:
-            return self.write_to_mem_v2(addr, string_data, fill_byte=fill_byte)
+            return self._write_to_mem_v2(addr, string_data)
         except (RopException, angr.errors.SimEngineError):
             pass
 
@@ -521,7 +521,8 @@ class ChainBuilder:
             if self._contain_badbyte(path_addr):
                 raise RopException("%#x contains bad byte!", path_addr)
         else:
-            path_addr = self._get_ptr_to_writable(len(path)+1)
+            # reserve a little bit more bytes to fit pointers
+            path_addr = self._get_ptr_to_writable(len(path)+self.project.arch.bytes)
             if path_addr is None:
                 raise RopException("Fail to automatically find a good pointer to a writable region")
             l.warning("writing to %#x", path_addr)
