@@ -32,9 +32,6 @@ class GadgetAnalyzer:
         self._base_pointer = self.project.arch.register_names[self.project.arch.bp_offset]
         self._sp_reg = self.project.arch.register_names[self.project.arch.sp_offset]
 
-        # solve cache
-        self._solve_cache = dict()
-
     @rop_utils.timeout(3)
     def analyze_gadget(self, addr):
         """
@@ -133,6 +130,9 @@ class GadgetAnalyzer:
             l.debug("... checking for reg moves")
             self._check_reg_change_dependencies(init_state, final_state, this_gadget)
             self._check_reg_movers(init_state, final_state, reg_reads, this_gadget)
+
+            # check concretized registers
+            self._analyze_concrete_regs(final_state, this_gadget)
 
             # check mem accesses
             l.debug("... analyzing mem accesses")
@@ -258,6 +258,19 @@ class GadgetAnalyzer:
                     symbolic_mem_accesses[0].addr.ast is symbolic_mem_accesses[1].addr.ast:
                 return True
         return False
+
+    def _analyze_concrete_regs(self, state, gadget):
+        """
+        collect registers that are concretized after symbolically executing the block (for example, xor rax, rax)
+        """
+        for reg in self.arch.reg_list:
+            val = state.registers.load(reg)
+            if val.symbolic:
+                continue
+            concrete_vals = state.solver.eval_upto(val, 2)
+            if len(concrete_vals) != 1:
+                continue
+            gadget.concrete_regs[reg] = concrete_vals[0]
 
     def _check_reg_changes(self, final_state, init_state, gadget):
         """
@@ -404,15 +417,8 @@ class GadgetAnalyzer:
         # TODO add test where we recognize a value past the end of the stack frame isn't controlled
         # this is an annoying problem but this code should handle it
 
-        # solve cache is used if it's already known to not work or
-        # if we are using the whole stack (gadget_stack_change is None)
-        if hash(ast) in self._solve_cache and \
-                (gadget_stack_change is None or not self._solve_cache[hash(ast)]):
-            return self._solve_cache[hash(ast)]
-
         # prefilter
         if len(ast.variables) != 1 or not list(ast.variables)[0].startswith("symbolic_stack"):
-            self._solve_cache[hash(ast)] = False
             return False
 
         stack_bytes_length = self._stack_length * self.project.arch.bytes
@@ -427,9 +433,6 @@ class GadgetAnalyzer:
         ans = not concrete_stack_s.solver.satisfiable(extra_constraints=(test_constraint,)) and \
                 rop_utils.fast_unconstrained_check(initial_state, ast)
 
-        # only store the result if we were using the whole stack
-        if gadget_stack_change is not None:
-            self._solve_cache[hash(ast)] = ans
         return ans
 
     def _compute_sp_change(self, symbolic_state, gadget):

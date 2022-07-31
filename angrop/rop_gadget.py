@@ -1,4 +1,4 @@
-class RopMemAccess(object):
+class RopMemAccess:
     """Holds information about memory accesses
     Attributes:
         addr_dependencies (set): All the registers that affect the memory address.
@@ -38,7 +38,7 @@ class RopMemAccess(object):
         return True
 
 
-class RopRegMove(object):
+class RopRegMove:
     """
     Holds information about Register moves
     Attributes:
@@ -60,13 +60,17 @@ class RopRegMove(object):
         return self.from_reg == other.from_reg and self.to_reg == other.to_reg and self.bits == other.bits
 
 
-class RopGadget(object):
+class RopGadget:
+    """
+    Gadget objects
+    """
     def __init__(self, addr):
         self.addr = addr
         self.changed_regs = set()
         self.popped_regs = set()
-        self.reg_dependencies = dict()  # like rax might depend on rbx, rcx
-        self.reg_controllers = dict()  # like rax might be able to be controlled by rbx (for any value of rcx)
+        self.concrete_regs = {}
+        self.reg_dependencies = {}  # like rax might depend on rbx, rcx
+        self.reg_controllers = {}  # like rax might be able to be controlled by rbx (for any value of rcx)
         self.stack_change = None
         self.mem_reads = []
         self.mem_writes = []
@@ -96,7 +100,7 @@ class RopGadget(object):
             s += "Register move: [%s to %s, %d bits]\n" % (move.from_reg, move.to_reg, move.bits)
         s += "Register dependencies:\n"
         for reg in self.reg_dependencies:
-            controllers = self.reg_controllers.get(reg, list())
+            controllers = self.reg_controllers.get(reg, [])
             dependencies = [x for x in self.reg_dependencies[reg] if x not in controllers]
             s += "    " + reg + ": [" + " ".join(controllers) + " (" + " ".join(dependencies) + ")]" + "\n"
         for mem_access in self.mem_changes:
@@ -150,6 +154,7 @@ class RopGadget(object):
         out.addr = self.addr
         out.changed_regs = set(self.changed_regs)
         out.popped_regs = set(self.popped_regs)
+        out.concrete_regs = dict(self.concrete_regs)
         out.reg_dependencies = dict(self.reg_dependencies)
         out.reg_controllers = dict(self.reg_controllers)
         out.stack_change = self.stack_change
@@ -167,7 +172,10 @@ class RopGadget(object):
         return out
 
 
-class StackPivot(object):
+class StackPivot:
+    """
+    stack pivot gadget
+    """
     def __init__(self, addr):
         self.addr = addr
         self.sp_from_reg = None

@@ -68,6 +68,39 @@ class ChainBuilder:
         self._reg_setter = RegSetter(project, gadgets, reg_list=reg_list, badbytes=badbytes,
                                      rebase=self._rebase, filler=self._roparg_filler)
 
+    def _contain_badbyte(self, ptr):
+        """
+        check if a pointer contains any bad byte
+        """
+        raw_bytes = struct.pack(self.project.arch.struct_fmt(), ptr)
+        if any(x in raw_bytes for x in self.badbytes):
+            return True
+        return False
+
+    def _get_ptr_to_writable(self, size):
+        """
+        get a pointer to writable region that can fit `size` bytes
+        it shouldn't contain bad byte
+        """
+        # get all writable segments
+        segs = [ s for s in self.project.loader.main_object.segments if s.is_writable ]
+        # enumerate through all address to find a good address
+        for seg in segs:
+            for addr in range(seg.min_addr, seg.max_addr):
+                if all(not self._contain_badbyte(x) for x in range(addr, addr+size, self.project.arch.bytes)):
+                    return addr
+        return None
+
+    def _get_ptr_to_null(self):
+        # get all non-writable segments
+        segs = [ s for s in self.project.loader.main_object.segments if not s.is_writable ]
+        # enumerate through all address to find a good address
+        for seg in segs:
+            for addr in self.project.loader.memory.find(b'\x00'*self.project.arch.bytes, search_min=seg.min_addr, search_max=seg.max_addr):
+                if not self._contain_badbyte(addr):
+                    return addr
+        return None
+
     def set_regs(self, *args, **kwargs):
         """
         :param registers: dict of registers to values
@@ -122,7 +155,7 @@ class ChainBuilder:
 
         # find small stack change syscall gadget that also fits the stack arguments we want
         smallest = None
-        for gadget in filter(lambda g: g.starts_with_syscall, self._gadgets):
+        for gadget in [x for x in self._gadgets if x.starts_with_syscall]:
             # adjust stack change for ret
             stack_change = gadget.stack_change - self.project.arch.bytes
             required_space = len(stack_arguments) * self.project.arch.bytes
@@ -252,20 +285,13 @@ class ChainBuilder:
             chain = chain + self._write_to_mem_with_gadget(gadget, addr + i, to_write, use_partial_controllers)
         return chain
 
-    def write_to_mem(self, addr, string_data, fill_byte=b"\xff"):# pylint:disable=inconsistent-return-statements
+    def _write_to_mem(self, addr, string_data, fill_byte=b"\xff"):# pylint:disable=inconsistent-return-statements
         """
         :param addr: address to store the string
         :param string_data: string to store
         :param fill_byte: a byte to use to fill up the string if necessary
         :return: a rop chain
         """
-
-        if not (isinstance(fill_byte, bytes) and len(fill_byte) == 1):
-            print("fill_byte is not a one byte string, aborting")
-            return
-        if not isinstance(string_data, bytes):
-            print("string_data is not a byte string, aborting")
-            return
 
         gen = self._gen_mem_write_gadgets(string_data)
         gadget, use_partial_controllers = next(gen, (None, None))
@@ -276,6 +302,11 @@ class ChainBuilder:
             except (RopException, angr.errors.SimEngineError):
                 pass
             gadget, use_partial_controllers  = next(gen, (None, None))
+
+        try:
+            return self._write_to_mem_v2(addr, string_data)
+        except (RopException, angr.errors.SimEngineError):
+            pass
 
         raise RopException("Fail to write data to memory :(")
 
@@ -339,7 +370,7 @@ class ChainBuilder:
         chain = self._change_mem_with_gadget(best_gadget, addr, data_size, difference=value)
         return chain
 
-    def write_to_mem_v2(self, addr, data):
+    def _write_to_mem_v2(self, addr, data):
         """
         :param addr: address to store the string
         :param data: string to store
@@ -412,38 +443,97 @@ class ChainBuilder:
             chain += self.add_to_mem(addr+i, to_add, 32)
         return chain
 
-    def execve(self, target=None, addr_for_str=None):
-        syscall_locs = self._get_syscall_locations()
-        if len(syscall_locs) == 0:
-            l.warning("No syscall instruction available, but I'll still try to make the rest of the payload for fun")
+    def write_to_mem(self, addr, data, fill_byte=b"\xff"):
 
-        if target is None:
-            target = b"/bin/sh\x00"
-        if target[-1] != 0:
-            target += b"\x00"
-        if addr_for_str is None:
-            # get the max writable addr
-            max_write_addr = max(s.max_addr for s in self.project.loader.main_object.segments if s.is_writable)
-            # page align up
-            max_write_addr = (max_write_addr + 0x1000 - 1) // 0x1000 * 0x1000
+        # sanity check
+        if not (isinstance(fill_byte, bytes) and len(fill_byte) == 1):
+            raise RopException("fill_byte is not a one byte string, aborting")
+        if not isinstance(data, bytes):
+            raise RopException("data is not a byte string, aborting")
+        if ord(fill_byte) in self.badbytes:
+            raise RopException("fill_byte is a bad byte!")
 
-            addr_for_str = max_write_addr - 0x40
-            l.warning("writing to %#x", addr_for_str)
+        # split the string into smaller elements so that we can
+        # handle bad bytes
+        if all(x not in self.badbytes for x in data):
+            elems = [data]
+        else:
+            elems = []
+            e = b''
+            for x in data:
+                if x not in self.badbytes:
+                    e += bytes([x])
+                else:
+                    elems.append(e)
+                    elems.append(bytes([x]))
+                    e = b''
 
-        chain = self.write_to_mem(addr_for_str, target)
-        use_partial_controllers = False
+        # do the write
+        offset = 0
+        chain = RopChain(self.project, self, rebase=self._rebase, badbytes=self.badbytes)
+        for elem in elems:
+            ptr = addr + offset
+            if self._contain_badbyte(ptr):
+                raise RopException("%#x contains bad byte!", ptr)
+            if elem not in self.badbytes:
+                chain += self._write_to_mem(ptr, elem, fill_byte=fill_byte)
+                offset += len(elem)
+            else:
+                chain += self._write_to_mem(ptr, elem, fill_byte=fill_byte)
+                offset += 1
+        return chain
+
+    def _try_invoke_execve(self, path_addr):
+        # next, try to invoke execve(path, ptr, ptr), where ptr points is either NULL or nullptr
+        if 0 not in self.badbytes:
+            ptr = 0
+        else:
+            nullptr = self._get_ptr_to_null()
+            ptr = nullptr
+        return self.do_syscall(self._execve_syscall, [path_addr, ptr, ptr],
+                                 use_partial_controllers=False, needs_return=False)
+
+        # Try to use partial controllers
+        l.warning("Trying to use partial controllers for syscall")
         try:
-            chain2 = self.do_syscall(self._execve_syscall, [addr_for_str, 0, 0],
-                                     use_partial_controllers=use_partial_controllers, needs_return=False)
+            return self.do_syscall(self._execve_syscall, [path_addr, 0, 0],
+                                     use_partial_controllers=True, needs_return=False)
         except RopException:
-            # Try to use partial controllers
-            use_partial_controllers = True
-            l.warning("Trying to use partial controllers for syscall")
-            chain2 = self.do_syscall(self._execve_syscall, [addr_for_str, 0, 0],
-                                     use_partial_controllers=use_partial_controllers, needs_return=False)
-        result = chain + chain2
+            pass
 
-        return result
+        raise RopException("Fail to invoke execve!")
+
+    def execve(self, path=None, path_addr=None):
+        # look for good syscall gadgets
+        syscall_locs = self._get_syscall_locations()
+        syscall_locs = [x for x in syscall_locs if not self._contain_badbyte(x)]
+        if len(syscall_locs) == 0:
+            raise RopException("No syscall instruction available")
+
+        # determine the execution path
+        if path is None:
+            path = b"/bin/sh\x00"
+        if path[-1] != 0:
+            path += b"\x00"
+
+        # look for a good buffer to store the payload
+        if path_addr:
+            if self._contain_badbyte(path_addr):
+                raise RopException("%#x contains bad byte!", path_addr)
+        else:
+            # reserve a little bit more bytes to fit pointers
+            path_addr = self._get_ptr_to_writable(len(path)+self.project.arch.bytes)
+            if path_addr is None:
+                raise RopException("Fail to automatically find a good pointer to a writable region")
+            l.warning("writing to %#x", path_addr)
+
+        # now, write the path to memory
+        chain = self.write_to_mem(path_addr, path)
+
+        # finally, let's invoke execve!
+        chain2 = self._try_invoke_execve(path_addr)
+
+        return chain + chain2
 
     def func_call(self, address, args, use_partial_controllers=False):
         """
@@ -523,7 +613,7 @@ class ChainBuilder:
 
     @staticmethod
     def _filter_duplicates_helper(gadgets):
-        gadgets_copy = list()
+        gadgets_copy = []
         for g in gadgets:
             good = True
             for g2 in gadgets:
@@ -866,7 +956,7 @@ class ChainBuilder:
         # lets try doing a graph search to set registers, something like dijkstra's for minimum length
 
         # find gadgets with sufficient partial control
-        partial_controllers = dict()
+        partial_controllers = {}
         for r in registers:
             partial_controllers[r] = set()
         if use_partial_controllers:
@@ -887,9 +977,9 @@ class ChainBuilder:
 
         # each key is tuple of sorted registers
         # use tuple (prev, total_stack_change, gadget, partial_controls)
-        data = dict()
+        data = {}
 
-        to_process = list()
+        to_process = []
         to_process.append((0, ()))
         visited = set()
         data[()] = (None, 0, None, set())
@@ -1013,7 +1103,7 @@ class ChainBuilder:
 
         # get the actual register values
         all_deps = list(mem_write.addr_dependencies) + list(mem_write.data_dependencies)
-        reg_vals = dict()
+        reg_vals = {}
         for reg in set(all_deps):
             reg_vals[reg] = test_state.solver.eval(test_state.registers.load(reg))
 
@@ -1087,7 +1177,7 @@ class ChainBuilder:
 
         # get the actual register values
         all_deps = list(mem_change.addr_dependencies) + list(mem_change.data_dependencies)
-        reg_vals = dict()
+        reg_vals = {}
         for reg in set(all_deps):
             reg_vals[reg] = test_state.solver.eval(test_state.registers.load(reg))
 

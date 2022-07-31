@@ -20,6 +20,7 @@ from .rop_gadget import RopGadget, StackPivot
 from multiprocessing import Pool
 
 l = logging.getLogger('angrop.rop')
+logging.getLogger('pyvex.lifting').setLevel("ERROR")
 
 
 _global_gadget_analyzer = None
@@ -304,8 +305,8 @@ class ROP(Analysis):
 
     def _addresses_to_check_with_caching(self, show_progress=True):
         num_addrs = self._num_addresses_to_check()
-        self._cache = dict()
-        seen = dict()
+        self._cache = {}
+        seen = {}
 
         iterable = self._addresses_to_check()
         if show_progress:
