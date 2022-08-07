@@ -171,7 +171,7 @@ class RopChain:
         """
         symbolically execute the ROP chain and return the final state
         """
-        code_base = self._p.loader.main_object.mapped_base if self._rebase else 0
+        code_base = self._p.loader.main_object.mapped_base if self._pie else 0
         state = self._blank_state.copy()
         state.solver.reload_solver([]) # remove constraints
         state.regs.pc = self._values[0][0] + code_base
