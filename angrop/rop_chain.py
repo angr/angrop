@@ -130,13 +130,13 @@ class RopChain:
         """
         if self._p.arch.bits == 32:
             pack = "p32(%#x)"
-            pack_rebase = "p32(%#x + base_addr)"
+            pack_rebase = "p32(code_base + %#x)"
         else:
             pack = "p64(%#x)"
-            pack_rebase = "p64(%#x + base_addr)"
+            pack_rebase = "p64(code_base + %#x)"
 
         if self._pie:
-            payload = "base_addr = 0x0\n"
+            payload = "code_base = 0x0\n"
         else:
             payload = ""
         payload += 'chain = b""\n'
@@ -171,13 +171,16 @@ class RopChain:
         """
         symbolically execute the ROP chain and return the final state
         """
+        code_base = self._p.loader.main_object.mapped_base if self._pie else 0
         state = self._blank_state.copy()
         state.solver.reload_solver([]) # remove constraints
-        state.regs.pc = self._values[0][0]
+        state.regs.pc = self._values[0][0] + code_base
         concrete_vals = self._concretize_chain_values()
         # the assumps that the first value in the chain is a code address
         # it sounds like a reasonable assumption to me. But I can be wrong.
-        for value, _ in reversed(concrete_vals[1:]):
+        for value, need_rebase in reversed(concrete_vals[1:]):
+            if need_rebase:
+                value += code_base
             state.stack_push(value)
         return rop_utils.step_to_unconstrained_successor(self._p, state, max_steps=len(self._gadgets)*2)
 
