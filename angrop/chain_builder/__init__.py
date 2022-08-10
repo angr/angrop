@@ -484,20 +484,26 @@ class ChainBuilder:
         return chain
 
     def _try_invoke_execve(self, path_addr):
+        cc = angr.SYSCALL_CC[self.project.arch.name]["default"](self.project.arch)
+        arg_regs = cc.ARG_REGS
+
         # next, try to invoke execve(path, ptr, ptr), where ptr points is either NULL or nullptr
         if 0 not in self.badbytes:
             ptr = 0
+            rebase_regs = arg_regs[:1]
         else:
             nullptr = self._get_ptr_to_null()
             ptr = nullptr
+            rebase_regs = arg_regs[:3]
+
         return self.do_syscall(self._execve_syscall, [path_addr, ptr, ptr],
-                                 use_partial_controllers=False, needs_return=False)
+                                 use_partial_controllers=False, needs_return=False, rebase_regs=rebase_regs)
 
         # Try to use partial controllers
         l.warning("Trying to use partial controllers for syscall")
         try:
             return self.do_syscall(self._execve_syscall, [path_addr, 0, 0],
-                                     use_partial_controllers=True, needs_return=False)
+                                     use_partial_controllers=True, needs_return=False, rebase_regs=rebase_regs)
         except RopException:
             pass
 
@@ -1109,6 +1115,16 @@ class ChainBuilder:
 
         chain = self.set_regs(use_partial_controllers=use_partial_controllers, **reg_vals)
         chain.add_gadget(gadget)
+
+        # if the binary enables PIE, we need to mark the address as a pointer (need_rebase)
+        if chain._pie:
+            state = chain._blank_state
+            for idx in range(len(chain._values)):
+                val, _ = chain._values[idx]
+                # because of how SMT works, we need to do double negation
+                if not state.solver.eval(val != addr):
+                    offset = val - self.project.loader.main_object.mapped_base
+                    chain._values[idx] = (offset, True)
 
         bytes_per_pop = self.project.arch.bytes
         chain.add_value(gadget.addr, needs_rebase=True)
