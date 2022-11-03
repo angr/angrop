@@ -1,7 +1,7 @@
 from angr.errors import SimEngineError, SimMemoryError
 from angr.analyses.bindiff import differing_constants
 from angr.analyses.bindiff import UnmatchedStatementsException
-from angr.misc.loggers import CuteHandler
+from angr.misc.loggers import CuteFormatter
 from angr import Analysis, register_analysis
 
 from . import chain_builder
@@ -28,7 +28,7 @@ _global_gadget_analyzer = None
 # disable loggers in each worker
 def _disable_loggers():
     for handler in logging.root.handlers:
-        if type(handler) == CuteHandler:
+        if isinstance(handler.formatter, CuteFormatter):
             logging.root.removeHandler(handler)
             return
 
@@ -369,7 +369,7 @@ class ROP(Analysis):
                 if segment.is_executable:
                     num += (segment.max_addr - segment.min_addr)
             return num
-                        
+
     def _get_ret_locations(self):
         """
         :return: all the locations in the binary with a ret instruction
