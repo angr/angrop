@@ -65,6 +65,7 @@ class RopChain:
         :return: a list of tuples of type (int, needs_rebase)
         """
 
+        code_base = self._p.loader.main_object.mapped_base if self._pie else 0
         solver_state = self._blank_state.copy()
         if constraints is not None:
             if isinstance(constraints, (list, tuple)):
@@ -79,6 +80,9 @@ class RopChain:
             if isinstance(val, int):
                 concrete_vals.append((val, needs_rebase))
                 continue
+
+            if needs_rebase:
+                val += code_base
 
             # if it is symbolic, make sure it does not have badbytes in it
             constraints = []
@@ -174,7 +178,9 @@ class RopChain:
         code_base = self._p.loader.main_object.mapped_base if self._pie else 0
         state = self._blank_state.copy()
         state.solver.reload_solver([]) # remove constraints
-        state.regs.pc = self._values[0][0] + code_base
+        state.regs.pc = self._values[0][0]
+        if self._values[0][1]: # if need rebase
+            state.regs.pc += code_base
         concrete_vals = self._concretize_chain_values()
         # the assumps that the first value in the chain is a code address
         # it sounds like a reasonable assumption to me. But I can be wrong.

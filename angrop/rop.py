@@ -28,7 +28,7 @@ _global_gadget_analyzer = None
 # disable loggers in each worker
 def _disable_loggers():
     for handler in logging.root.handlers:
-        if isinstance(handler.formatter, CuteFormatter):
+        if type(handler.formatter) == CuteFormatter:
             logging.root.removeHandler(handler)
             return
 
