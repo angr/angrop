@@ -103,9 +103,13 @@ def test_rop_x86_64():
     rop = b.analyses.ROP()
     rop.find_gadgets_single_threaded(show_progress=False)
 
+    cache_path = os.path.join(test_data_location, "datadep_test_gadgets")
+    if not os.path.exists(cache_path):
+        rop.save_gadgets(cache_path)
+
     # check gadgets
-    test_gadgets, _ = pickle.load(open(os.path.join(test_data_location, "datadep_test_gadgets"), "rb"))
-    compare_gadgets(rop.gadgets, test_gadgets)
+    tup = pickle.load(open(cache_path, "rb"))
+    compare_gadgets(rop.gadgets, tup[0])
 
     # test creating a rop chain
     chain = rop.set_regs(rbp=0x1212, rbx=0x1234567890123456)
@@ -127,9 +131,13 @@ def test_rop_i386_cgc():
     rop = b.analyses.ROP()
     rop.find_gadgets_single_threaded(show_progress=False)
 
+    cache_path = os.path.join(test_data_location, "0b32aa01_01_gadgets")
+    if not os.path.exists(cache_path):
+        rop.save_gadgets(cache_path)
+
     # check gadgets
-    test_gadgets, _, _ = pickle.load(open(os.path.join(test_data_location, "0b32aa01_01_gadgets"), "rb"))
-    compare_gadgets(rop.gadgets, test_gadgets)
+    tup = pickle.load(open(os.path.join(test_data_location, "0b32aa01_01_gadgets"), "rb"))
+    compare_gadgets(rop.gadgets, tup[0])
 
     # test creating a rop chain
     chain = rop.set_regs(ebx=0x98765432, ecx=0x12345678)
@@ -151,9 +159,13 @@ def test_rop_arm():
     rop = b.analyses.ROP()
     rop.find_gadgets_single_threaded(show_progress=False)
 
+    cache_path = os.path.join(test_data_location, "arm_manysum_test_gadgets")
+    if not os.path.exists(cache_path):
+        rop.save_gadgets(cache_path)
+
     # check gadgets
-    test_gadgets, _ = pickle.load(open(os.path.join(test_data_location, "arm_manysum_test_gadgets"), "rb"))
-    compare_gadgets(rop.gadgets, test_gadgets)
+    tup = pickle.load(open(os.path.join(test_data_location, "arm_manysum_test_gadgets"), "rb"))
+    compare_gadgets(rop.gadgets, tup[0])
 
     # test creating a rop chain
     chain = rop.set_regs(r11=0x99887766)
