@@ -65,6 +65,7 @@ class RopChain:
         :return: a list of tuples of type (int, needs_rebase)
         """
 
+        code_base = self._p.loader.main_object.mapped_base if self._pie else 0
         solver_state = self._blank_state.copy()
         if constraints is not None:
             if isinstance(constraints, (list, tuple)):
@@ -79,6 +80,9 @@ class RopChain:
             if isinstance(val, int):
                 concrete_vals.append((val, needs_rebase))
                 continue
+
+            if needs_rebase:
+                val += code_base
 
             # if it is symbolic, make sure it does not have badbytes in it
             constraints = []
