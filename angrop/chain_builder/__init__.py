@@ -96,7 +96,8 @@ class ChainBuilder:
         segs = [ s for s in self.project.loader.main_object.segments if not s.is_writable ]
         # enumerate through all address to find a good address
         for seg in segs:
-            for addr in self.project.loader.memory.find(b'\x00'*self.project.arch.bytes, search_min=seg.min_addr, search_max=seg.max_addr):
+            null = b'\x00'*self.project.arch.bytes
+            for addr in self.project.loader.memory.find(null, search_min=seg.min_addr, search_max=seg.max_addr):
                 if not self._contain_badbyte(addr):
                     return addr
         return None
@@ -392,7 +393,7 @@ class ChainBuilder:
             for m_access in g.mem_changes:
                 if len(m_access.addr_controllers) > 0 and len(m_access.data_controllers) > 0 and \
                         len(set(m_access.addr_controllers) & set(m_access.data_controllers)) == 0 and \
-                        (m_access.op == "__or__" or m_access.op == "__and__"):
+                        m_access.op in ("__or__", "__and__"):
                     possible_gadgets.add(g)
 
         # get the data from trying to set all the registers
@@ -475,7 +476,7 @@ class ChainBuilder:
         for elem in elems:
             ptr = addr + offset
             if self._contain_badbyte(ptr):
-                raise RopException("%#x contains bad byte!", ptr)
+                raise RopException(f"{ptr:%#x} contains bad byte!")
             if elem not in self.badbytes:
                 chain += self._write_to_mem(ptr, elem, fill_byte=fill_byte)
                 offset += len(elem)
@@ -497,8 +498,11 @@ class ChainBuilder:
             ptr = nullptr
             rebase_regs = arg_regs[:3]
 
-        return self.do_syscall(self._execve_syscall, [path_addr, ptr, ptr],
+        try:
+            return self.do_syscall(self._execve_syscall, [path_addr, ptr, ptr],
                                  use_partial_controllers=False, needs_return=False, rebase_regs=rebase_regs)
+        except RopException:
+            pass
 
         # Try to use partial controllers
         l.warning("Trying to use partial controllers for syscall")
@@ -526,7 +530,7 @@ class ChainBuilder:
         # look for a good buffer to store the payload
         if path_addr:
             if self._contain_badbyte(path_addr):
-                raise RopException("%#x contains bad byte!", path_addr)
+                raise RopException(f"{path_addr:#x} contains bad byte!")
         else:
             # reserve a little bit more bytes to fit pointers
             path_addr = self._get_ptr_to_writable(len(path)+self.project.arch.bytes)
@@ -789,7 +793,9 @@ class ChainBuilder:
             # make sure we don't already have one that is as good
             for g2 in good_gadgets:
                 num_mem_changes2 = len(g2.mem_writes) + len(g2.mem_reads) + len(g2.mem_changes)
-                if g2.stack_change > g.stack_change or g.bp_moves_to_sp != g2.bp_moves_to_sp or g.reg_controllers != g2.reg_controllers:
+                if g2.stack_change > g.stack_change or \
+                   g.bp_moves_to_sp != g2.bp_moves_to_sp or \
+                   g.reg_controllers != g2.reg_controllers:
                     continue
                 if g.reg_dependencies == g2.reg_dependencies and g2.changed_regs.issubset(g.changed_regs) \
                         and g.popped_regs.issubset(g2.changed_regs) and num_mem_changes == 0 and num_mem_changes2 == 0:
@@ -902,7 +908,8 @@ class ChainBuilder:
                     rebase_state.add_constraints(sym_word == self._roparg_filler)
 
         # create the ropchain
-        res = RopChain(self.project, self, state=test_symbolic_state.copy(), rebase=self._rebase, badbytes=self.badbytes)
+        new_state = test_symbolic_state.copy()
+        res = RopChain(self.project, self, state=new_state, rebase=self._rebase, badbytes=self.badbytes)
         for g in gadgets:
             res.add_gadget(g)
 
@@ -1120,7 +1127,7 @@ class ChainBuilder:
         # if the binary enables PIE, we need to mark the address as a pointer (need_rebase)
         if chain._pie:
             state = chain._blank_state
-            for idx in range(len(chain._values)):
+            for idx, _ in enumerate(chain._values):
                 val, _ = chain._values[idx]
                 # because of how SMT works, we need to do double negation
                 if not state.solver.eval(val != addr):
