@@ -476,7 +476,7 @@ class ChainBuilder:
         for elem in elems:
             ptr = addr + offset
             if self._contain_badbyte(ptr):
-                raise RopException(f"{ptr:%#x} contains bad byte!")
+                raise RopException(f"{ptr:#x} contains bad byte!")
             if elem not in self.badbytes:
                 chain += self._write_to_mem(ptr, elem, fill_byte=fill_byte)
                 offset += len(elem)
