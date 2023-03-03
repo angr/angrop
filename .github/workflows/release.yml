@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags:
+    - "v**"
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.8"
+      - name: Install pypa/build
+        run: pip install build
+      - name: Build sdist and wheel
+        run: python -m build
+      - name: Upload artifacts to pipeline
+        uses: actions/upload-artifact@v3
+        with:
+          name: release_artifacts
+          path: dist/
+      - name: Create github release
+        run: gh release create --generate-notes dist/*
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Publish distribution to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
