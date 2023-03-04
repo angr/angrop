@@ -130,8 +130,9 @@ class ChainBuilder:
 
         # set register arguments
         for arg, reg in zip(register_arguments, cc.ARG_REGS):
-            if reg not in ignore_registers:
-                registers[reg] = arg
+            registers[reg] = arg
+        for reg in ignore_registers:
+            registers.pop(reg, None)
         chain = self.set_regs(modifiable_memory_range=modifiable_memory_range,
                               use_partial_controllers=use_partial_controllers,
                               rebase_regs=rebase_regs, **registers)
