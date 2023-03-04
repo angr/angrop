@@ -113,49 +113,96 @@ class ChainBuilder:
 
         return self._reg_setter.run(*args, **kwargs)
 
+    def _func_call(self, func_gadget, cc, args, extra_regs=None, modifiable_memory_range=None, ignore_registers=None,
+                   use_partial_controllers=False, rebase_regs=None, needs_return=True):
+        assert type(args) in [list, tuple], "function arguments must be a list or tuple!"
+        arch_bytes = self.project.arch.bytes
+        registers = {} if extra_regs is None else extra_regs
+        if ignore_registers is None:
+            ignore_registers = []
+
+        # distinguish register and stack arguments
+        register_arguments = args
+        stack_arguments = []
+        if len(args) > len(cc.ARG_REGS):
+            register_arguments = args[:len(cc.ARG_REGS)]
+            stack_arguments = args[len(cc.ARG_REGS):]
+
+        # set register arguments
+        for arg, reg in zip(register_arguments, cc.ARG_REGS):
+            if reg not in ignore_registers:
+                registers[reg] = arg
+        chain = self.set_regs(modifiable_memory_range=modifiable_memory_range,
+                              use_partial_controllers=use_partial_controllers,
+                              rebase_regs=rebase_regs, **registers)
+
+        # invoke the function
+        chain.add_gadget(func_gadget)
+        chain.add_value(func_gadget.addr, needs_rebase=True)
+        for i in range(func_gadget.stack_change//arch_bytes-1):
+            chain.add_value(self._get_fill_val(), needs_rebase=False)
+
+        # we are done here if there is no stack arguments
+        if not stack_arguments:
+            return chain
+
+        # handle stack arguments:
+        # 1. we need to pop the arguments after use
+        # 2. push the stack arguments
+
+        # step 1: find a stack cleaner (a gadget that can pop all the stack args)
+        #         with the smallest stack change
+        stack_cleaner = None
+        if needs_return:
+            for g in self._gadgets:
+                # just pop plz
+                if g.mem_reads or g.mem_writes or g.mem_changes:
+                    continue
+                # at least can pop all the args
+                if g.stack_change < arch_bytes * (len(stack_arguments)+1):
+                    continue
+
+                if stack_cleaner is None or g.stack_change < stack_cleaner.stack_change:
+                    stack_cleaner = g
+
+            if stack_cleaner is None:
+                raise RopException(f"Fail to find a stack cleaner that can pop {len(stack_arguments)} words!")
+
+        # in case we can't find a stack_cleaner and we don't need to return
+        if stack_cleaner is None:
+            stack_cleaner = RopGadget(self._get_fill_val())
+            stack_cleaner.stack_change = arch_bytes * (len(stack_arguments)+1)
+
+        chain.add_gadget(stack_cleaner)
+        chain.add_value(stack_cleaner.addr, needs_rebase=True)
+        stack_arguments += [self._get_fill_val()]*(stack_cleaner.stack_change//arch_bytes - len(stack_arguments)-1)
+        for arg in stack_arguments:
+            chain.add_value(arg, needs_rebase=False)
+
+        return chain
+
     # TODO handle mess ups by _find_reg_setting_gadgets and see if we can set a register in a syscall preamble
     # or if a register value is explicitly set to just the right value
-    def do_syscall(self, syscall_num, arguments, ignore_registers=None, modifiable_memory_range=None,
-                   use_partial_controllers=False, rebase_regs=None, needs_return=True):
+    def do_syscall(self, syscall_num, args, needs_return=True, **kwargs):
         """
         build a rop chain which performs the requested system call with the arguments set to 'registers' before
         the call is made
         :param syscall_num: the syscall number to execute
-        :param arguments: the register values to have set at system call time
+        :param args: the register values to have set at system call time
         :param ignore_registers: list of registers which shouldn't be set
+        :param needs_return: whether to continue the ROP after invoking the syscall
         :return: a RopChain which makes the system with the requested register contents
         """
 
-        registers = {}
-
-        if ignore_registers is None:
-            ignore_registers = []
-
         # set the system call number
-        registers[self.project.arch.register_names[self.project.arch.syscall_num_offset]] = syscall_num
-
+        extra_regs = {}
+        extra_regs[self.project.arch.register_names[self.project.arch.syscall_num_offset]] = syscall_num
         cc = angr.SYSCALL_CC[self.project.arch.name]["default"](self.project.arch)
 
-        # distinguish register arguments from stack arguments
-        register_arguments = arguments
-        stack_arguments = []
-        if len(arguments) > len(cc.ARG_REGS):
-            register_arguments = arguments[:len(cc.ARG_REGS)]
-            stack_arguments = arguments[len(cc.ARG_REGS):]
-
-        for arg, reg in zip(register_arguments, cc.ARG_REGS):
-            registers[reg] = arg
-
-        # remove any registers which have been asked to be ignored
-        for reg in ignore_registers:
-            if reg in registers:
-                del registers[reg]
-
-        # first find gadgets to the set the registers
-        chain = self.set_regs(modifiable_memory_range, use_partial_controllers, rebase_regs, **registers)
-
         # find small stack change syscall gadget that also fits the stack arguments we want
+        # FIXME: does any arch/OS take syscall arguments on stack? (windows? sysenter?)
         smallest = None
+        stack_arguments = args[len(cc.ARG_REGS):]
         for gadget in [x for x in self._gadgets if x.starts_with_syscall]:
             # adjust stack change for ret
             stack_change = gadget.stack_change - self.project.arch.bytes
@@ -174,29 +221,8 @@ class ChainBuilder:
         if smallest is None:
             raise RopException("No suitable syscall gadgets found")
 
-        chosen_gadget = smallest
-        # add the gadget to the chain
-        chain.add_gadget(chosen_gadget)
-
-        # now we'll just pad it out with zeroes, in the future we'll probably want a way to be smart about
-        # the next gadget in the chain
-
-        # add the syscall gadget's address
-        chain.add_value(chosen_gadget.addr, needs_rebase=True)
-
-        # remove one word to account for the ret
-        padding_bytes = chosen_gadget.stack_change - self.project.arch.bytes
-        bytes_per_pop = self.project.arch.bytes
-        # reverse stack_arguments list to make pushing them onto the stack easy
-        stack_arguments = stack_arguments[::-1]
-        for _ in range(max(padding_bytes // bytes_per_pop, len(stack_arguments))):
-            try:
-                val = stack_arguments.pop()
-            except IndexError:
-                val = self._get_fill_val()
-            chain.add_value(val, needs_rebase=False)
-
-        return chain
+        return self._func_call(smallest, cc, args, extra_regs=extra_regs,
+                               needs_return=needs_return, **kwargs)
 
     def _gen_mem_write_gadgets(self, string_data):
         # create a dict of bytes per write to gadgets
@@ -546,11 +572,13 @@ class ChainBuilder:
 
         return chain + chain2
 
-    def func_call(self, address, args, use_partial_controllers=False):
+    def func_call(self, address, args, **kwargs):
         """
         :param address: address or name of function to call
         :param args: a list/tuple of arguments to the function
-        :return: a rop chain
+        :param ignore_registers: list of registers which shouldn't be set
+        :param needs_return: whether to continue the ROP after invoking the function
+        :return: a RopChain which inovkes the function with the arguments
         """
         # is it a symbol?
         if isinstance(address, str):
@@ -564,47 +592,9 @@ class ChainBuilder:
                 raise RopException("Symbol passed to func_call does not exist in the binary")
 
         cc = angr.DEFAULT_CC[self.project.arch.name](self.project.arch)
-        # register arguments
-        registers = {}
-
-        register_arguments = args
-        stack_arguments = []
-        if len(args) > len(cc.ARG_REGS):
-            register_arguments = args[:len(cc.ARG_REGS)]
-            stack_arguments = args[len(cc.ARG_REGS):]
-
-        for reg, arg in zip(cc.ARG_REGS, register_arguments):
-            registers[reg] = arg
-
-        if len(registers) > 0:
-            chain = self.set_regs(use_partial_controllers=use_partial_controllers, **registers)
-        else:
-            chain = RopChain(self.project, self, rebase=self._rebase, badbytes=self.badbytes)
-
-        # stack arguments
-        bytes_per_arg = self.project.arch.bytes
-        # find the smallest stack change
-        stack_cleaner = None
-        if len(stack_arguments) > 0:
-            for g in self._gadgets:
-                if len(g.mem_reads) > 0 or len(g.mem_writes) > 0 or len(g.mem_changes) > 0:
-                    continue
-                if g.stack_change >= bytes_per_arg * (len(stack_arguments) + 1):
-                    if stack_cleaner is None or g.stack_change < stack_cleaner.stack_change:
-                        stack_cleaner = g
-
-        chain.add_value(address, needs_rebase=True)
-        if stack_cleaner is not None:
-            chain.add_value(stack_cleaner.addr, needs_rebase=True)
-            chain.add_gadget(stack_cleaner)
-
-        for arg in stack_arguments:
-            chain.add_value(arg, needs_rebase=False)
-        if stack_cleaner is not None:
-            for _ in range(stack_cleaner.stack_change // bytes_per_arg - len(stack_arguments) - 1):
-                chain.add_value(self._get_fill_val(), needs_rebase=False)
-
-        return chain
+        func_gadget = RopGadget(address)
+        func_gadget.stack_change = self.project.arch.bytes
+        return self._func_call(func_gadget, cc, args, **kwargs)
 
     @staticmethod
     def _has_same_effects(g, g2):

@@ -171,7 +171,7 @@ class RopChain:
     def print_payload_code(self, constraints=None, print_instructions=True):
         print(self.payload_code(constraints=constraints, print_instructions=print_instructions))
 
-    def exec(self):
+    def exec(self, max_steps=None):
         """
         symbolically execute the ROP chain and return the final state
         """
@@ -188,7 +188,10 @@ class RopChain:
             if need_rebase:
                 value += code_base
             state.stack_push(value)
-        return rop_utils.step_to_unconstrained_successor(self._p, state, max_steps=len(self._gadgets)*2)
+        if max_steps is None:
+            max_steps = len(self._gadgets)*2
+        return rop_utils.step_to_unconstrained_successor(self._p, state, max_steps=max_steps,
+                                                         allow_simprocedures=True)
 
     def copy(self):
         cp = RopChain(self._p, self._rop)

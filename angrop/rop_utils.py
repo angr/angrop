@@ -8,7 +8,9 @@ from .errors import RegNotFoundException, RopException
 
 
 def gadget_to_asmstring(project, gadget):
-    code = project.loader.memory.load(gadget.addr,gadget.block_length)
+    if not gadget.block_length:
+        return ""
+    code = project.loader.memory.load(gadget.addr, gadget.block_length)
     md = project.arch.capstone
     return "; ".join(["%s %s" %(i.mnemonic, i.op_str) for i in md.disasm(code,gadget.addr)])
 
