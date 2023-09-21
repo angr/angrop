@@ -592,7 +592,10 @@ class ChainBuilder:
             else:
                 raise RopException("Symbol passed to func_call does not exist in the binary")
 
-        cc = angr.DEFAULT_CC[self.project.arch.name](self.project.arch)
+        cc = angr.default_cc(
+            self.project.arch.name,
+            platform=self.project.simos.name if self.project.simos is not None else None,
+        )(self.project.arch)
         func_gadget = RopGadget(address)
         func_gadget.stack_change = self.project.arch.bytes
         return self._func_call(func_gadget, cc, args, **kwargs)
