@@ -16,21 +16,24 @@ l = logging.getLogger("angrop.gadget_analyzer")
 
 class GadgetAnalyzer:
     def __init__(self, project, fast_mode, arch=None, stack_gsize=80):
+        """
+        stack_gsize: number of controllable gadgets on the stack
+        """
         # params
         self.project = project
         self.arch = get_arch(project) if arch is None else arch
         self._fast_mode = fast_mode
 
-        # initial state that others are based off
-        self._stack_gsize = stack_gsize # number of controllable gadgets on stack
-        self._stack_bsize = self._stack_gsize * self.project.arch.bytes # number of controllable bytes on stack
-        self._test_symbolic_state = rop_utils.make_symbolic_state(self.project, self.arch.reg_list,
-                                                                  stack_gsize=self._stack_gsize)
-        self._stack_pointer_value = self._test_symbolic_state.solver.eval(self._test_symbolic_state.regs.sp)
+        # initial state that others are based off, all analysis should copy the state first and work on
+        # the copied state
+        self._stack_bsize = stack_gsize * self.project.arch.bytes # number of controllable bytes on stack
+        self._state = rop_utils.make_symbolic_state(self.project, self.arch.reg_list, stack_gsize=stack_gsize)
+        self._concrete_sp = self._state.solver.eval(self._state.regs.sp)
 
-        # architecture stuff
-        self._base_pointer = self.project.arch.register_names[self.project.arch.bp_offset]
-        self._sp_reg = self.project.arch.register_names[self.project.arch.sp_offset]
+        # architecture stuff. we assume every architecture has registers that implements stackframes,
+        # but may have different names than bp/sp
+        self._bp_name = self.project.arch.register_names[self.project.arch.bp_offset]
+        self._sp_name = self.project.arch.register_names[self.project.arch.sp_offset]
 
     @rop_utils.timeout(3)
     def analyze_gadget(self, addr):
@@ -51,7 +54,7 @@ class GadgetAnalyzer:
                 return None
 
             # create the symbolic state at the address
-            init_state = self._test_symbolic_state.copy()
+            init_state = self._state.copy()
             init_state.ip = addr
             final_state = rop_utils.step_to_unconstrained_successor(self.project, state=init_state)
 
@@ -77,7 +80,7 @@ class GadgetAnalyzer:
 
             # for jump gadget, record the jump target register
             if gadget_type == "jump":
-                state = self._test_symbolic_state.copy()
+                state = self._state.copy()
                 insns = self.project.factory.block(addr).capstone.insns
                 if state.project.arch.name.startswith("MIPS"):
                     idx = -2 # delayed slot
@@ -109,8 +112,8 @@ class GadgetAnalyzer:
                     return None
 
                 # if the sp moves to the bp we have to handle it differently
-                if not this_gadget.bp_moves_to_sp and self._base_pointer != self._sp_reg:
-                    rop_utils.make_reg_symbolic(init_state, self._base_pointer)
+                if not this_gadget.bp_moves_to_sp and self._bp_name != self._sp_name:
+                    rop_utils.make_reg_symbolic(init_state, self._bp_name)
                     final_state = rop_utils.step_to_unconstrained_successor(self.project, init_state)
 
                     if not self._satisfies_mem_access_limits(final_state):
@@ -421,7 +424,7 @@ class GadgetAnalyzer:
         if len(ast.variables) != 1 or not list(ast.variables)[0].startswith("symbolic_stack"):
             return False
 
-        stack_bytes_length = self._stack_gsize * self.project.arch.bytes
+        stack_bytes_length = self._stack_bsize
         if gadget_stack_change is not None:
             stack_bytes_length = min(max(gadget_stack_change, 0), stack_bytes_length)
         concrete_stack = initial_state.solver.BVV(b"B" * stack_bytes_length)
@@ -443,8 +446,8 @@ class GadgetAnalyzer:
         """
         # store symbolic sp and bp and check for dependencies
         ss_copy = symbolic_state.copy()
-        ss_copy.regs.bp = ss_copy.solver.BVS("sreg_" + self._base_pointer + "-", self.project.arch.bits)
-        ss_copy.regs.sp = ss_copy.solver.BVS("sreg_" + self._sp_reg + "-", self.project.arch.bits)
+        ss_copy.regs.bp = ss_copy.solver.BVS("sreg_" + self._bp_name + "-", self.project.arch.bits)
+        ss_copy.regs.sp = ss_copy.solver.BVS("sreg_" + self._sp_name+ "-", self.project.arch.bits)
         symbolic_p = rop_utils.step_to_unconstrained_successor(self.project, ss_copy)
         dependencies = self._get_reg_dependencies(symbolic_p, "sp")
         sp_change = symbolic_p.regs.sp - ss_copy.regs.sp
@@ -458,10 +461,10 @@ class GadgetAnalyzer:
 
         if len(dependencies) == 0 and not sp_change.symbolic:
             stack_changes = [ss_copy.solver.eval(sp_change)]
-        elif list(dependencies)[0] == self._sp_reg:
+        elif list(dependencies)[0] == self._sp_name:
             stack_changes = ss_copy.solver.eval_upto(sp_change, 2)
             gadget.stack_change = stack_changes[0]
-        elif list(dependencies)[0] == self._base_pointer:
+        elif list(dependencies)[0] == self._bp_name:
             sp_change = symbolic_p.regs.sp - ss_copy.regs.bp
             stack_changes = ss_copy.solver.eval_upto(sp_change, 2)
             gadget.bp_moves_to_sp = True
@@ -492,7 +495,7 @@ class GadgetAnalyzer:
                     mem_access.addr_constant = symbolic_state.solver.eval(a.addr.ast)
 
                 # don't need to inform user of stack reads/writes
-                stack_min_addr = self._stack_pointer_value - 0x20
+                stack_min_addr = self._concrete_sp - 0x20
                 # TODO should this be changed, so that we can more easily understand writes outside the frame
                 stack_max_addr = max(stack_min_addr + self._stack_bsize, stack_min_addr + gadget.stack_change)
                 if mem_access.addr_constant is not None and \
@@ -709,7 +712,7 @@ class GadgetAnalyzer:
                     reg_name = rop_utils.get_reg_name(self.project.arch, a.offset)
                     if reg_name in self.arch.reg_list:
                         all_reg_reads.add(reg_name)
-                    elif reg_name != self._sp_reg:
+                    elif reg_name != self._sp_name:
                         l.info("reg read from register not in reg_list: %s", reg_name)
                 except RegNotFoundException as e:
                     l.debug(e)
@@ -728,7 +731,7 @@ class GadgetAnalyzer:
                     reg_name = rop_utils.get_reg_name(self.project.arch, a.offset)
                     if reg_name in self.arch.reg_list:
                         all_reg_writes.add(reg_name)
-                    elif reg_name != self._sp_reg:
+                    elif reg_name != self._sp_name:
                         l.info("reg write from register not in reg_list: %s", reg_name)
                 except RegNotFoundException as e:
                     l.debug(e)
