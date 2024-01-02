@@ -36,8 +36,9 @@ def test_jump_gadget():
     """
     rop = get_rop(os.path.join(BIN_DIR, "tests", "mipsel", "fauxware"))
 
-    jump_gadgets = [x for x in rop._gadgets if x.transit_type == "jump"]
+    jump_gadgets = [x for x in rop._gadgets if x.transit_type == "jmp_reg"]
     assert len(jump_gadgets) > 0
+
 
     jump_regs = [x.jump_reg for x in jump_gadgets]
     assert 't9' in jump_regs
@@ -55,6 +56,7 @@ if __name__ == "__main__":
     import logging
 
     logging.getLogger("angrop.rop").setLevel(logging.DEBUG)
+    #logging.getLogger("angrop.gadget_analyzer").setLevel(logging.DEBUG)
 
     if len(sys.argv) > 1:
         globals()['test_' + sys.argv[1]]()

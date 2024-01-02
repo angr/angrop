@@ -206,8 +206,8 @@ class GadgetAnalyzer:
         gadget.block_length = self.project.factory.block(addr).size
         gadget.transit_type = transit_type
 
-        # for jump gadget, record the jump target register
-        if transit_type == "jump":
+        # for jmp_reg gadget, record the jump target register
+        if transit_type == "jmp_reg":
             state = self._state.copy()
             insns = self.project.factory.block(addr).capstone.insns
             if state.project.arch.name.startswith("MIPS"):
@@ -230,8 +230,8 @@ class GadgetAnalyzer:
         if gadget.stack_change % (self.project.arch.bytes) != 0:
             l.debug("... uneven sp change")
             return None
-        if gadget.stack_change <= 0:
-            l.debug("stack change isn't positive")
+        if gadget.stack_change < 0:
+            l.debug("stack change is negative!!")
             #FIXME: technically, it can be negative, e.g. call instructions
             return None
 
