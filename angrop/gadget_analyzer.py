@@ -15,17 +15,17 @@ l = logging.getLogger("angrop.gadget_analyzer")
 
 
 class GadgetAnalyzer:
-    def __init__(self, project, fast_mode, arch=None, stack_length=80):
+    def __init__(self, project, fast_mode, arch=None, stack_gsize=80):
         # params
         self.project = project
         self.arch = get_arch(project) if arch is None else arch
         self._fast_mode = fast_mode
 
         # initial state that others are based off
-        self._stack_length = stack_length
-        self._stack_length_bytes = self._stack_length * self.project.arch.bytes
+        self._stack_gsize = stack_gsize # number of controllable gadgets on stack
+        self._stack_bsize = self._stack_gsize * self.project.arch.bytes # number of controllable bytes on stack
         self._test_symbolic_state = rop_utils.make_symbolic_state(self.project, self.arch.reg_list,
-                                                                  stack_length=self._stack_length)
+                                                                  stack_gsize=self._stack_gsize)
         self._stack_pointer_value = self._test_symbolic_state.solver.eval(self._test_symbolic_state.regs.sp)
 
         # architecture stuff
@@ -421,7 +421,7 @@ class GadgetAnalyzer:
         if len(ast.variables) != 1 or not list(ast.variables)[0].startswith("symbolic_stack"):
             return False
 
-        stack_bytes_length = self._stack_length * self.project.arch.bytes
+        stack_bytes_length = self._stack_gsize * self.project.arch.bytes
         if gadget_stack_change is not None:
             stack_bytes_length = min(max(gadget_stack_change, 0), stack_bytes_length)
         concrete_stack = initial_state.solver.BVV(b"B" * stack_bytes_length)
@@ -494,7 +494,7 @@ class GadgetAnalyzer:
                 # don't need to inform user of stack reads/writes
                 stack_min_addr = self._stack_pointer_value - 0x20
                 # TODO should this be changed, so that we can more easily understand writes outside the frame
-                stack_max_addr = max(stack_min_addr + self._stack_length_bytes, stack_min_addr + gadget.stack_change)
+                stack_max_addr = max(stack_min_addr + self._stack_bsize, stack_min_addr + gadget.stack_change)
                 if mem_access.addr_constant is not None and \
                         stack_min_addr <= mem_access.addr_constant < stack_max_addr:
                     continue

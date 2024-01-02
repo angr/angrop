@@ -153,7 +153,7 @@ def _asts_must_be_equal(state, ast1, ast2):
     return True
 
 
-def make_initial_state(project, stack_length):
+def make_initial_state(project, stack_gsize):
     """
     :return: an initial state with a symbolic stack and good options for rop
     """
@@ -167,7 +167,7 @@ def make_initial_state(project, stack_length):
     initial_state.options.update({angr.options.TRACK_REGISTER_ACTIONS, angr.options.TRACK_MEMORY_ACTIONS,
                                   angr.options.TRACK_JMP_ACTIONS, angr.options.TRACK_CONSTRAINT_ACTIONS})
     symbolic_stack = claripy.Concat(*[
-        initial_state.solver.BVS(f"symbolic_stack_{i}", project.arch.bits) for i in range(stack_length)
+        initial_state.solver.BVS(f"symbolic_stack_{i}", project.arch.bits) for i in range(stack_gsize)
     ])
     initial_state.memory.store(initial_state.regs.sp, symbolic_stack)
     if initial_state.arch.bp_offset != initial_state.arch.sp_offset:
@@ -176,12 +176,12 @@ def make_initial_state(project, stack_length):
     return initial_state
 
 
-def make_symbolic_state(project, reg_list, stack_length=80):
+def make_symbolic_state(project, reg_list, stack_gsize=80):
     """
     converts an input state into a state with symbolic registers
     :return: the symbolic state
     """
-    input_state = make_initial_state(project, stack_length)
+    input_state = make_initial_state(project, stack_gsize)
     symbolic_state = input_state.copy()
     # overwrite all registers
     for reg in reg_list:
