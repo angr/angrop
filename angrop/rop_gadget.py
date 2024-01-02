@@ -2,7 +2,10 @@ class RopMemAccess:
     """Holds information about memory accesses
     Attributes:
         addr_dependencies (set): All the registers that affect the memory address.
+        addr_controller (set): All the registers that can determine the symbolic memory access address by itself
+        addr_stack_controller (set): all the controlled gadgets on the stack that can determine the address by itself
         data_dependencies (set): All the registers that affect the data written.
+        data_controller (set): All the registers that can determine the symbolic data by itself
         addr_constant (int): If the address is a constant it is stored here.
         data_constant (int): If the data is constant it is stored here.
         addr_size (int): Number of bits used for the address.
@@ -11,6 +14,7 @@ class RopMemAccess:
     def __init__(self):
         self.addr_dependencies = set()
         self.addr_controllers = set()
+        self.addr_stack_controllers = set()
         self.data_dependencies = set()
         self.data_controllers = set()
         self.addr_constant = None
@@ -76,11 +80,11 @@ class RopGadget:
         self.mem_writes = []
         self.mem_changes = []
         self.reg_moves = []
-        self.bp_moves_to_sp = None
+        self.bp_moves_to_sp = None # whether the new sp depends on bp, e.g. 'leave; ret' overwrites sp with bp
         self.block_length = None
         self.makes_syscall = False
         self.starts_with_syscall = False
-        self.gadget_type = None
+        self.transit_type = None
         self.jump_reg = None
         self.pc_reg = None
 
@@ -166,7 +170,7 @@ class RopGadget:
         out.block_length = self.block_length
         out.makes_syscall = self.makes_syscall
         out.starts_with_syscall = self.starts_with_syscall
-        out.gadget_type = self.gadget_type
+        out.transit_type = self.transit_type
         out.jump_reg = self.jump_reg
         out.pc_reg = self.pc_reg
         return out

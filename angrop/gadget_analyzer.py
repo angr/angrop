@@ -43,107 +43,37 @@ class GadgetAnalyzer:
         """
         l.info("Analyzing 0x%x", addr)
 
-        # first check if the block makes sense
-        if not self._block_makes_sense(addr):
+        # Step 1: first check if the block makes sense
+        if not self._block_make_sense(addr):
             return None
 
         try:
-            # unconstrained check prefilter
-            if self._does_not_get_to_unconstrained(addr):
-                l.debug("... does not get to unconstrained successor")
+            # Step 2: make sure the gadget can lead to a *controlled* unconstrained state within 2 steps
+            # TODO: shall we make the step number configurable?
+            if not self._can_reach_unconstrained(addr):
+                l.debug("... cannot get to unconstrained successor according to static analysis")
+                return None
+            init_state, final_state = self._reach_unconstrained(addr)
+            # TODO: properly handle stack pivoting gadgets, since angrop does not handle them for now
+            # we do not analyze them as well, check_pivot function is for it
+            ctrl_type = self._check_for_controll_type(init_state, final_state)
+            if not ctrl_type:
+                # for example, jump outside of the controllable region
+                l.debug("... cannot maintain the control flow hijacking primitive after executing the gadget")
                 return None
 
-            # create the symbolic state at the address
-            init_state = self._state.copy()
-            init_state.ip = addr
-            final_state = rop_utils.step_to_unconstrained_successor(self.project, state=init_state)
-
+            # Step 3: gadget effect analysis
             l.debug("... analyzing rop potential of block")
+            gadget = self._create_gadget(addr, init_state, final_state, ctrl_type)
 
-            # filter out those that dont get to a controlled successor
-            l.info("... check for controlled successor")
-            gadget_type = self._check_for_controlled_successor(final_state, init_state)
-            if not gadget_type:
-                pivot = self._check_pivot(final_state, init_state, addr)
-                return pivot
+            # Step 4: filter out bad gadgets
+
 
             # filter out if too many mem accesses
             if not self._satisfies_mem_access_limits(final_state):
                 l.debug("... too many symbolic memory accesses")
                 return None
-
-            # create the gadget
-            this_gadget = RopGadget(addr=addr)
-            # FIXME this doesnt handle multiple steps
-            this_gadget.block_length = self.project.factory.block(addr).size
-            this_gadget.gadget_type = gadget_type
-
-            # for jump gadget, record the jump target register
-            if gadget_type == "jump":
-                state = self._state.copy()
-                insns = self.project.factory.block(addr).capstone.insns
-                if state.project.arch.name.startswith("MIPS"):
-                    idx = -2 # delayed slot
-                else:
-                    idx = -1
-                if len(insns) < abs(idx):
-                    return None
-                jump_inst_addr = insns[idx].address
-                state.ip = jump_inst_addr
-                succ = rop_utils.step_to_unconstrained_successor(self.project, state=state)
-                jump_reg = list(succ.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
-                pc_reg = list(final_state.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
-                this_gadget.pc_reg = pc_reg
-                this_gadget.jump_reg = jump_reg
-
-            # compute sp change
-            l.debug("... computing sp change")
-            if gadget_type == "jump":
-                this_gadget.stack_change = 0
-            else:
-                self._compute_sp_change(init_state, this_gadget)
-
-                if this_gadget.stack_change % (self.project.arch.bytes) != 0:
-                    l.debug("... uneven sp change")
-                    return None
-
-                if this_gadget.stack_change <= 0:
-                    l.debug("stack change isn't positive")
-                    return None
-
-                # if the sp moves to the bp we have to handle it differently
-                if not this_gadget.bp_moves_to_sp and self._bp_name != self._sp_name:
-                    rop_utils.make_reg_symbolic(init_state, self._bp_name)
-                    final_state = rop_utils.step_to_unconstrained_successor(self.project, init_state)
-
-                    if not self._satisfies_mem_access_limits(final_state):
-                        l.debug("... too many symbolic memory accesses")
-                        return None
-
-            l.info("... checking for syscall availability")
-            this_gadget.makes_syscall = self._does_syscall(final_state)
-            this_gadget.starts_with_syscall = self._starts_with_syscall(addr)
-
-            l.info("... checking for controlled regs")
-            self._check_reg_changes(final_state, init_state, this_gadget)
-
-            # check for reg moves
-            # get reg reads
-            reg_reads = self._get_reg_reads(final_state)
-            l.debug("... checking for reg moves")
-            self._check_reg_change_dependencies(init_state, final_state, this_gadget)
-            self._check_reg_movers(init_state, final_state, reg_reads, this_gadget)
-
-            # check concretized registers
-            self._analyze_concrete_regs(final_state, this_gadget)
-
-            # check mem accesses
-            l.debug("... analyzing mem accesses")
-            self._analyze_mem_accesses(final_state, init_state, this_gadget)
-            for m_access in this_gadget.mem_writes + this_gadget.mem_reads + this_gadget.mem_changes:
-                if len(m_access.addr_dependencies) == 0 and m_access.addr_constant is None:
-                    l.debug("... mem access with no addr dependencies")
-                    return None
+            
 
         except RopException as e:
             l.debug("... %s", e)
@@ -156,9 +86,9 @@ class GadgetAnalyzer:
             return None
 
         l.debug("... Appending gadget!")
-        return this_gadget
+        return gadget
 
-    def _block_makes_sense(self, addr):
+    def _block_make_sense(self, addr):
         """
         Checks if a block at addr makes sense to analyze for rop gadgets
         :param addr: the address to check
@@ -220,39 +150,143 @@ class GadgetAnalyzer:
 
         return True
 
-    # todo this one skips syscalls so it doesnt need to step as far?
-    def _does_not_get_to_unconstrained(self, addr, max_steps=2):
-        try:
-            # might miss jumps where one side is never satisfiable
-            bl = self.project.factory.block(addr)
-            constant_jump_targets = list(bl.vex.constant_jump_targets)
-            if len(constant_jump_targets) == 1 and max_steps == 0:
-                return True
-            elif len(constant_jump_targets) == 1:
-                if not self._block_makes_sense(constant_jump_targets[0]):
-                    return True
-                return self._does_not_get_to_unconstrained(constant_jump_targets[0], max_steps-1)
-            elif len(constant_jump_targets) > 1:
-                return True
-            # 0 constant jump targets is what we want to find
-            return False
-        except (SimEngineError, SimMemoryError):
+    def _can_reach_unconstrained(self, addr, max_steps=2):
+        """
+        Use static analysis to check whether the address can lead to unconstrained targets
+        It is much faster than directly doing symbolic execution on the addr
+        """
+        b = self.project.factory.block(addr)
+        constant_jump_targets = list(b.vex.constant_jump_targets)
+
+        if not constant_jump_targets:
             return True
 
-    def _satisfies_mem_access_limits(self, symbolic_path):
+        # we drop block that have more than 1 jump targets
+        # technically, this check make us miss some gadgets that have a branch that is never satisfiable
+        # but it is what we need to pay for performance
+        if len(constant_jump_targets) > 1:
+            return False
+
+        if max_steps == 0:
+            return False
+
+        target_block_addr = constant_jump_targets[0]
+        if not self._block_make_sense(target_block_addr):
+            return False
+
+        return self._can_reach_unconstrained(target_block_addr, max_steps-1)
+
+    def _reach_unconstrained(self, addr):
+        init_state = self._state.copy()
+        init_state.ip = addr
+
+        # it will raise errors if angr fails to step the state
+        final_state = rop_utils.step_to_unconstrained_successor(self.project, state=init_state)
+
+        return init_state, final_state
+
+    def _identify_transit_type(self, final_state, ctrl_type):
+        # FIXME: not always jump, could be call as well
+        if ctrl_type == 'register':
+            return "jmp_reg"
+
+        assert ctrl_type == 'stack'
+
+        v = final_state.memory.load(final_state.regs.sp - final_state.arch.bytes,
+                                    size=final_state.arch.bytes,
+                                    endness=final_state.arch.memory_endness)
+        if v is final_state.ip:
+            return "ret"
+
+        return "jmp_mem"
+
+    def _create_gadget(self, addr, init_state, final_state, ctrl_type):
+        transit_type = self._identify_transit_type(final_state, ctrl_type)
+
+        # create the gadget
+        gadget = RopGadget(addr=addr)
+        # FIXME this doesnt handle multiple steps
+        gadget.block_length = self.project.factory.block(addr).size
+        gadget.transit_type = transit_type
+
+        # for jump gadget, record the jump target register
+        if transit_type == "jump":
+            state = self._state.copy()
+            insns = self.project.factory.block(addr).capstone.insns
+            if state.project.arch.name.startswith("MIPS"):
+                idx = -2 # delayed slot
+            else:
+                idx = -1
+            if len(insns) < abs(idx):
+                return None
+            jump_inst_addr = insns[idx].address
+            state.ip = jump_inst_addr
+            succ = rop_utils.step_to_unconstrained_successor(self.project, state=state)
+            jump_reg = list(succ.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
+            pc_reg = list(final_state.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
+            gadget.pc_reg = pc_reg
+            gadget.jump_reg = jump_reg
+
+        # compute sp change
+        l.debug("... computing sp change")
+        self._compute_sp_change(init_state, gadget)
+        if gadget.stack_change % (self.project.arch.bytes) != 0:
+            l.debug("... uneven sp change")
+            return None
+        if gadget.stack_change <= 0:
+            l.debug("stack change isn't positive")
+            #FIXME: technically, it can be negative, e.g. call instructions
+            return None
+
+        # if the sp moves to the bp we have to handle it differently
+        if not gadget.bp_moves_to_sp and self._bp_name != self._sp_name:
+            rop_utils.make_reg_symbolic(init_state, self._bp_name)
+            final_state = rop_utils.step_to_unconstrained_successor(self.project, init_state)
+
+        l.info("... checking for syscall availability")
+        gadget.makes_syscall = self._does_syscall(final_state)
+        gadget.starts_with_syscall = self._starts_with_syscall(addr)
+
+        l.info("... checking for controlled regs")
+        self._check_reg_changes(final_state, init_state, gadget)
+
+        # check for reg moves
+        # get reg reads
+        reg_reads = self._get_reg_reads(final_state)
+        l.debug("... checking for reg moves")
+        self._check_reg_change_dependencies(init_state, final_state, gadget)
+        self._check_reg_movers(init_state, final_state, reg_reads, gadget)
+
+        # check concretized registers
+        self._analyze_concrete_regs(final_state, gadget)
+
+        # check mem accesses
+        l.debug("... analyzing mem accesses")
+        self._analyze_mem_access(final_state, init_state, gadget)
+        import IPython; IPython.embed()
+
+        for m_access in gadget.mem_writes + gadget.mem_reads + gadget.mem_changes:
+            if len(m_access.addr_dependencies) == 0 and m_access.addr_constant is None:
+                l.debug("... mem access with no addr dependencies")
+                return None
+
+        return gadget
+
+    def _satisfies_mem_access_limits(self, state):
         """
         :param symbolic_path: the successor symbolic path
         :return: True/False indicating whether or not to keep the gadget
         """
         # get all the memory accesses
         symbolic_mem_accesses = []
-        for a in reversed(symbolic_path.history.actions):
+        for a in reversed(state.history.actions):
             if a.type == 'mem' and a.addr.ast.symbolic:
                 symbolic_mem_accesses.append(a)
         if len(symbolic_mem_accesses) <= self.arch.max_sym_mem_access:
             return True
 
         # allow mem changes (only add/subtract) to count as a single access
+        # FIXME: this logic looks terrible
         if len(symbolic_mem_accesses) == 2 and self.arch.max_sym_mem_access == 1:
             if symbolic_mem_accesses[0].action == "read" and symbolic_mem_accesses[1].action == "write" and \
                     (symbolic_mem_accesses[1].data.ast.op == "__sub__" or
@@ -356,36 +390,26 @@ class GadgetAnalyzer:
                         gadget.reg_moves.append(RopRegMove(from_reg, reg, half_bits))
 
     # TODO: need to handle reg calls
-    def _check_for_controlled_successor(self, final_state, init_state):
+    def _check_for_controll_type(self, init_state, final_state):
         """
-        :param symbolic_p: the symbolic successor path of symbolic_s
-        :param symbolic_s: the symbolic state
-        :return: True if the address of symbolic_p is controlled by the stack
+        :return: the data provenance of the controlled ip in the final state, either the stack or registers
         """
+
+        # the ip is controlled by stack
         if self._check_if_stack_controls_ast(final_state.ip, init_state):
-            # for MIPs, ip must be right above the current sp. this is to support angrop's current assumption where the
-            # last instruction must behave like a ret (which is not always the case in MIPS).
-            #
-            #  This requirement will exclude gadgets like the following::
-            #
-            #  0x3fc7c988:	move	$a1, $s1
-            #  0x3fc7c98c:	lw	$gp, 0x10($sp)
-            #  0x3fc7c990:	sltu	$v0, $zero, $v0
-            #  0x3fc7c994:	lw	$ra, 0x20($sp)
-            #  0x3fc7c998:	lw	$s1, 0x1c($sp)
-            #  0x3fc7c99c:	lw	$s0, 0x18($sp)
-            #  0x3fc7c9a0:	jr	$ra
-            #  0x3fc7c9a4:	addiu	$sp, $sp, 0x28
-            #
-            if init_state.arch.name == "MIPS32":
-                v = final_state.memory.load(final_state.regs.sp - final_state.arch.bytes,
-                                            size=final_state.arch.bytes,
-                                            endness=final_state.arch.memory_endness)
-                if v is not final_state.ip:
-                    return None
-            return "ret"
-        if self._check_if_jump_gadget(final_state, init_state):
-            return "jump"
+            return "stack"
+
+        ip = final_state.ip
+
+        # the ip is not controlled by regs
+        if not ip.variables:
+            return None
+
+        # the ip is fully controlled by regs
+        vars = list(ip.variables)
+        if all(x.startswith("sreg_") for x in vars):
+            return "register"
+
         return None
 
     @staticmethod
@@ -421,10 +445,11 @@ class GadgetAnalyzer:
         # this is an annoying problem but this code should handle it
 
         # prefilter
+        # FIXME: this check is kinda weird, what if it is rax+rbx?
         if len(ast.variables) != 1 or not list(ast.variables)[0].startswith("symbolic_stack"):
             return False
 
-        stack_bytes_length = self._stack_bsize
+        stack_bytes_length = self._stack_bsize # number of controllable bytes
         if gadget_stack_change is not None:
             stack_bytes_length = min(max(gadget_stack_change, 0), stack_bytes_length)
         concrete_stack = initial_state.solver.BVV(b"B" * stack_bytes_length)
@@ -445,12 +470,12 @@ class GadgetAnalyzer:
         :param gadget: the gadget in which to store the sp change
         """
         # store symbolic sp and bp and check for dependencies
-        ss_copy = symbolic_state.copy()
-        ss_copy.regs.bp = ss_copy.solver.BVS("sreg_" + self._bp_name + "-", self.project.arch.bits)
-        ss_copy.regs.sp = ss_copy.solver.BVS("sreg_" + self._sp_name+ "-", self.project.arch.bits)
-        symbolic_p = rop_utils.step_to_unconstrained_successor(self.project, ss_copy)
-        dependencies = self._get_reg_dependencies(symbolic_p, "sp")
-        sp_change = symbolic_p.regs.sp - ss_copy.regs.sp
+        init_state = symbolic_state.copy()
+        init_state.regs.bp = init_state.solver.BVS("sreg_" + self._bp_name + "-", self.project.arch.bits)
+        init_state.regs.sp = init_state.solver.BVS("sreg_" + self._sp_name+ "-", self.project.arch.bits)
+        final_state = rop_utils.step_to_unconstrained_successor(self.project, init_state)
+        dependencies = self._get_reg_dependencies(final_state, "sp")
+        sp_change = final_state.regs.sp - init_state.regs.sp
 
         # analyze the results
         gadget.bp_moves_to_sp = False
@@ -460,13 +485,14 @@ class GadgetAnalyzer:
             raise RopException("SP change is uncontrolled")
 
         if len(dependencies) == 0 and not sp_change.symbolic:
-            stack_changes = [ss_copy.solver.eval(sp_change)]
+            stack_changes = [init_state.solver.eval(sp_change)]
         elif list(dependencies)[0] == self._sp_name:
-            stack_changes = ss_copy.solver.eval_upto(sp_change, 2)
-            gadget.stack_change = stack_changes[0]
+            stack_changes = init_state.solver.eval_upto(sp_change, 2)
         elif list(dependencies)[0] == self._bp_name:
-            sp_change = symbolic_p.regs.sp - ss_copy.regs.bp
-            stack_changes = ss_copy.solver.eval_upto(sp_change, 2)
+            # FIXME: I think this code is meant to handle leave; ret
+            # but I wonder whether lea rsp, [rbp+offset] is a thing
+            sp_change = final_state.regs.sp - init_state.regs.bp
+            stack_changes = init_state.solver.eval_upto(sp_change, 2)
             gadget.bp_moves_to_sp = True
         else:
             raise RopException("SP does not depend on SP or BP")
@@ -476,84 +502,96 @@ class GadgetAnalyzer:
 
         gadget.stack_change = stack_changes[0]
 
-    def _analyze_mem_accesses(self, symbolic_p, symbolic_state, gadget):
+    def _analyze_mem_access(self, final_state, init_state, gadget):
         """
         analyzes memory accesses and stores their info in the gadget
-        :param symbolic_p: the stepped path, symbolic_state is an ancestor of it.
-        :param symbolic_state: the input state for testing
+        :param final_state: the stepped state, init_state is an ancestor of it.
+        :param init_state: the input state for testing
         :param gadget: the gadget to store mem acccess in
         """
         last_action = None
-        for a in symbolic_p.history.actions.hardcopy:
-            if a.type == 'mem':
-                mem_access = RopMemAccess()
-                if a.addr.ast.symbolic:
-                    mem_access.addr_dependencies = rop_utils.get_ast_dependency(a.addr.ast)
-                    mem_access.addr_controllers = rop_utils.get_ast_controllers(symbolic_state, a.addr.ast,
-                                                                                mem_access.addr_dependencies)
-                else:
-                    mem_access.addr_constant = symbolic_state.solver.eval(a.addr.ast)
+        for a in final_state.history.actions.hardcopy:
+            if a.type != 'mem':
+                continue
 
-                # don't need to inform user of stack reads/writes
-                stack_min_addr = self._concrete_sp - 0x20
-                # TODO should this be changed, so that we can more easily understand writes outside the frame
-                stack_max_addr = max(stack_min_addr + self._stack_bsize, stack_min_addr + gadget.stack_change)
-                if mem_access.addr_constant is not None and \
-                        stack_min_addr <= mem_access.addr_constant < stack_max_addr:
+            mem_access = RopMemAccess()
+
+            # handle the memory access address
+            # case 1: the address is not symbolic
+            if not a.addr.ast.symbolic:
+                mem_access.addr_constant = init_state.solver.eval(a.addr.ast)
+            # case 2: the symbolic address comes from registers
+            elif all(x.startswith("sreg_") for x in a.addr.ast.variables):
+                mem_access.addr_dependencies = rop_utils.get_ast_dependency(a.addr.ast)
+                mem_access.addr_controllers = rop_utils.get_ast_controllers(init_state, a.addr.ast,
+                                                                            mem_access.addr_dependencies)
+            # case 3: the symbolic address comes from controlled stack
+            elif all(x.startswith("symbolic_stack") for x in a.addr.ast.variables):
+                mem_access.addr_stack_controllers = {x for x in a.addr.ast.variables}
+            # case 4: both, we don't handle it now yet
+            else:
+                raise RopException("angrop does not handle symbolic address that depends on both registers and stack... for now...")
+
+            # don't need to inform user of stack reads/writes
+            stack_min_addr = self._concrete_sp - 0x20
+            # TODO should this be changed, so that we can more easily understand writes outside the frame
+            stack_max_addr = max(stack_min_addr + self._stack_bsize, stack_min_addr + gadget.stack_change)
+            if mem_access.addr_constant is not None and \
+                    stack_min_addr <= mem_access.addr_constant < stack_max_addr:
+                continue
+
+            if a.action == "write":
+                # special case for read than write form the same addr
+                if last_action is not None and last_action.action == "read" and \
+                        last_action.addr.ast is a.addr.ast and \
+                        last_action.ins_addr == a.ins_addr:
+                    mem_change = gadget.mem_reads[-1]
+                    gadget.mem_reads = gadget.mem_reads[:-1]
+                    # get the actual change in certain cases
+                    self._get_mem_change_op_and_data(mem_change, a, init_state)
+                    gadget.mem_changes.append(mem_change)
+                    last_action = None
                     continue
 
-                if a.action == "write":
-                    # special case for read than write form the same addr
-                    if last_action is not None and last_action.action == "read" and \
-                            last_action.addr.ast is a.addr.ast and \
-                            last_action.ins_addr == a.ins_addr:
-                        mem_change = gadget.mem_reads[-1]
-                        gadget.mem_reads = gadget.mem_reads[:-1]
-                        # get the actual change in certain cases
-                        self._get_mem_change_op_and_data(mem_change, a, symbolic_state)
-                        gadget.mem_changes.append(mem_change)
-                        last_action = None
-                        continue
+                # for writes we want what the data depends on
+                test_data = init_state.solver.eval_upto(a.data.ast, 2)
+                if len(test_data) > 1:
+                    mem_access.data_dependencies = rop_utils.get_ast_dependency(a.data.ast)
+                    mem_access.data_controllers = rop_utils.get_ast_controllers(init_state, a.data.ast,
+                                                                                mem_access.data_dependencies)
+                elif len(test_data) == 1:
+                    mem_access.data_constant = test_data[0]
+                else:
+                    raise Exception("No data values, something went wrong")
+            elif a.action == "read" and not isinstance(a.data.ast, claripy.fp.FPV) and \
+                    not isinstance(a.data.ast, claripy.ast.FP):
+                # for reads we want to know if any register will have the data after
+                succ_state = final_state
+                bits_to_extend = self.project.arch.bits - a.data.ast.size()
+                # if bits_to_extend is negative it breaks everything, and we probably dont care about it
+                if bits_to_extend >= 0:
+                    for reg in gadget.changed_regs:
+                        # skip popped regs
+                        if reg in gadget.popped_regs:
+                            continue
+                        # skip registers which have known dependencies
+                        if reg in gadget.reg_dependencies and len(gadget.reg_dependencies[reg]) > 0:
+                            continue
+                        test_constraint = claripy.And(
+                            succ_state.registers.load(reg) != a.data.ast.zero_extend(bits_to_extend),
+                            succ_state.registers.load(reg) != a.data.ast.sign_extend(bits_to_extend))
 
-                    # for writes we want what the data depends on
-                    test_data = symbolic_state.solver.eval_upto(a.data.ast, 2)
-                    if len(test_data) > 1:
-                        mem_access.data_dependencies = rop_utils.get_ast_dependency(a.data.ast)
-                        mem_access.data_controllers = rop_utils.get_ast_controllers(symbolic_state, a.data.ast,
-                                                                                    mem_access.data_dependencies)
-                    elif len(test_data) == 1:
-                        mem_access.data_constant = test_data[0]
-                    else:
-                        raise Exception("No data values, something went wrong")
-                elif a.action == "read" and not isinstance(a.data.ast, claripy.fp.FPV) and \
-                        not isinstance(a.data.ast, claripy.ast.FP):
-                    # for reads we want to know if any register will have the data after
-                    succ_state = symbolic_p
-                    bits_to_extend = self.project.arch.bits - a.data.ast.size()
-                    # if bits_to_extend is negative it breaks everything, and we probably dont care about it
-                    if bits_to_extend >= 0:
-                        for reg in gadget.changed_regs:
-                            # skip popped regs
-                            if reg in gadget.popped_regs:
-                                continue
-                            # skip registers which have known dependencies
-                            if reg in gadget.reg_dependencies and len(gadget.reg_dependencies[reg]) > 0:
-                                continue
-                            test_constraint = claripy.And(
-                                succ_state.registers.load(reg) != a.data.ast.zero_extend(bits_to_extend),
-                                succ_state.registers.load(reg) != a.data.ast.sign_extend(bits_to_extend))
+                        if not succ_state.solver.satisfiable(extra_constraints=(test_constraint,)):
+                            mem_access.data_dependencies.add(reg)
 
-                            if not succ_state.solver.satisfiable(extra_constraints=(test_constraint,)):
-                                mem_access.data_dependencies.add(reg)
+            mem_access.data_size = a.data.ast.size()
+            mem_access.addr_size = a.addr.ast.size()
 
-                mem_access.data_size = a.data.ast.size()
-                mem_access.addr_size = a.addr.ast.size()
-
-                last_action = a
-                if a.action == "read":
-                    gadget.mem_reads.append(mem_access)
-                if a.action == "write":
-                    gadget.mem_writes.append(mem_access)
+            last_action = a
+            if a.action == "read":
+                gadget.mem_reads.append(mem_access)
+            if a.action == "write":
+                gadget.mem_writes.append(mem_access)
 
     @staticmethod
     def _get_mem_change_op_and_data(mem_change, write_action, symbolic_state):

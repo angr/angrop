@@ -36,7 +36,7 @@ def test_jump_gadget():
     """
     rop = get_rop(os.path.join(BIN_DIR, "tests", "mipsel", "fauxware"))
 
-    jump_gadgets = [x for x in rop._gadgets if x.gadget_type == "jump"]
+    jump_gadgets = [x for x in rop._gadgets if x.transit_type == "jump"]
     assert len(jump_gadgets) > 0
 
     jump_regs = [x.jump_reg for x in jump_gadgets]
