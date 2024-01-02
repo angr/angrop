@@ -67,13 +67,10 @@ class GadgetAnalyzer:
             gadget = self._create_gadget(addr, init_state, final_state, ctrl_type)
 
             # Step 4: filter out bad gadgets
-
-
-            # filter out if too many mem accesses
+            # too many mem accesses
             if not self._satisfies_mem_access_limits(final_state):
                 l.debug("... too many symbolic memory accesses")
                 return None
-            
 
         except RopException as e:
             l.debug("... %s", e)
@@ -263,10 +260,9 @@ class GadgetAnalyzer:
         # check mem accesses
         l.debug("... analyzing mem accesses")
         self._analyze_mem_access(final_state, init_state, gadget)
-        import IPython; IPython.embed()
 
         for m_access in gadget.mem_writes + gadget.mem_reads + gadget.mem_changes:
-            if len(m_access.addr_dependencies) == 0 and m_access.addr_constant is None:
+            if not m_access.is_valid():
                 l.debug("... mem access with no addr dependencies")
                 return None
 

@@ -23,6 +23,15 @@ class RopMemAccess:
         self.data_size = None
         self.op = None
 
+    def is_valid(self):
+        """
+        the memory access address must be one of
+        1. constant
+        2. controlled by registers
+        3. controlled by controlled stack
+        """
+        return self.addr_constant or self.addr_controllers or self.addr_stack_controllers
+
     def __hash__(self):
         to_hash = sorted(self.addr_dependencies) + sorted(self.data_dependencies) + [self.addr_constant] + \
             [self.data_constant] + [self.addr_size] + [self.data_size]
