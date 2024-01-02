@@ -25,21 +25,24 @@ If a gadget is missing memory reads / memory writes / memory changes, the action
 Memory changes require a read action followed by a write action to the same address.
 """
 
+def gadget_exists(rop, addr):
+    return rop._gadget_analyzer.analyze_gadget(addr) is not None
+
 def test_badbyte():
     cache_path = os.path.join(data_dir, "bronze_ropchain")
     proj = angr.Project(os.path.join(tests_dir, "i386", "bronze_ropchain"), auto_load_libs=False)
     rop = proj.analyses.ROP()
-
-    if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
-    else:
-        rop.find_gadgets()
-        rop.save_gadgets(cache_path)
-
-    def gadget_exists(rop, addr):
-        return any(x for x in rop.gadgets if x.addr == addr)
+    rop._initialize_gadget_analyzer()
 
     assert all(gadget_exists(rop, x) for x in [0x080a9773, 0x08091cf5, 0x08092d80, 0x080920d3])
+
+def test_symbolic_memory_access_from_stack():
+    cache_path = os.path.join(data_dir, "test_angrop_arm_gadget")
+    proj = angr.Project(os.path.join(tests_dir, "armel", "test_angrop_arm_gadget"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+    rop._initialize_gadget_analyzer()
+
+    assert all(gadget_exists(rop, x) for x in [0x000103f4])
 
 def run_all():
     functions = globals()
