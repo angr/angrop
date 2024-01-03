@@ -101,6 +101,32 @@ class RopGadget:
     def num_mem_access(self):
         return len(self.mem_reads) + len(self.mem_writes) + len(self.mem_changes)
 
+    def reg_same_effect(self, other):
+        """
+        having the same register effect compared to the other gadget
+        """
+        if self.popped_regs != other.popped_regs:
+            return False
+        if self.concrete_regs != other.concrete_regs:
+            return False
+        if self.bp_moves_to_sp != other.bp_moves_to_sp:
+            return False
+        if self.reg_dependencies != other.reg_dependencies:
+            return False
+        return True
+
+    def reg_better_than(self, other):
+        """
+        whether this gadget is strictly better than the other in terms of register effect
+        """
+        if not self.reg_same_effect(other):
+            return False
+        if len(self.changed_regs) >= len(other.changed_regs) and \
+                self.stack_change <= other.stack_change and \
+                self.num_mem_access <= other.num_mem_access:
+            return True
+        return False
+
     def __str__(self):
         s = "Gadget %#x\n" % self.addr
         if self.bp_moves_to_sp:

@@ -209,25 +209,6 @@ class RegSetter:
                                                set(registers.keys()), set(hard_regs))
         return self._sort_chains(chains)
 
-    @staticmethod
-    def _same_reg_effects(g1, g2):
-        if g1.popped_regs != g2.popped_regs:
-            return False
-        if g1.concrete_regs != g2.concrete_regs:
-            return False
-        if g1.bp_moves_to_sp != g2.bp_moves_to_sp:
-            return False
-        if g1.reg_dependencies != g2.reg_dependencies:
-            return False
-        return True
-
-    def _strictly_better(self, g1, g2):
-        if not self._same_reg_effects(g1, g2):
-            return False
-        if len(g1.changed_regs) <= len(g2.changed_regs) and g1.block_length <= g2.block_length:
-            return True
-        return False
-
     def _filter_gadgets(self, gadgets):
         """
         filter gadgets having the same effect
@@ -237,7 +218,7 @@ class RegSetter:
         while True:
             to_remove = set({})
             for g in gadgets-skip:
-                to_remove.update({x for x in gadgets-{g} if self._strictly_better(g, x)})
+                to_remove.update({x for x in gadgets-{g} if g.reg_better_than(x)})
                 if to_remove:
                     break
                 skip.add(g)
