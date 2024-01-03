@@ -217,7 +217,7 @@ class RegSetter:
                     hard_chain = hard_chains[0]
                 else:
                     hard_chain = self._find_add_chain(gadgets, reg, val)
-                self.hard_chain_cache[key] = hard_chain
+                self.hard_chain_cache[key] = hard_chain # we cache the result even if it fails
             if not hard_chain:
                 l.error("Fail to set register: %s to: %#x", reg, val)
                 return []

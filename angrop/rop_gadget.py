@@ -134,7 +134,8 @@ class RopGadget:
             return False
         if len(self.changed_regs) >= len(other.changed_regs) and \
                 self.stack_change <= other.stack_change and \
-                self.num_mem_access <= other.num_mem_access:
+                self.num_mem_access <= other.num_mem_access and \
+                self.block_length <= other.block_length:
             return True
         return False
 
