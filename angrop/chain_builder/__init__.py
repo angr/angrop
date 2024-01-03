@@ -600,50 +600,6 @@ class ChainBuilder:
         func_gadget.stack_change = self.project.arch.bytes
         return self._func_call(func_gadget, cc, args, **kwargs)
 
-    @staticmethod
-    def _has_same_effects(g, g2):
-        for attr in g.__dict__:
-            # don't check property, or methods
-            if hasattr(g.__class__, attr) and isinstance(getattr(g.__class__, attr), property):
-                continue
-            if isinstance(getattr(g, attr), types.MethodType):
-                continue
-            if attr == "addr":
-                continue
-            if attr == "stack_change":
-                continue
-            if getattr(g, attr) != getattr(g2, attr):
-                return False
-        return True
-
-    @staticmethod
-    def _filter_duplicates_helper(gadgets):
-        gadgets_copy = []
-        for g in gadgets:
-            good = True
-            for g2 in gadgets:
-                if g.stack_change > g2.stack_change and ChainBuilder._has_same_effects(g, g2):
-                    good = False
-                    break
-                if g.stack_change == g2.stack_change and g.addr > g2.addr and ChainBuilder._has_same_effects(g, g2):
-                    good = False
-                    break
-            if good:
-                gadgets_copy.append(g)
-        return gadgets_copy
-
-    @staticmethod
-    def _filter_duplicates(gadgets):
-        gadget_dict = defaultdict(set)
-        for g in gadgets:
-            t = (tuple(sorted(g.popped_regs)), tuple(sorted(g.changed_regs)))
-            gadget_dict[t].add(g)
-        gadgets = set()
-        for v in gadget_dict.values():
-            gadgets.update(ChainBuilder._filter_duplicates_helper(v))
-        gadgets = ChainBuilder._filter_duplicates_helper(gadgets)
-        return gadgets
-
     def _check_if_sufficient_partial_control(self, gadget, reg, value):
         # doesnt change it
         if reg not in gadget.changed_regs:
