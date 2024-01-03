@@ -17,6 +17,7 @@ class RopMemAccess:
         self.addr_stack_controllers = set()
         self.data_dependencies = set()
         self.data_controllers = set()
+        self.data_stack_controllers = set()
         self.addr_constant = None
         self.data_constant = None
         self.addr_size = None
@@ -31,6 +32,16 @@ class RopMemAccess:
         3. controlled by controlled stack
         """
         return self.addr_constant or self.addr_controllers or self.addr_stack_controllers
+
+    def addr_controllable(self):
+        return self.addr_controllers or self.addr_stack_controllers
+
+    def data_controllable(self):
+        return self.data_controllers or self.data_stack_controllers
+
+    def addr_data_independent(self):
+        return len(set(self.addr_controllers) & set(self.data_controllers)) == 0 and \
+                len(set(self.addr_stack_controllers) & set(self.data_stack_controllers)) == 0
 
     def __hash__(self):
         to_hash = sorted(self.addr_dependencies) + sorted(self.data_dependencies) + [self.addr_constant] + \
