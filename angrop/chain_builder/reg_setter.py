@@ -45,7 +45,7 @@ class RegSetter:
             chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in chain._gadgets])
             bv = getattr(state.regs, reg)
             if bv.symbolic or state.solver.eval(bv != val):
-                l.exception("Somehow angrop thinks \n%s can be used for the chain generation.", chain_str)
+                l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
                 return False
         return True
 
@@ -358,6 +358,30 @@ class RegSetter:
             raise RopException("Didnt find all gadget addresses, something must've broke")
         return res
 
+    def _tuple_to_gadgets(self, data, reg_tuple):
+        """
+        turn the entry tuple in the graph search to a list of gadgets
+        """
+        if reg_tuple in data:
+            gadgets_reverse = []
+            curr_tuple = reg_tuple
+        else:
+            gadgets_reverse = reg_tuple[2]
+        while curr_tuple != ():
+            gadgets_reverse.append(data[curr_tuple][2])
+            curr_tuple = data[curr_tuple][0]
+        return gadgets_reverse[::-1]
+
+    def _verify_chain(self, chain, regs):
+        """
+        make sure the new chain can control the registers
+        # TODO: maybe use symoblic execution to verify it?
+        """
+        g = chain[-1]
+        if g.transit_type == 'jmp_reg':
+            return g.pc_reg in regs
+        return True
+
     # todo allow user to specify rop chain location so that we can use read_mem gadgets to load values
     # todo allow specify initial regs or dont clobber regs
     # todo memcopy(from_addr, to_addr, len)
@@ -370,17 +394,10 @@ class RegSetter:
         :param registers:
         :return:
         """
+        search_regs = set(registers)
+
         if modifiable_memory_range is not None and len(modifiable_memory_range) != 2:
             raise Exception("modifiable_memory_range should be a tuple (low, high)")
-
-        # check keys
-        search_regs = set()
-        for reg in registers:
-            search_regs.add(reg)
-            if reg not in self._reg_set:
-                raise RopException("Register %s not in reg list" % reg)
-
-        # lets try doing a graph search to set registers, something like dijkstra's for minimum length
 
         # find gadgets with sufficient partial control
         partial_controllers = {}
@@ -398,6 +415,9 @@ class RegSetter:
             gadgets = [g for g in gadgets if
                        len(g.mem_changes) == 0 and len(g.mem_writes) == 0 and len(g.mem_reads) == 0]
         l.debug("finding best gadgets")
+
+
+        # lets try doing a graph search to set registers, something like dijkstra's for minimum length
 
         # each key is tuple of sorted registers
         # use tuple (prev, total_stack_change, gadget, partial_controls)
@@ -428,14 +448,14 @@ class RegSetter:
                 # ignore gadgets which don't have a positive stack change
                 if g.stack_change <= 0:
                     continue
+                # ignore base pointer moves for now
+                if g.bp_moves_to_sp:
+                    continue
 
                 stack_change = data[regs][1]
                 new_stack_change = stack_change + g.stack_change
                 # if its longer than the best ignore
                 if new_stack_change >= best_stack_change:
-                    continue
-                # ignore base pointer moves for now
-                if g.bp_moves_to_sp:
                     continue
                 # ignore if we only change controlled regs
                 start_regs = set(regs)
@@ -445,37 +465,39 @@ class RegSetter:
                 end_regs, partial_regs = self._get_updated_controlled_regs(g, regs, data[regs], partial_controllers,
                                                                            modifiable_memory_range)
 
-                # if we control any new registers try adding it
+                # ignore the gadget if does not provide us new controlled registers
                 end_reg_tuple = tuple(sorted(end_regs))
                 npartial = len(partial_regs)
-                if len(end_regs - start_regs) > 0:
-                    # if we havent seen that tuple before, or payload is shorter or less partially controlled regs.
-                    end_data = data.get(end_reg_tuple, None)
-                    if end_reg_tuple not in data or \
-                            (new_stack_change < end_data[1] and npartial <= len(end_data[3])) or \
-                            (npartial < len(end_data[3])):
-                        # it improves the graph so add it
-                        data[end_reg_tuple] = (regs, new_stack_change, g, partial_regs)
-                        heapq.heappush(to_process, (new_stack_change, end_reg_tuple))
+                if len(end_regs - start_regs) == 0:
+                    continue
 
-                        if search_regs.issubset(end_regs):
-                            if new_stack_change < best_stack_change:
-                                best_stack_change = new_stack_change
-                                best_reg_tuple = end_reg_tuple
+                # if we havent seen that tuple before, or payload is shorter or less partially controlled regs.
+                if end_reg_tuple in data: # we have seen the tuple before
+                    end_data = data.get(end_reg_tuple, None)
+                    if not (new_stack_change < end_data[1] and npartial <= len(end_data[3])): # payload is longer or contains more partially controlled regs
+                        continue
+                    if npartial >= len(end_data[3]):
+                        continue
+
+                # now make sure the chain does provide what it claims to provide
+                chain = self._tuple_to_gadgets(data, regs) + [g]
+                if not self._verify_chain(chain, end_regs):
+                    continue
+
+                # it improves the graph so add it
+                data[end_reg_tuple] = (regs, new_stack_change, g, partial_regs)
+                heapq.heappush(to_process, (new_stack_change, end_reg_tuple))
+
+                # update the result if we find a better chain
+                if search_regs.issubset(end_regs) and new_stack_change < best_stack_change:
+                    best_stack_change = new_stack_change
+                    best_reg_tuple = end_reg_tuple
 
         # if the best_reg_tuple is None then we failed to set the desired registers :(
         if best_reg_tuple is None:
             return None, None, data
 
-        # get the actual addresses
-        gadgets_reverse = []
-        curr_tuple = best_reg_tuple
-        while curr_tuple != ():
-            gadgets_reverse.append(data[curr_tuple][2])
-            curr_tuple = data[curr_tuple][0]
-
-        gadgets = gadgets_reverse[::-1]
-
+        gadgets = self._tuple_to_gadgets(data, best_reg_tuple)
         return gadgets, best_stack_change, data
 
     def _get_sufficient_partial_controllers(self, registers):
