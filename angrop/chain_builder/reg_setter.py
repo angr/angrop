@@ -26,6 +26,8 @@ class RegSetter:
         self._reg_setting_gadgets = self._filter_gadgets(gadgets)
         self._roparg_filler = filler
 
+        self._chain_cache = defaultdict(list) # key: sorted register tuples, value: list of chains (in fact, list of gadgets)
+
     def _contain_badbyte(self, ptr):
         """
         check if a pointer contains any bad byte
@@ -59,25 +61,34 @@ class RegSetter:
         if unknown_regs:
             raise RopException("unknown registers: %s" % unknown_regs)
 
-        gadgets = self._find_relevant_gadgets(**registers)
-        best_chain, _, _ = self._find_reg_setting_gadgets(modifiable_memory_range,
-                                                                       use_partial_controllers, **registers)
-        chains = self._find_all_candidate_chains(gadgets, **registers)
-        if best_chain:
-            chains = [best_chain] + chains
-
         if rebase_regs is None:
             rebase_regs = set()
 
-        for chain in chains:
-            chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in chain])
+        # load from cache
+        reg_tuple = tuple(sorted(registers.keys()))
+        chains = self._chain_cache[reg_tuple]
+
+        gadgets = self._find_relevant_gadgets(**registers)
+
+        # find the chain provided by the graph search algorithm
+        best_chain, _, _ = self._find_reg_setting_gadgets(modifiable_memory_range,
+                                                                       use_partial_controllers, **registers)
+        if best_chain:
+            chains += [best_chain]
+
+        # find chains using BFS based on pops
+        chains += self._find_all_candidate_chains(gadgets, **registers)
+
+        for gadgets in chains:
+            chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in gadgets])
             l.debug("building reg_setting chain with chain:\n%s", chain_str)
-            stack_change = sum(x.stack_change for x in chain)
+            stack_change = sum(x.stack_change for x in gadgets)
             try:
-                chain = self._build_reg_setting_chain(chain, modifiable_memory_range,
+                chain = self._build_reg_setting_chain(gadgets, modifiable_memory_range,
                                                      registers, stack_change, rebase_regs)
                 chain._concretize_chain_values()
                 if self.verify(chain, registers):
+                    self._chain_cache[reg_tuple].append(gadgets)
                     return chain
             except (RopException, SimUnsatError):
                 pass
@@ -361,6 +372,13 @@ class RegSetter:
         g = chain[-1]
         if g.transit_type == 'jmp_reg':
             return g.pc_reg in regs
+
+        # make sure all memory access can be forced to happen on valid addresses
+        # don't need to consider constant addr or addr popped from stack
+        for mem_access in g.mem_reads + g.mem_writes + g.mem_changes:
+            if mem_access.addr_controllers and not mem_access.addr_controllers.intersection(regs):
+                return False
+
         return True
 
     # todo allow user to specify rop chain location so that we can use read_mem gadgets to load values
