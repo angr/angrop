@@ -706,17 +706,6 @@ class ChainBuilder:
 
         return end_regs, partial_regs
 
-    def _get_single_ret(self):
-        # start with a ret instruction
-        ret_addr = None
-        for g in self._gadgets:
-            if len(g.changed_regs) == 0 and len(g.mem_writes) == 0 and \
-                    len(g.mem_reads) == 0 and len(g.mem_changes) == 0 and \
-                    g.stack_change == self.project.arch.bytes:
-                ret_addr = g.addr
-                break
-        return ret_addr
-
     @staticmethod
     def _filter_reg_setting_gadgets_helper(gadgets):
         good_gadgets = []
@@ -785,114 +774,6 @@ class ChainBuilder:
                     for loc in common.str_find_all(read_bytes, syscall_instruction):
                         addrs.append(loc + segment.min_addr)
         return sorted(addrs)
-
-    def _build_reg_setting_chain(self, gadgets, modifiable_memory_range, register_dict, stack_change, rebase_regs):
-        """
-        This function figures out the actual values needed in the chain
-        for a particular set of gadgets and register values
-        This is done by stepping a symbolic state through each gadget
-        then constraining the final registers to the values that were requested
-        """
-
-        # create a symbolic state
-        test_symbolic_state = rop_utils.make_symbolic_state(self.project, self._reg_list)
-        addrs = [g.addr for g in gadgets]
-        addrs.append(test_symbolic_state.solver.BVS("next_addr", self.project.arch.bits))
-
-        arch_bytes = self.project.arch.bytes
-        arch_endness = self.project.arch.memory_endness
-
-        # emulate a 'pop pc' of the first gadget
-        state = test_symbolic_state
-        state.regs.ip = addrs[0]
-        # the stack pointer must begin pointing to our first gadget
-        state.add_constraints(state.memory.load(state.regs.sp, arch_bytes, endness=arch_endness) == addrs[0])
-        # push the stack pointer down, like a pop would do
-        state.regs.sp += arch_bytes
-        state.solver._solver.timeout = 5000
-
-        # step through each gadget
-        # for each gadget, constrain memory addresses and add constraints for the successor
-        for addr in addrs[1:]:
-            succ = rop_utils.step_to_unconstrained_successor(self.project, state)
-            state.add_constraints(succ.regs.ip == addr)
-            # constrain reads/writes
-            for a in succ.log.actions:
-                if a.type == "mem" and a.addr.ast.symbolic:
-                    if modifiable_memory_range is None:
-                        raise RopException("Symbolic memory address when there shouldnt have been")
-                    test_symbolic_state.add_constraints(a.addr.ast >= modifiable_memory_range[0])
-                    test_symbolic_state.add_constraints(a.addr.ast < modifiable_memory_range[1])
-            test_symbolic_state.add_constraints(succ.regs.ip == addr)
-            # get to the unconstrained successor
-            state = rop_utils.step_to_unconstrained_successor(self.project, state)
-
-        # re-adjuest the stack pointer
-        sp = test_symbolic_state.regs.sp
-        sp -= arch_bytes
-        bytes_per_pop = arch_bytes
-
-        # constrain the final registers
-        rebase_state = test_symbolic_state.copy()
-        for r, v in register_dict.items():
-            test_symbolic_state.add_constraints(state.registers.load(r) == v)
-
-        # to handle register values that should depend on the binary base address
-        if len(rebase_regs) > 0:
-            for r, v in register_dict.items():
-                if r in rebase_regs:
-                    rebase_state.add_constraints(state.registers.load(r) == (v + 0x41414141))
-                else:
-                    rebase_state.add_constraints(state.registers.load(r) == v)
-
-        # constrain the "filler" values
-        if self._roparg_filler is not None:
-            for i in range(stack_change // bytes_per_pop):
-                sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
-                                                           endness=self.project.arch.memory_endness)
-                # check if we can constrain val to be the roparg_filler
-                if test_symbolic_state.solver.satisfiable((sym_word == self._roparg_filler,)) and \
-                        rebase_state.solver.satisfiable((sym_word == self._roparg_filler,)):
-                    # constrain the val to be the roparg_filler
-                    test_symbolic_state.add_constraints(sym_word == self._roparg_filler)
-                    rebase_state.add_constraints(sym_word == self._roparg_filler)
-
-        # create the ropchain
-        new_state = test_symbolic_state.copy()
-        res = RopChain(self.project, self, state=new_state, rebase=self._rebase, badbytes=self.badbytes)
-        for g in gadgets:
-            res.add_gadget(g)
-
-        # iterate through the stack values that need to be in the chain
-        gadget_addrs = [g.addr for g in gadgets]
-        for i in range(stack_change // bytes_per_pop):
-            sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
-                                                       endness=self.project.arch.memory_endness)
-
-            val = test_symbolic_state.solver.eval(sym_word)
-
-            if len(rebase_regs) > 0:
-                val2 = rebase_state.solver.eval(rebase_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
-                                                                        endness=self.project.arch.memory_endness))
-                if (val2 - val) & (2**self.project.arch.bits - 1) == 0x41414141:
-                    res.add_value(val, needs_rebase=True)
-                elif val == val2 and len(gadget_addrs) > 0 and val == gadget_addrs[0]:
-                    res.add_value(val, needs_rebase=True)
-                    gadget_addrs = gadget_addrs[1:]
-                elif val == val2:
-                    res.add_value(sym_word, needs_rebase=False)
-                else:
-                    raise RopException("Rebase Failed")
-            else:
-                if len(gadget_addrs) > 0 and val == gadget_addrs[0]:
-                    res.add_value(val, needs_rebase=True)
-                    gadget_addrs = gadget_addrs[1:]
-                else:
-                    res.add_value(sym_word, needs_rebase=False)
-
-        if len(gadget_addrs) > 0:
-            raise RopException("Didnt find all gadget addresses, something must've broke")
-        return res
 
     # todo allow user to specify rop chain location so that we can use read_mem gadgets to load values
     # todo allow specify initial regs or dont clobber regs
@@ -1180,4 +1061,3 @@ class ChainBuilder:
     # should also be able to do execve by providing writable memory
     # todo pivot stack
     # todo pass values to setregs as symbolic variables
-    # todo progress bar still sucky
