@@ -26,7 +26,8 @@ class RegSetter:
         self._reg_setting_gadgets = self._filter_gadgets(gadgets)
         self._roparg_filler = filler
 
-        self._chain_cache = defaultdict(list) # key: sorted register tuples, value: list of chains (in fact, list of gadgets)
+        #self._chain_cache = defaultdict(list) # key: sorted register tuples, value: list of chains (in fact, list of gadgets)
+        self.hard_chain_cache = {}
 
     def _contain_badbyte(self, ptr):
         """
@@ -66,7 +67,8 @@ class RegSetter:
 
         # load from cache
         reg_tuple = tuple(sorted(registers.keys()))
-        chains = self._chain_cache[reg_tuple]
+        #chains = self._chain_cache[reg_tuple]
+        chains = []
 
         gadgets = self._find_relevant_gadgets(**registers)
 
@@ -88,7 +90,7 @@ class RegSetter:
                                                      registers, stack_change, rebase_regs)
                 chain._concretize_chain_values()
                 if self.verify(chain, registers):
-                    self._chain_cache[reg_tuple].append(gadgets)
+                    #self._chain_cache[reg_tuple].append(gadgets)
                     return chain
             except (RopException, SimUnsatError):
                 pass
@@ -205,13 +207,19 @@ class RegSetter:
         hard_chain = []
         if hard_regs:
             reg = hard_regs[0]
-            hard_chains = self._find_concrete_chains(gadgets, {reg: registers[reg]})
-            if hard_chains:
-                hard_chain = hard_chains[0]
+            val = registers[reg]
+            key = (reg, val)
+            if key in self.hard_chain_cache:
+                hard_chain = self.hard_chain_cache[key]
             else:
-                hard_chain = self._find_add_chain(gadgets, reg, registers[reg])
+                hard_chains = self._find_concrete_chains(gadgets, {reg: val})
+                if hard_chains:
+                    hard_chain = hard_chains[0]
+                else:
+                    hard_chain = self._find_add_chain(gadgets, reg, val)
+                self.hard_chain_cache[key] = hard_chain
             if not hard_chain:
-                l.error("Fail to set register: %s to: %#x", reg, registers[reg])
+                l.error("Fail to set register: %s to: %#x", reg, val)
                 return []
             registers.pop(reg)
 
