@@ -182,10 +182,10 @@ class MemWriter:
         # TODO could allow mem_reads as long as we control the address?
         # TODO implement better, allow adding a single byte repeatedly
 
-        possible_gadgets = [x for x in self._mem_change_gadgets if x.op in ("__or__", "__and__")]
+        possible_gadgets = [x for x in self._mem_change_gadgets if x.mem_changes[0].op in ("__or__", "__and__")]
 
         # get the data from trying to set all the registers
-        registers = dict((reg, 0x41) for reg in self._reg_set)
+        registers = dict((reg, 0x41) for reg in self._reg_setter._reg_set)
         l.debug("getting reg data for mem adds")
         _, _, reg_data = self._reg_setter._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
         l.debug("trying mem_add gadgets")
@@ -280,10 +280,10 @@ class MemWriter:
         if data_size is None:
             data_size = self.project.arch.bits
 
-        possible_gadgets = {x for x in self._mem_change_gadgets if x.op in ('__add__', '__sub__') and x.data_size == data_size}
+        possible_gadgets = {x for x in self._mem_change_gadgets if x.mem_changes[0].op in ('__add__', '__sub__') and x.mem_changes[0].data_size == data_size}
 
         # get the data from trying to set all the registers
-        registers = dict((reg, 0x41) for reg in self._reg_list)
+        registers = dict((reg, 0x41) for reg in self._reg_setter._reg_set)
         l.debug("getting reg data for mem adds")
         _, _, reg_data = self._reg_setter._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
         l.debug("trying mem_add gadgets")
