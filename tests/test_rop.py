@@ -153,7 +153,6 @@ def test_rop_i386_cgc():
     result_state = execute_chain(b, chain)
     assert result_state.solver.eval(result_state.memory.load(0x41414141, 8), cast_to=bytes) == b"ABCDEFGH"
 
-
 def test_rop_arm():
     b = angr.Project(os.path.join(public_bin_location, "armel/manysum"), load_options={"auto_load_libs": False})
     rop = b.analyses.ROP()

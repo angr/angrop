@@ -2,7 +2,10 @@ class RopMemAccess:
     """Holds information about memory accesses
     Attributes:
         addr_dependencies (set): All the registers that affect the memory address.
+        addr_controller (set): All the registers that can determine the symbolic memory access address by itself
+        addr_stack_controller (set): all the controlled gadgets on the stack that can determine the address by itself
         data_dependencies (set): All the registers that affect the data written.
+        data_controller (set): All the registers that can determine the symbolic data by itself
         addr_constant (int): If the address is a constant it is stored here.
         data_constant (int): If the data is constant it is stored here.
         addr_size (int): Number of bits used for the address.
@@ -11,13 +14,34 @@ class RopMemAccess:
     def __init__(self):
         self.addr_dependencies = set()
         self.addr_controllers = set()
+        self.addr_stack_controllers = set()
         self.data_dependencies = set()
         self.data_controllers = set()
+        self.data_stack_controllers = set()
         self.addr_constant = None
         self.data_constant = None
         self.addr_size = None
         self.data_size = None
         self.op = None
+
+    def is_valid(self):
+        """
+        the memory access address must be one of
+        1. constant
+        2. controlled by registers
+        3. controlled by controlled stack
+        """
+        return self.addr_constant or self.addr_controllers or self.addr_stack_controllers
+
+    def addr_controllable(self):
+        return self.addr_controllers or self.addr_stack_controllers
+
+    def data_controllable(self):
+        return self.data_controllers or self.data_stack_controllers
+
+    def addr_data_independent(self):
+        return len(set(self.addr_controllers) & set(self.data_controllers)) == 0 and \
+                len(set(self.addr_stack_controllers) & set(self.data_stack_controllers)) == 0
 
     def __hash__(self):
         to_hash = sorted(self.addr_dependencies) + sorted(self.data_dependencies) + [self.addr_constant] + \
@@ -76,17 +100,44 @@ class RopGadget:
         self.mem_writes = []
         self.mem_changes = []
         self.reg_moves = []
-        self.bp_moves_to_sp = None
+        self.bp_moves_to_sp = None # whether the new sp depends on bp, e.g. 'leave; ret' overwrites sp with bp
         self.block_length = None
         self.makes_syscall = False
         self.starts_with_syscall = False
-        self.gadget_type = None
+        self.transit_type = None
         self.jump_reg = None
         self.pc_reg = None
 
     @property
     def num_mem_access(self):
         return len(self.mem_reads) + len(self.mem_writes) + len(self.mem_changes)
+
+    def reg_same_effect(self, other):
+        """
+        having the same register effect compared to the other gadget
+        """
+        if self.popped_regs != other.popped_regs:
+            return False
+        if self.concrete_regs != other.concrete_regs:
+            return False
+        if self.bp_moves_to_sp != other.bp_moves_to_sp:
+            return False
+        if self.reg_dependencies != other.reg_dependencies:
+            return False
+        return True
+
+    def reg_better_than(self, other):
+        """
+        whether this gadget is strictly better than the other in terms of register effect
+        """
+        if not self.reg_same_effect(other):
+            return False
+        if len(self.changed_regs) >= len(other.changed_regs) and \
+                self.stack_change <= other.stack_change and \
+                self.num_mem_access <= other.num_mem_access and \
+                self.block_length <= other.block_length:
+            return True
+        return False
 
     def __str__(self):
         s = "Gadget %#x\n" % self.addr
@@ -166,7 +217,7 @@ class RopGadget:
         out.block_length = self.block_length
         out.makes_syscall = self.makes_syscall
         out.starts_with_syscall = self.starts_with_syscall
-        out.gadget_type = self.gadget_type
+        out.transit_type = self.transit_type
         out.jump_reg = self.jump_reg
         out.pc_reg = self.pc_reg
         return out
