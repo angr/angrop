@@ -26,7 +26,6 @@ class RegSetter:
         self._reg_setting_gadgets = self._filter_gadgets(gadgets)
         self._roparg_filler = filler
 
-        #self._chain_cache = defaultdict(list) # key: sorted register tuples, value: list of chains (in fact, list of gadgets)
         self.hard_chain_cache = {}
 
     def _contain_badbyte(self, ptr):
@@ -66,7 +65,7 @@ class RegSetter:
             rebase_regs = set()
 
         # load from cache
-        reg_tuple = tuple(sorted(registers.keys()))
+        #reg_tuple = tuple(sorted(registers.keys()))
         #chains = self._chain_cache[reg_tuple]
         chains = []
 
@@ -228,7 +227,8 @@ class RegSetter:
                                                set(registers.keys()), set(hard_regs))
         return self._sort_chains(chains)
 
-    def _filter_gadgets(self, gadgets):
+    @staticmethod
+    def _filter_gadgets(gadgets):
         """
         filter gadgets having the same effect
         """
@@ -358,7 +358,8 @@ class RegSetter:
             raise RopException("Didnt find all gadget addresses, something must've broke")
         return res
 
-    def _tuple_to_gadgets(self, data, reg_tuple):
+    @staticmethod
+    def _tuple_to_gadgets(data, reg_tuple):
         """
         turn the entry tuple in the graph search to a list of gadgets
         """
@@ -372,7 +373,8 @@ class RegSetter:
             curr_tuple = data[curr_tuple][0]
         return gadgets_reverse[::-1]
 
-    def _verify_chain(self, chain, regs):
+    @staticmethod
+    def _verify_chain(chain, regs):
         """
         make sure the new chain can control the registers
         # TODO: maybe use symoblic execution to verify it?
@@ -481,7 +483,8 @@ class RegSetter:
                 # if we havent seen that tuple before, or payload is shorter or less partially controlled regs.
                 if end_reg_tuple in data: # we have seen the tuple before
                     end_data = data.get(end_reg_tuple, None)
-                    if not (new_stack_change < end_data[1] and npartial <= len(end_data[3])): # payload is longer or contains more partially controlled regs
+                    # payload is longer or contains more partially controlled regs
+                    if not (new_stack_change < end_data[1] and npartial <= len(end_data[3])):
                         continue
                     if npartial >= len(end_data[3]):
                         continue

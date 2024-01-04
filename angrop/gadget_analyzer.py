@@ -3,7 +3,6 @@ import logging
 import angr
 import pyvex
 import claripy
-from angr.errors import SimEngineError, SimMemoryError
 
 from . import rop_utils
 from .arch import get_arch
@@ -15,6 +14,9 @@ l = logging.getLogger("angrop.gadget_analyzer")
 
 
 class GadgetAnalyzer:
+    """
+    find and analyze gadgets from binary code
+    """
     def __init__(self, project, fast_mode, arch=None, stack_gsize=80):
         """
         stack_gsize: number of controllable gadgets on the stack
@@ -182,7 +184,8 @@ class GadgetAnalyzer:
 
         return init_state, final_state
 
-    def _identify_transit_type(self, final_state, ctrl_type):
+    @staticmethod
+    def _identify_transit_type(final_state, ctrl_type):
         # FIXME: not always jump, could be call as well
         if ctrl_type == 'register':
             return "jmp_reg"
@@ -285,8 +288,7 @@ class GadgetAnalyzer:
         # FIXME: this logic looks terrible
         if len(symbolic_mem_accesses) == 2 and self.arch.max_sym_mem_access == 1:
             if symbolic_mem_accesses[0].action == "read" and symbolic_mem_accesses[1].action == "write" and \
-                    (symbolic_mem_accesses[1].data.ast.op == "__sub__" or
-                        symbolic_mem_accesses[1].data.ast.op == "__add__") and \
+                    symbolic_mem_accesses[1].data.ast.op in ("__sub__", "__add__") and \
                     symbolic_mem_accesses[1].data.ast.size() == self.project.arch.bits and \
                     symbolic_mem_accesses[0].addr.ast is symbolic_mem_accesses[1].addr.ast:
                 return True
@@ -402,8 +404,8 @@ class GadgetAnalyzer:
             return None
 
         # the ip is fully controlled by regs
-        vars = list(ip.variables)
-        if all(x.startswith("sreg_") for x in vars):
+        variables = list(ip.variables)
+        if all(x.startswith("sreg_") for x in variables):
             return "register"
 
         return None
@@ -523,10 +525,10 @@ class GadgetAnalyzer:
                                                                             mem_access.addr_dependencies)
             # case 3: the symbolic address comes from controlled stack
             elif all(x.startswith("symbolic_stack") for x in a.addr.ast.variables):
-                mem_access.addr_stack_controllers = {x for x in a.addr.ast.variables}
+                mem_access.addr_stack_controllers = set(a.addr.ast.variables)
             # case 4: both, we don't handle it now yet
             else:
-                raise RopException("angrop does not handle symbolic address that depends on both registers and stack... for now...")
+                raise RopException("angrop does not handle symbolic address that depends on both regs and stack atm")
 
             # don't need to inform user of stack reads/writes
             stack_min_addr = self._concrete_sp - 0x20
@@ -591,27 +593,28 @@ class GadgetAnalyzer:
 
     @staticmethod
     def _get_mem_change_op_and_data(mem_change, write_action, symbolic_state):
-            if not write_action.data.ast.symbolic:
-                return
-            if len(write_action.data.ast.args) != 2:
-                return
-            if not write_action.data.ast.args[0].symbolic:
-                return
+        if not write_action.data.ast.symbolic:
+            return
+        if len(write_action.data.ast.args) != 2:
+            return
+        if not write_action.data.ast.args[0].symbolic:
+            return
 
-            vars0 = list(write_action.data.ast.args[0].variables)
-            if not len(vars0) == 1 and vars0[0].startswith("symbolic_read_sreg_"):
-                return
+        vars0 = list(write_action.data.ast.args[0].variables)
+        if not len(vars0) == 1 and vars0[0].startswith("symbolic_read_sreg_"):
+            return
 
-            data_dependencies = rop_utils.get_ast_dependency(write_action.data.ast.args[1])
-            if len(data_dependencies) != 1:
-                return
-            data_controllers = rop_utils.get_ast_controllers(symbolic_state, write_action.data.ast.args[1], data_dependencies)
-            if len(data_controllers) != 1:
-                return
+        data_dependencies = rop_utils.get_ast_dependency(write_action.data.ast.args[1])
+        if len(data_dependencies) != 1:
+            return
+        data_controllers = rop_utils.get_ast_controllers(symbolic_state, write_action.data.ast.args[1],
+                                                         data_dependencies)
+        if len(data_controllers) != 1:
+            return
 
-            mem_change.op = write_action.data.ast.op
-            mem_change.data_dependencies = data_dependencies
-            mem_change.data_controllers = data_controllers
+        mem_change.op = write_action.data.ast.op
+        mem_change.data_dependencies = data_dependencies
+        mem_change.data_controllers = data_controllers
 
     def _does_syscall(self, symbolic_p):
         """

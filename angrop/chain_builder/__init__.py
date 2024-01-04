@@ -143,7 +143,7 @@ class ChainBuilder:
         # invoke the function
         chain.add_gadget(func_gadget)
         chain.add_value(func_gadget.addr, needs_rebase=True)
-        for i in range(func_gadget.stack_change//arch_bytes-1):
+        for _ in range(func_gadget.stack_change//arch_bytes-1):
             chain.add_value(self._get_fill_val(), needs_rebase=False)
 
         # we are done here if there is no stack arguments
