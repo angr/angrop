@@ -68,7 +68,7 @@ class ARM(ROPArch):
 class MIPS(ROPArch):
     pass
 
-def get_arch(project, kernel_mode):
+def get_arch(project, kernel_mode=False):
     name = project.arch.name
     mode = kernel_mode
     if name == 'X86':

@@ -54,7 +54,7 @@ class ROP(Analysis):
     Additionally, all public methods from ChainBuilder are copied into ROP.
     """
 
-    def __init__(self, only_check_near_rets=True, max_block_size=None, max_sym_mem_access=None, fast_mode=None, rebase=True, is_thumb=False):
+    def __init__(self, only_check_near_rets=True, max_block_size=None, max_sym_mem_access=None, fast_mode=None, rebase=True, is_thumb=False, kernel_mode=False):
         """
         Initializes the rop gadget finder
         :param only_check_near_rets: If true we skip blocks that are not near rets
@@ -70,7 +70,8 @@ class ROP(Analysis):
         """
 
         # params
-        self.arch = get_arch(self.project)
+        self.arch = get_arch(self.project, kernel_mode=kernel_mode)
+        self.kernel_mode = kernel_mode
         self._only_check_near_rets = only_check_near_rets
         self._rebase = rebase
 
@@ -136,7 +137,7 @@ class ROP(Analysis):
         l.info("There are %d addresses within %d bytes of a ret",
                num_to_check, self.arch.max_block_size)
 
-        self._gadget_analyzer = gadget_analyzer.GadgetAnalyzer(self.project, self._fast_mode, arch=self.arch)
+        self._gadget_analyzer = gadget_analyzer.GadgetAnalyzer(self.project, self._fast_mode, arch=self.arch, kernel_mode=self.kernel_mode)
 
     def find_gadgets(self, processes=4, show_progress=True):
         """
