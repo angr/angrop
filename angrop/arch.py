@@ -3,8 +3,9 @@ Architecture-dependent configurations
 """
 
 class ROPArch:
-    def __init__(self, project):
+    def __init__(self, project, kernel_mode=False):
         self.project = project
+        self.kernel_mode = kernel_mode
         self.max_sym_mem_access = 4
         self.alignment = project.arch.instruction_alignment
         self.max_block_size = self.alignment * 8
@@ -30,14 +31,17 @@ class ROPArch:
         return True
 
 class X86(ROPArch):
-    def __init__(self, project):
-        super().__init__(project)
+    def __init__(self, project, kernel_mode=False):
+        super().__init__(project, kernel_mode=kernel_mode)
         self.max_block_size = 20 # X86 and AMD64 have alignment of 1, 8 bytes is certainly not good enough
 
     def block_make_sense(self, block):
         capstr = str(block.capstone).lower()
-        if 'cli' in capstr or 'rex' in capstr or "fs:" in capstr or "gs:" in capstr:
+        if 'cli' in capstr or 'rex' in capstr:
             return False
+        if not self.kernel_mode:
+            if "fs:" in capstr or "gs:" in capstr or "iret" in capstr:
+                return False
         if block.size < 1 or block.bytes[0] == 0x4f:
             return False
         return True
@@ -49,8 +53,8 @@ arm_conditional_postfix = ['eq', 'ne', 'cs', 'hs', 'cc', 'lo', 'mi', 'pl',
                            'vs', 'vc', 'hi', 'ls', 'ge', 'lt', 'gt', 'le', 'al']
 class ARM(ROPArch):
 
-    def __init__(self, project):
-        super().__init__(project)
+    def __init__(self, project, kernel_mode=False):
+        super().__init__(project, kernel_mode=kernel_mode)
         self.is_thumb = False # by default, we don't use thumb mode
 
     def block_make_sense(self, block):
@@ -64,15 +68,16 @@ class ARM(ROPArch):
 class MIPS(ROPArch):
     pass
 
-def get_arch(project):
+def get_arch(project, kernel_mode):
     name = project.arch.name
+    mode = kernel_mode
     if name == 'X86':
-        return X86(project)
+        return X86(project, kernel_mode=mode)
     elif name == 'AMD64':
-        return AMD64(project)
+        return AMD64(project, kernel_mode=mode)
     elif name.startswith('ARM'):
-        return ARM(project)
+        return ARM(project, kernel_mode=mode)
     elif name.startswith('MIPS'):
-        return MIPS(project)
+        return MIPS(project, kernel_mode=mode)
     else:
         raise ValueError(f"Unknown arch: {name}")
