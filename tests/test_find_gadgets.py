@@ -35,6 +35,14 @@ def test_badbyte():
 
     assert all(gadget_exists(rop, x) for x in [0x080a9773, 0x08091cf5, 0x08092d80, 0x080920d3])
 
+def test_multiprocess_find_gadgets():
+    proj = angr.Project(os.path.join(tests_dir, "i386", "bronze_ropchain"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    rop.find_gadgets(show_progress=False)
+
+    assert all(gadget_exists(rop, x) for x in [0x080a9773, 0x08091cf5, 0x08092d80, 0x080920d3])
+
 def test_symbolic_memory_access_from_stack():
     proj = angr.Project(os.path.join(tests_dir, "armel", "test_angrop_arm_gadget"), auto_load_libs=False)
     rop = proj.analyses.ROP()
