@@ -151,7 +151,7 @@ class ROP(Analysis):
         self._gadgets = []
 
 
-        initargs = (self._gadget_analyzer)
+        initargs = (self._gadget_analyzer,)
         with Pool(processes=processes, initializer=_set_global_gadget_analyzer, initargs=initargs) as pool:
 
             it = pool.imap_unordered(run_worker, self._addresses_to_check_with_caching(show_progress), chunksize=5)
