@@ -35,7 +35,7 @@ def test_badbyte():
 
     assert all(gadget_exists(rop, x) for x in [0x080a9773, 0x08091cf5, 0x08092d80, 0x080920d3])
 
-def test_multiprocess_find_gadgets():
+def local_multiprocess_find_gadgets():
     proj = angr.Project(os.path.join(tests_dir, "i386", "bronze_ropchain"), auto_load_libs=False)
     rop = proj.analyses.ROP()
 
@@ -56,7 +56,7 @@ def run_all():
     for f in sorted(all_functions.keys()):
         if hasattr(all_functions[f], '__call__'):
             all_functions[f]()
-
+    local_multiprocess_find_gadgets()
 
 if __name__ == "__main__":
     logging.getLogger("angrop.rop").setLevel(logging.DEBUG)
