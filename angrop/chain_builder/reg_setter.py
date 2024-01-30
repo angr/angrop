@@ -53,6 +53,12 @@ class RegSetter:
         for reg, val in registers.items():
             chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in chain._gadgets])
             bv = getattr(state.regs, reg)
+            for act in state.history.actions.hardcopy:
+                if act.type != "mem":
+                    continue
+                if act.addr.ast.variables:
+                    l.exception("memory access outside stackframe\n%s\n", chain_str)
+                    return False
             if bv.symbolic or state.solver.eval(bv != val.data):
                 l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
                 return False
@@ -176,6 +182,7 @@ class RegSetter:
         """
         find one chain to set one single register to a specific value using concrete values only through add/dec
         """
+        val = rop_utils.cast_rop_value(val, self.project)
         concrete_setter_gadgets = [ x for x in gadgets if reg in x.concrete_regs ]
         delta_gadgets = [ x for x in gadgets if len(x.reg_dependencies) == 1 and reg in x.reg_dependencies\
                             and len(x.reg_dependencies[reg]) == 1 and reg in x.reg_dependencies[reg]]
@@ -183,12 +190,12 @@ class RegSetter:
             for g2 in delta_gadgets:
                 try:
                     chain = self._build_reg_setting_chain([g1, g2], False, # pylint:disable=too-many-function-args
-                                                         {reg: val}, g1.stack_change+g2.stack_change, [])
+                                                         {reg: val}, g1.stack_change+g2.stack_change)
                     state = chain.exec()
                     bv = state.registers.load(reg)
                     if bv.symbolic:
                         continue
-                    if state.solver.eval(bv == val):
+                    if state.solver.eval(bv == val.data):
                         return [g1, g2]
                 except Exception:# pylint:disable=broad-except
                     pass
@@ -201,16 +208,16 @@ class RegSetter:
         TODO: handle moves
         """
         # get the list of regs that cannot be popped (call it hard_regs)
-        hard_regs = [reg for reg, val in registers.items() if type(val) == int and self._contain_badbyte(val)]
+        hard_regs = [reg for reg, val in registers.items() if self._contain_badbyte(val)]
         if len(hard_regs) > 1:
             l.error("too many registers contain bad bytes! bail out! %s", registers)
             return []
 
         # if hard_regs exists, try to use concrete values to craft the value
         hard_chain = []
-        if hard_regs:
+        if hard_regs and not registers[hard_regs[0]].symbolic:
             reg = hard_regs[0]
-            val = registers[reg]
+            val = registers[reg].concreted
             key = (reg, val)
             if key in self.hard_chain_cache:
                 hard_chain = self.hard_chain_cache[key]

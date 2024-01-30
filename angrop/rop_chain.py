@@ -77,12 +77,8 @@ class RopChain:
 
         concrete_vals = []
         for value in self._values:
-            if not value.symbolic:
-                concrete_vals.append((value.concreted, value.rebase))
-                continue
-
-            # if it is symbolic, make sure it does not have badbytes in it
-            ast = value.ast
+            # make sure it does not have badbytes in it
+            ast = value.data
             constraints = []
             # for each byte, it should not be equal to any bad bytes
             # TODO: we should do the badbyte verification when adding values
@@ -93,6 +89,8 @@ class RopChain:
             # apply the constraints
             for expr in constraints:
                 solver_state.solver.add(expr)
+                if not solver_state.solver.satisfiable():
+                    raise RopException("bad chain!")
             concrete_vals.append((solver_state.solver.eval(ast), value.rebase))
 
         return concrete_vals
