@@ -7,6 +7,7 @@ import claripy
 from .. import rop_utils
 from ..errors import RopException
 from ..rop_chain import RopChain
+from ..rop_value import RopValue
 
 l = logging.getLogger("angrop.chain_builder.mem_writer")
 
@@ -66,6 +67,11 @@ class MemWriter:
         """
         check if a pointer contains any bad byte
         """
+        if isinstance(ptr, RopValue):
+            if ptr.symbolic:
+                return False
+            else:
+                ptr = ptr.concreted
         raw_bytes = struct.pack(self.project.arch.struct_fmt(), ptr)
         if any(x in raw_bytes for x in self.badbytes):
             return True
@@ -160,7 +166,6 @@ class MemWriter:
 
         gen = self._gen_mem_write_gadgets(string_data)
         gadget, use_partial_controllers = next(gen, (None, None))
-
         while gadget:
             try:
                 return self._try_write_to_mem(gadget, use_partial_controllers, addr, string_data, fill_byte)
@@ -263,7 +268,7 @@ class MemWriter:
 
         # do the write
         offset = 0
-        chain = RopChain(self.project, self,  badbytes=self.badbytes)
+        chain = RopChain(self.project, self, badbytes=self.badbytes)
         for elem in elems:
             ptr = addr + offset
             if self._contain_badbyte(ptr):
@@ -314,8 +319,12 @@ class MemWriter:
         chain = self._change_mem_with_gadget(best_gadget, addr, data_size, difference=value)
         return chain
 
+    def _write_to_mem_with_gadget(self, gadget, addr_val, data, use_partial_controllers=False):
+        """
+        addr is a RopValue
+        """
+        addr_bvs = claripy.BVS("addr", self.project.arch.bits)
 
-    def _write_to_mem_with_gadget(self, gadget, addr, data, use_partial_controllers=False):
         # sanity check for simple gadget
         if len(gadget.mem_writes) != 1 or len(gadget.mem_reads) + len(gadget.mem_changes) > 0:
             raise RopException("too many memory accesses for my lazy implementation")
@@ -355,19 +364,35 @@ class MemWriter:
             raise RopException("Couldn't find the matching action")
 
         # constrain the addr
-        test_state.add_constraints(the_action.addr.ast == addr)
-        pre_gadget_state.add_constraints(the_action.addr.ast == addr)
+        test_state.add_constraints(the_action.addr.ast == addr_bvs, addr_bvs == addr_val.data)
+        pre_gadget_state.add_constraints(the_action.addr.ast == addr_bvs, addr_bvs = addr_val.data)
         pre_gadget_state.options.discard(angr.options.AVOID_MULTIVALUED_WRITES)
         state = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
 
         # constrain the data
-        test_state.add_constraints(state.memory.load(addr, len(data)) == test_state.solver.BVV(data))
+        test_state.add_constraints(state.memory.load(addr_val.data, len(data)) == test_state.solver.BVV(data))
 
         # get the actual register values
         all_deps = list(mem_write.addr_dependencies) + list(mem_write.data_dependencies)
         reg_vals = {}
+        name = addr_bvs._encoded_name.decode()
         for reg in set(all_deps):
-            reg_vals[reg] = test_state.solver.eval(test_state.registers.load(reg))
+            var = test_state.solver.eval(test_state.registers.load(reg))
+            # check whether this reg will propagate to addr
+            # if yes, propagate its rebase value
+            for c in test_state.solver.constraints:
+                if len(c.variables) != 2: # xx == yy
+                    continue
+                if name not in c.variables:
+                    continue
+                var_names = set(c.variables)
+                var_names.remove(name)
+                if reg in var_names.pop():
+                    var = rop_utils.cast_rop_value(var, self.project)
+                    if addr_val._rebase:
+                        var.rebase_ptr()
+                    break
+            reg_vals[reg] = var
 
         chain = self._set_regs(use_partial_controllers=use_partial_controllers, **reg_vals)
         chain.add_gadget(gadget)
@@ -375,6 +400,12 @@ class MemWriter:
         bytes_per_pop = self.project.arch.bytes
         for _ in range(gadget.stack_change // bytes_per_pop - 1):
             chain.add_value(self._get_fill_val(), needs_rebase=False)
+
+        # verify the write actually works
+        state = chain.exec()
+        sim_data = state.memory.load(addr_val.data, len(data))
+        if not state.solver.eval(sim_data == data):
+            raise RopException("memory write fails")
         return chain
 
     def _change_mem_with_gadget(self, gadget, addr, data_size, final_val=None, difference=None):

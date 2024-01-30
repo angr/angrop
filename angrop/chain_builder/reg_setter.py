@@ -4,12 +4,14 @@ import logging
 from collections import defaultdict
 from functools import cmp_to_key
 
+import claripy
 from angr.errors import SimUnsatError
 
 
 from .. import rop_utils
 from ..rop_chain import RopChain
 from ..errors import RopException
+from ..rop_value import RopValue
 
 l = logging.getLogger("angrop.chain_builder.reg_setter")
 
@@ -32,6 +34,11 @@ class RegSetter:
         """
         check if a pointer contains any bad byte
         """
+        if isinstance(ptr, RopValue):
+            if ptr.symbolic:
+                return False
+            else:
+                ptr = ptr.concreted
         raw_bytes = struct.pack(self.project.arch.struct_fmt(), ptr)
         if any(x in raw_bytes for x in self._badbytes):
             return True
@@ -46,7 +53,13 @@ class RegSetter:
         for reg, val in registers.items():
             chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in chain._gadgets])
             bv = getattr(state.regs, reg)
-            if bv.symbolic or state.solver.eval(bv != val):
+            for act in state.history.actions.hardcopy:
+                if act.type != "mem":
+                    continue
+                if act.addr.ast.variables:
+                    l.exception("memory access outside stackframe\n%s\n", chain_str)
+                    return False
+            if bv.symbolic or state.solver.eval(bv != val.data):
                 l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
                 return False
         return True
@@ -60,9 +73,10 @@ class RegSetter:
         if unknown_regs:
             raise RopException("unknown registers: %s" % unknown_regs)
 
-        # load from cache
-        #reg_tuple = tuple(sorted(registers.keys()))
-        #chains = self._chain_cache[reg_tuple]
+        # cast values to RopValue
+        for x in registers:
+            registers[x] = rop_utils.cast_rop_value(registers[x], self.project)
+
         chains = []
 
         gadgets = self._find_relevant_gadgets(**registers)
@@ -168,19 +182,20 @@ class RegSetter:
         """
         find one chain to set one single register to a specific value using concrete values only through add/dec
         """
+        val = rop_utils.cast_rop_value(val, self.project)
         concrete_setter_gadgets = [ x for x in gadgets if reg in x.concrete_regs ]
         delta_gadgets = [ x for x in gadgets if len(x.reg_dependencies) == 1 and reg in x.reg_dependencies\
                             and len(x.reg_dependencies[reg]) == 1 and reg in x.reg_dependencies[reg]]
         for g1 in concrete_setter_gadgets:
             for g2 in delta_gadgets:
                 try:
-                    chain = self._build_reg_setting_chain([g1, g2], False,
-                                                         {reg: val}, g1.stack_change+g2.stack_change, [])
+                    chain = self._build_reg_setting_chain([g1, g2], False, # pylint:disable=too-many-function-args
+                                                         {reg: val}, g1.stack_change+g2.stack_change)
                     state = chain.exec()
                     bv = state.registers.load(reg)
                     if bv.symbolic:
                         continue
-                    if state.solver.eval(bv == val):
+                    if state.solver.eval(bv == val.data):
                         return [g1, g2]
                 except Exception:# pylint:disable=broad-except
                     pass
@@ -193,16 +208,16 @@ class RegSetter:
         TODO: handle moves
         """
         # get the list of regs that cannot be popped (call it hard_regs)
-        hard_regs = [reg for reg, val in registers.items() if type(val) == int and self._contain_badbyte(val)]
+        hard_regs = [reg for reg, val in registers.items() if self._contain_badbyte(val)]
         if len(hard_regs) > 1:
             l.error("too many registers contain bad bytes! bail out! %s", registers)
             return []
 
         # if hard_regs exists, try to use concrete values to craft the value
         hard_chain = []
-        if hard_regs:
+        if hard_regs and not registers[hard_regs[0]].symbolic:
             reg = hard_regs[0]
-            val = registers[reg]
+            val = registers[reg].concreted
             key = (reg, val)
             if key in self.hard_chain_cache:
                 hard_chain = self.hard_chain_cache[key]
@@ -294,8 +309,13 @@ class RegSetter:
 
         # constrain the final registers
         rebase_state = test_symbolic_state.copy()
+        var_dict = {}
         for r, v in register_dict.items():
-            test_symbolic_state.add_constraints(state.registers.load(r) == v)
+            var = claripy.BVS(r, self.project.arch.bits)
+            var_name = var._encoded_name.decode()
+            var_dict[var_name] = v
+            test_symbolic_state.add_constraints(state.registers.load(r) == var)
+            test_symbolic_state.add_constraints(var == v.data)
 
         # constrain the "filler" values
         if self._roparg_filler is not None:
@@ -323,7 +343,19 @@ class RegSetter:
                 chain.add_gadget(gadgets[0])
                 gadgets = gadgets[1:]
             else:
-                chain.add_value(sym_word, needs_rebase=False)
+                # propagate the initial RopValue provided by users to preserve info like rebase
+                var = sym_word
+                for c in test_symbolic_state.solver.constraints:
+                    if len(c.variables) != 2: # it is always xx == yy
+                        continue
+                    if not sym_word.variables.intersection(c.variables):
+                        continue
+                    var_name = set(c.variables - sym_word.variables).pop()
+                    if var_name not in var_dict:
+                        continue
+                    var = var_dict[var_name]
+                    break
+                chain.add_value(var, needs_rebase=False)
 
         if len(gadgets) > 0:
             raise RopException("Didnt find all gadget addresses, something must've broke")
@@ -377,7 +409,7 @@ class RegSetter:
         search_regs = set(registers)
 
         if modifiable_memory_range is not None and len(modifiable_memory_range) != 2:
-            raise Exception("modifiable_memory_range should be a tuple (low, high)")
+            raise RopException("modifiable_memory_range should be a tuple (low, high)")
 
         # find gadgets with sufficient partial control
         partial_controllers = {}

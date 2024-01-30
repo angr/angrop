@@ -1,11 +1,11 @@
 import claripy
 
-class ROPValue:
+class RopValue:
     """
     This class represents a value that needs to be concretized in a ROP chain
     Automatically handles rebase
     """
-    def __init__(self, value, project=None):
+    def __init__(self, value, project):
         if not isinstance(value, (int, claripy.ast.bv.BV)):
             raise ValueError("bad value type!")
         self._value = value # when rebase is needed, value here holds the offset
@@ -13,37 +13,62 @@ class ROPValue:
         self._rebase = None # rebase needs to be either specified or inferred
         self._code_base = None
 
-    def set_rebase(self, rebase):
-        self._rebase = rebase
+        self._project_update()
 
-    def set_project(self, project):
-        self._project = project
+    def _project_update(self):
         if type(self._value) is int:
             self._value = claripy.BVV(self._value, self._project.arch.bits)
         pie = self._project.loader.main_object.pic
         self._code_base = self._project.loader.main_object.mapped_base if pie else 0
+        if not pie:
+            self._rebase = False
 
-    def rebase_analysis(self):
+    def __add__(self, other):
+        cp = self.copy()
+        if type(other) is int:
+            cp._value += other
+        elif isinstance(other, RopValue):
+            cp._value += other._value
+            cp._rebase |= other._rebase
+        else:
+            raise ValueError(f"Can't add {other} to RopValue!")
+        return cp
+
+    def determined(self, chain):
+        res = chain._blank_state.solver.eval_upto(self._value, 2)
+        return len(res) <= 1
+
+    def rebase_ptr(self):
+        pie = self._project.loader.main_object.pic
+        if pie:
+            self._value -= self._code_base
+            self._rebase = True
+
+    def rebase_analysis(self, chain=None):
         """
-        use our best effort to infer whether we should rebase this ROPValue or not
+        use our best effort to infer whether we should rebase this RopValue or not
         """
         # if not pie, great, we are done
         pie = self._project.loader.main_object.pic
         if not pie:
             self._rebase = False
             return
-        # if symbolic, we don't know whether it should be rebased or not
+        # if fully symbolic, we don't know whether it should be rebased or not
         if self.symbolic:
-            self._rebase = None
-            return
+            if chain is None or not self.determined(chain):
+                self._rebase = None
+                return
+            concreted = chain._blank_state.solver.eval(self._value)
+        else:
+            concreted = self.concreted
+
         # if concrete, check whether it is a pointer that needs rebase:
         # it is an address within a PIC object
-        concreted = self.concreted
         if concreted < self._project.loader.min_addr or concreted >= self._project.loader.max_addr:
             self._rebase = False
             return
         for obj in self._project.loader.all_elf_objects:
-            if obj.pic and obj.min_addr <= concreted and obj.max_addr:
+            if obj.pic and obj.min_addr <= concreted < obj.max_addr:
                 self._value -= obj.min_addr
                 self._rebase = True
                 if obj != self._project.loader.main_object:
@@ -60,7 +85,7 @@ class ROPValue:
     def ast(self):
         assert self._value.symbolic
         return self.data
-    
+
     @property
     def concreted(self):
         assert not self._value.symbolic
@@ -77,5 +102,16 @@ class ROPValue:
     @property
     def rebase(self):
         #if self._rebase is None:
-        #    raise RuntimeError("Somehow rebase is not specified in this ROPValue")
+        #    raise RuntimeError("Somehow rebase is not specified in this RopValue")
         return self._rebase
+
+    def __repr__(self):
+        return f"RopValue({self.data}, {self._rebase})"
+
+    def copy(self):
+        cp = RopValue(self._value, self._project)
+        cp._value = self._value
+        cp._project = self._project
+        cp._rebase = self._rebase
+        cp._code_base = self._code_base
+        return cp

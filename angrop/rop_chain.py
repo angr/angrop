@@ -1,8 +1,6 @@
 from . import rop_utils
 from .errors import RopException
-from .value import ROPValue
-
-from cle.address_translator import AT
+from .rop_value import RopValue
 
 class RopChain:
     """
@@ -38,12 +36,9 @@ class RopChain:
         return result
 
     def add_value(self, value, needs_rebase=False):
-        if type(value) is not ROPValue:
-            value = ROPValue(value)
-            value.set_project(self._p)
-            value.rebase_analysis()
-        else:
-            value.set_project(self._p)
+        if type(value) is not RopValue:
+            value = RopValue(value, self._p)
+            value.rebase_analysis(chain=self)
         self._values.append(value)
         self.payload_len += self._p.arch.bytes
 
@@ -53,8 +48,9 @@ class RopChain:
         value = gadget.addr
         if self._pie:
             value -= self._p.loader.main_object.mapped_base
-        value = ROPValue(value, project=self._p)
-        value.set_rebase(True)
+        value = RopValue(value, self._p)
+        if self._pie:
+            value._rebase = True
         self.add_value(value)
 
     def add_constraint(self, cons):
@@ -71,7 +67,6 @@ class RopChain:
         :param constraints: constraints to use when concretizing values
         :return: a list of tuples of type (int, needs_rebase)
         """
-
         solver_state = self._blank_state.copy()
         if constraints is not None:
             if isinstance(constraints, (list, tuple)):
@@ -82,12 +77,8 @@ class RopChain:
 
         concrete_vals = []
         for value in self._values:
-            if not value.symbolic:
-                concrete_vals.append((value.concreted, value.rebase))
-                continue
-
-            # if it is symbolic, make sure it does not have badbytes in it
-            ast = value.ast
+            # make sure it does not have badbytes in it
+            ast = value.data
             constraints = []
             # for each byte, it should not be equal to any bad bytes
             # TODO: we should do the badbyte verification when adding values
@@ -98,6 +89,8 @@ class RopChain:
             # apply the constraints
             for expr in constraints:
                 solver_state.solver.add(expr)
+                if not solver_state.solver.satisfiable():
+                    raise RopException("bad chain!")
             concrete_vals.append((solver_state.solver.eval(ast), value.rebase))
 
         return concrete_vals
@@ -126,8 +119,8 @@ class RopChain:
 
         test_state = self._blank_state.copy()
 
-        for value, _ in reversed(self._values):
-            test_state.stack_push(value)
+        for value in reversed(self._values):
+            test_state.stack_push(value.data)
 
         sp = test_state.regs.sp
         return test_state.memory.load(sp, self.payload_len)
@@ -156,17 +149,14 @@ class RopChain:
 
             instruction_code = ""
             if print_instructions:
-                if needs_rebase:
-                    #dealing with pie code
-                    value_in_gadget = AT.from_lva(value, self._p.loader.main_object).to_mva()
-                else:
-                    value_in_gadget = value
+                value_in_gadget = value
                 if value_in_gadget in gadget_dict:
-                    asmstring = rop_utils.gadget_to_asmstring(self._p,gadget_dict[value_in_gadget])
+                    asmstring = rop_utils.gadget_to_asmstring(self._p, gadget_dict[value_in_gadget])
                     if asmstring != "":
                         instruction_code = "\t# " + asmstring
 
             if needs_rebase:
+                value -= self._p.loader.main_object.mapped_base
                 payload += "chain += " + pack_rebase % value + instruction_code
             else:
                 payload += "chain += " + pack % value + instruction_code
