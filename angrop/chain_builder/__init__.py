@@ -117,7 +117,7 @@ class ChainBuilder:
         return self._reg_setter.run(*args, **kwargs)
 
     def _func_call(self, func_gadget, cc, args, extra_regs=None, modifiable_memory_range=None, ignore_registers=None,
-                   use_partial_controllers=False, rebase_regs=None, needs_return=True):
+                   use_partial_controllers=False, needs_return=True):
         assert type(args) in [list, tuple], "function arguments must be a list or tuple!"
         arch_bytes = self.project.arch.bytes
         registers = {} if extra_regs is None else extra_regs
@@ -138,11 +138,10 @@ class ChainBuilder:
             registers.pop(reg, None)
         chain = self.set_regs(modifiable_memory_range=modifiable_memory_range,
                               use_partial_controllers=use_partial_controllers,
-                              rebase_regs=rebase_regs, **registers)
+                              **registers)
 
         # invoke the function
         chain.add_gadget(func_gadget)
-        chain.add_value(func_gadget.addr, needs_rebase=True)
         for _ in range(func_gadget.stack_change//arch_bytes-1):
             chain.add_value(self._get_fill_val(), needs_rebase=False)
 
@@ -178,7 +177,6 @@ class ChainBuilder:
             stack_cleaner.stack_change = arch_bytes * (len(stack_arguments)+1)
 
         chain.add_gadget(stack_cleaner)
-        chain.add_value(stack_cleaner.addr, needs_rebase=True)
         stack_arguments += [self._get_fill_val()]*(stack_cleaner.stack_change//arch_bytes - len(stack_arguments)-1)
         for arg in stack_arguments:
             chain.add_value(arg, needs_rebase=False)
@@ -250,15 +248,13 @@ class ChainBuilder:
         # next, try to invoke execve(path, ptr, ptr), where ptr points is either NULL or nullptr
         if 0 not in self.badbytes:
             ptr = 0
-            rebase_regs = arg_regs[:1]
         else:
             nullptr = self._get_ptr_to_null()
             ptr = nullptr
-            rebase_regs = arg_regs[:3]
 
         try:
             return self.do_syscall(self._execve_syscall, [path_addr, ptr, ptr],
-                                 use_partial_controllers=False, needs_return=False, rebase_regs=rebase_regs)
+                                 use_partial_controllers=False, needs_return=False)
         except RopException:
             pass
 
@@ -266,7 +262,7 @@ class ChainBuilder:
         l.warning("Trying to use partial controllers for syscall")
         try:
             return self.do_syscall(self._execve_syscall, [path_addr, 0, 0],
-                                     use_partial_controllers=True, needs_return=False, rebase_regs=rebase_regs)
+                                     use_partial_controllers=True, needs_return=False)
         except RopException:
             pass
 

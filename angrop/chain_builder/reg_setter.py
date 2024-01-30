@@ -51,8 +51,7 @@ class RegSetter:
                 return False
         return True
 
-    def run(self, modifiable_memory_range=None, use_partial_controllers=False, rebase_regs=None, **registers):
-        # TODO: nuke or support rebase_regs
+    def run(self, modifiable_memory_range=None, use_partial_controllers=False,  **registers):
         if len(registers) == 0:
             return RopChain(self.project, None, badbytes=self._badbytes)
 
@@ -60,9 +59,6 @@ class RegSetter:
         unknown_regs = set(registers.keys()) - self._reg_set
         if unknown_regs:
             raise RopException("unknown registers: %s" % unknown_regs)
-
-        if rebase_regs is None:
-            rebase_regs = set()
 
         # load from cache
         #reg_tuple = tuple(sorted(registers.keys()))
@@ -86,7 +82,7 @@ class RegSetter:
             stack_change = sum(x.stack_change for x in gadgets)
             try:
                 chain = self._build_reg_setting_chain(gadgets, modifiable_memory_range,
-                                                     registers, stack_change, rebase_regs)
+                                                     registers, stack_change)
                 chain._concretize_chain_values()
                 if self.verify(chain, registers):
                     #self._chain_cache[reg_tuple].append(gadgets)
@@ -249,7 +245,7 @@ class RegSetter:
 
     ################# Salls's Code Space ###################
     @rop_utils.timeout(2)
-    def _build_reg_setting_chain(self, gadgets, modifiable_memory_range, register_dict, stack_change, rebase_regs):
+    def _build_reg_setting_chain(self, gadgets, modifiable_memory_range, register_dict, stack_change):
         """
         This function figures out the actual values needed in the chain
         for a particular set of gadgets and register values
@@ -301,14 +297,6 @@ class RegSetter:
         for r, v in register_dict.items():
             test_symbolic_state.add_constraints(state.registers.load(r) == v)
 
-        # to handle register values that should depend on the binary base address
-        if len(rebase_regs) > 0:
-            for r, v in register_dict.items():
-                if r in rebase_regs:
-                    rebase_state.add_constraints(state.registers.load(r) == (v + 0x41414141))
-                else:
-                    rebase_state.add_constraints(state.registers.load(r) == v)
-
         # constrain the "filler" values
         if self._roparg_filler is not None:
             for i in range(stack_change // bytes_per_pop):
@@ -322,41 +310,24 @@ class RegSetter:
                     rebase_state.add_constraints(sym_word == self._roparg_filler)
 
         # create the ropchain
-        res = RopChain(self.project, self, state=test_symbolic_state.copy(),
+        chain = RopChain(self.project, self, state=test_symbolic_state.copy(),
                        badbytes=self._badbytes)
-        for g in gadgets:
-            res.add_gadget(g)
 
         # iterate through the stack values that need to be in the chain
-        gadget_addrs = [g.addr for g in gadgets]
         for i in range(stack_change // bytes_per_pop):
             sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
                                                        endness=self.project.arch.memory_endness)
 
             val = test_symbolic_state.solver.eval(sym_word)
-
-            if len(rebase_regs) > 0:
-                val2 = rebase_state.solver.eval(rebase_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
-                                                                        endness=self.project.arch.memory_endness))
-                if (val2 - val) & (2**self.project.arch.bits - 1) == 0x41414141:
-                    res.add_value(val, needs_rebase=True)
-                elif val == val2 and len(gadget_addrs) > 0 and val == gadget_addrs[0]:
-                    res.add_value(val, needs_rebase=True)
-                    gadget_addrs = gadget_addrs[1:]
-                elif val == val2:
-                    res.add_value(sym_word, needs_rebase=False)
-                else:
-                    raise RopException("Rebase Failed")
+            if len(gadgets) > 0 and val == gadgets[0].addr:
+                chain.add_gadget(gadgets[0])
+                gadgets = gadgets[1:]
             else:
-                if len(gadget_addrs) > 0 and val == gadget_addrs[0]:
-                    res.add_value(val, needs_rebase=True)
-                    gadget_addrs = gadget_addrs[1:]
-                else:
-                    res.add_value(sym_word, needs_rebase=False)
+                chain.add_value(sym_word, needs_rebase=False)
 
-        if len(gadget_addrs) > 0:
+        if len(gadgets) > 0:
             raise RopException("Didnt find all gadget addresses, something must've broke")
-        return res
+        return chain
 
     @staticmethod
     def _tuple_to_gadgets(data, reg_tuple):

@@ -13,6 +13,7 @@ class RopChain:
         rebase=False will force everything to use the addresses in angr
         """
         self._p = project
+        self._pie = self._p.loader.main_object.pic
         self._rop = rop
 
         self._gadgets = []
@@ -38,16 +39,23 @@ class RopChain:
 
     def add_value(self, value, needs_rebase=False):
         if type(value) is not ROPValue:
-            print(value)
             value = ROPValue(value)
             value.set_project(self._p)
             value.rebase_analysis()
-            print("after rebase analysis:", value._value)
+        else:
+            value.set_project(self._p)
         self._values.append(value)
         self.payload_len += self._p.arch.bytes
 
     def add_gadget(self, gadget):
         self._gadgets.append(gadget)
+
+        value = gadget.addr
+        if self._pie:
+            value -= self._p.loader.main_object.mapped_base
+        value = ROPValue(value, project=self._p)
+        value.set_rebase(True)
+        self.add_value(value)
 
     def add_constraint(self, cons):
         """
@@ -74,14 +82,12 @@ class RopChain:
 
         concrete_vals = []
         for value in self._values:
-            print(value._value)
             if not value.symbolic:
                 concrete_vals.append((value.concreted, value.rebase))
                 continue
 
             # if it is symbolic, make sure it does not have badbytes in it
             ast = value.ast
-            print(ast)
             constraints = []
             # for each byte, it should not be equal to any bad bytes
             # TODO: we should do the badbyte verification when adding values

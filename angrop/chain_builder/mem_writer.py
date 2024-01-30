@@ -373,7 +373,6 @@ class MemWriter:
         chain.add_gadget(gadget)
 
         bytes_per_pop = self.project.arch.bytes
-        chain.add_value(gadget.addr, needs_rebase=True)
         for _ in range(gadget.stack_change // bytes_per_pop - 1):
             chain.add_value(self._get_fill_val(), needs_rebase=False)
         return chain
@@ -447,7 +446,6 @@ class MemWriter:
         chain.add_gadget(gadget)
 
         bytes_per_pop = self.project.arch.bytes
-        chain.add_value(gadget.addr, needs_rebase=True)
         for _ in range(gadget.stack_change // bytes_per_pop - 1):
             chain.add_value(self._get_fill_val(), needs_rebase=False)
         return chain
