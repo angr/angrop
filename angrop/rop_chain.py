@@ -2,8 +2,6 @@ from . import rop_utils
 from .errors import RopException
 from .value import ROPValue
 
-from cle.address_translator import AT
-
 class RopChain:
     """
     This class holds rop chains returned by the rop chain building methods such as rop.set_regs()
@@ -156,15 +154,14 @@ class RopChain:
 
             instruction_code = ""
             if print_instructions:
-                if needs_rebase:
-                    #dealing with pie code
-                    value_in_gadget = AT.from_lva(value, self._p.loader.main_object).to_mva()
-                else:
-                    value_in_gadget = value
+                value_in_gadget = value
                 if value_in_gadget in gadget_dict:
-                    asmstring = rop_utils.gadget_to_asmstring(self._p,gadget_dict[value_in_gadget])
+                    asmstring = rop_utils.gadget_to_asmstring(self._p, gadget_dict[value_in_gadget])
                     if asmstring != "":
                         instruction_code = "\t# " + asmstring
+
+            if self._pie:
+                value -= self._p.loader.main_object.mapped_base
 
             if needs_rebase:
                 payload += "chain += " + pack_rebase % value + instruction_code
