@@ -23,7 +23,7 @@ class ChainBuilder:
     This class provides functions to generate common ropchains based on existing gadgets.
     """
 
-    def __init__(self, project, gadgets, duplicates, reg_list, base_pointer, badbytes, roparg_filler, rebase=True):
+    def __init__(self, project, gadgets, duplicates, reg_list, base_pointer, badbytes, roparg_filler):
         """
         Initializes the chain builder.
 
@@ -43,7 +43,6 @@ class ChainBuilder:
         self._base_pointer = base_pointer
         self.badbytes = badbytes
         self._roparg_filler = roparg_filler
-        self._rebase = rebase
 
         self._syscall_instruction = None
         if self.project.arch.linux_name == "x86_64":
@@ -67,9 +66,9 @@ class ChainBuilder:
         self._filtered_reg_gadgets = None
 
         self._reg_setter = RegSetter(project, gadgets, reg_list=reg_list, badbytes=badbytes,
-                                     rebase=self._rebase, filler=self._roparg_filler)
+                                     filler=self._roparg_filler)
         self._mem_writer = MemWriter(project, self._reg_setter, base_pointer, gadgets, badbytes=badbytes,
-                                     rebase=self._rebase, filler=self._roparg_filler)
+                                     filler=self._roparg_filler)
 
     def _contain_badbyte(self, ptr):
         """
@@ -148,7 +147,7 @@ class ChainBuilder:
         # invoke the function
         chain.add_gadget(func_gadget)
         for _ in range(func_gadget.stack_change//arch_bytes-1):
-            chain.add_value(self._get_fill_val(), needs_rebase=False)
+            chain.add_value(self._get_fill_val())
 
         # we are done here if there is no stack arguments
         if not stack_arguments:
@@ -184,7 +183,7 @@ class ChainBuilder:
         chain.add_gadget(stack_cleaner)
         stack_arguments += [self._get_fill_val()]*(stack_cleaner.stack_change//arch_bytes - len(stack_arguments)-1)
         for arg in stack_arguments:
-            chain.add_value(arg, needs_rebase=False)
+            chain.add_value(arg)
 
         return chain
 

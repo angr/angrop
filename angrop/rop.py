@@ -53,7 +53,7 @@ class ROP(Analysis):
     """
 
     def __init__(self, only_check_near_rets=True, max_block_size=None, max_sym_mem_access=None,
-                 fast_mode=None, rebase=True, is_thumb=False, kernel_mode=False):
+                 fast_mode=None, rebase=None, is_thumb=False, kernel_mode=False):
         """
         Initializes the rop gadget finder
         :param only_check_near_rets: If true we skip blocks that are not near rets
@@ -61,8 +61,6 @@ class ROP(Analysis):
                                gadgets so we limit the size we consider
         :param fast_mode: if set to True sets options to run fast, if set to False sets options to find more gadgets
                           if set to None makes a decision based on the size of the binary
-        :param rebase:    if set to True, angrop will try to rebase the gadgets with its best effort
-                          if set to False, angrop will use the memory mapping in angr in the ropchain
         :param is_thumb:  execute ROP chain in thumb mode. Only makes difference on ARM architecture.
                           angrop does not switch mode within a rop chain
         :return:
@@ -72,7 +70,6 @@ class ROP(Analysis):
         self.arch = get_arch(self.project, kernel_mode=kernel_mode)
         self.kernel_mode = kernel_mode
         self._only_check_near_rets = only_check_near_rets
-        self._rebase = rebase
 
         # override parameters
         if max_block_size:
@@ -102,6 +99,9 @@ class ROP(Analysis):
 
         # chain builder
         self._chain_builder = None
+
+        if rebase is not None:
+            l.warning("rebase is deprecated in angrop!")
 
         # silence annoying loggers
         logging.getLogger('angr.engines.vex.ccall').setLevel(logging.CRITICAL)
@@ -283,7 +283,7 @@ class ROP(Analysis):
             l.warning("check your badbytes and make sure find_gadgets() or load_gadgets() was called.")
         self._chain_builder = chain_builder.ChainBuilder(self.project, self.gadgets, self._duplicates,
                                                          self.arch.reg_list, self.arch.base_pointer, self.badbytes,
-                                                         self.roparg_filler, rebase=self._rebase)
+                                                         self.roparg_filler)
         return self._chain_builder
 
     def _block_has_ip_relative(self, addr, bl):

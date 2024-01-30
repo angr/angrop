@@ -19,11 +19,10 @@ class RegSetter:
     """
     TODO: get rid of Salls's code
     """
-    def __init__(self, project, gadgets, reg_list=None, badbytes=None, rebase=False, filler=None):
+    def __init__(self, project, gadgets, reg_list=None, badbytes=None, filler=None):
         self.project = project
         self._reg_set = set(reg_list)
         self._badbytes = badbytes
-        self._rebase = rebase
 
         self._reg_setting_gadgets = self._filter_gadgets(gadgets)
         self._roparg_filler = filler
@@ -355,7 +354,7 @@ class RegSetter:
                         continue
                     var = var_dict[var_name]
                     break
-                chain.add_value(var, needs_rebase=False)
+                chain.add_value(var)
 
         if len(gadgets) > 0:
             raise RopException("Didnt find all gadget addresses, something must've broke")

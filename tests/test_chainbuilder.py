@@ -109,6 +109,20 @@ def test_ropvalue():
     chain = rop.write_to_mem(value, b"/bin/sh\x00")
     assert sum(not x._rebase for x in chain._values) == 2 # 2 values
 
+#def test_reg_move():
+#    cache_path = os.path.join(CACHE_DIR, "bronze_ropchain")
+#    proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "bronze_ropchain"), auto_load_libs=False)
+#    rop = proj.analyses.ROP()
+#
+#    if os.path.exists(cache_path):
+#        rop.load_gadgets(cache_path)
+#    else:
+#        rop.find_gadgets()
+#        rop.save_gadgets(cache_path)
+#
+#    chain = rop.set_regs(eax="ecx")
+#    import IPython; IPython.embed()
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

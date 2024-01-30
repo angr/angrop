@@ -9,7 +9,7 @@ CACHE_DIR = os.path.join(BIN_DIR, 'tests_data', 'angrop_gadgets_cache')
 def get_rop(path):
     cache_path = os.path.join(CACHE_DIR, os.path.basename(path))
     proj = angr.Project(path, auto_load_libs=False)
-    rop = proj.analyses.ROP(rebase=False)
+    rop = proj.analyses.ROP()
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:

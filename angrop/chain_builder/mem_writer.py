@@ -17,13 +17,12 @@ class MemWriter:
     using various techniques
     TODO: add a testcase for add_mem
     """
-    def __init__(self, project, reg_setter, base_pointer, gadgets, badbytes=None, rebase=False, filler=None):
+    def __init__(self, project, reg_setter, base_pointer, gadgets, badbytes=None, filler=None):
         self.project = project
         self.badbytes = badbytes
 
         self._reg_setter = reg_setter
         self._base_pointer = base_pointer
-        self._rebase = rebase
         self._mem_write_gadgets = self._get_all_mem_write_gadgets(gadgets)
         self._mem_change_gadgets = self._get_all_mem_change_gadgets(gadgets)
         self._test_symbolic_state = rop_utils.make_symbolic_state(self.project, self._reg_setter._reg_set)
@@ -399,7 +398,7 @@ class MemWriter:
 
         bytes_per_pop = self.project.arch.bytes
         for _ in range(gadget.stack_change // bytes_per_pop - 1):
-            chain.add_value(self._get_fill_val(), needs_rebase=False)
+            chain.add_value(self._get_fill_val())
 
         # verify the write actually works
         state = chain.exec()
@@ -478,7 +477,7 @@ class MemWriter:
 
         bytes_per_pop = self.project.arch.bytes
         for _ in range(gadget.stack_change // bytes_per_pop - 1):
-            chain.add_value(self._get_fill_val(), needs_rebase=False)
+            chain.add_value(self._get_fill_val())
         return chain
 
     def _get_fill_val(self):
