@@ -23,14 +23,15 @@ class RopValue:
         if not pie: self._rebase = False
 
     def __add__(self, other):
+        cp = self.copy()
         if type(other) is int:
-            self._value += other
+            cp._value += other
         elif isinstance(other, RopValue):
-            self._value += other._value
-            self._rebase |= other._rebase
+            cp._value += other._value
+            cp._rebase |= other._rebase
         else:
             raise ValueError(f"Can't add {other} to RopValue!")
-        return self
+        return cp
 
     def determined(self, chain):
         res = chain._blank_state.solver.eval_upto(self._value, 2)
@@ -105,3 +106,11 @@ class RopValue:
 
     def __repr__(self):
         return f"RopValue({self.data}, {self._rebase})"
+
+    def copy(self):
+        cp = RopValue(self._value, self._project)
+        cp._value = self._value
+        cp._project = self._project
+        cp._rebase = self._rebase
+        cp._code_base = self._code_base
+        return cp
