@@ -5,6 +5,7 @@ import angr
 import claripy
 
 from .errors import RegNotFoundException, RopException
+from .rop_value import RopValue
 
 
 def gadget_to_asmstring(project, gadget):
@@ -197,6 +198,11 @@ def make_reg_symbolic(state, reg):
     state.registers.store(reg,
     state.solver.BVS("sreg_" + reg + "-", state.arch.bits))
 
+def cast_rop_value(val, project):
+    if not isinstance(val, RopValue):
+        val = RopValue(val, project)
+        val.rebase_analysis()
+    return val
 
 def step_to_unconstrained_successor(project, state, max_steps=2, allow_simprocedures=False):
     """

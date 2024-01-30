@@ -180,6 +180,7 @@ def test_rop_arm():
     # test memwrite chain
     chain = rop.write_to_mem(0x41414141, b"ABCDEFGH")
     result_state = execute_chain(b, chain)
+    import IPython; IPython.embed()
     assert result_state.solver.eval(result_state.memory.load(0x41414141, 8), cast_to=bytes) == b"ABCDEFGH"
 
 def test_roptest_x86_64():

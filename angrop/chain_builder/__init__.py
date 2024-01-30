@@ -12,8 +12,8 @@ from .mem_writer import MemWriter
 from .. import rop_utils
 from .. import common
 from ..errors import RopException
-from ..rop_chain import RopChain
 from ..rop_gadget import RopGadget
+from ..rop_value import RopValue
 
 l = logging.getLogger("angrop.chain_builder")
 
@@ -75,6 +75,11 @@ class ChainBuilder:
         """
         check if a pointer contains any bad byte
         """
+        if isinstance(ptr, RopValue):
+            if ptr.symbolic:
+                return False
+            else:
+                ptr = ptr.concreted
         raw_bytes = struct.pack(self.project.arch.struct_fmt(), ptr)
         if any(x in raw_bytes for x in self.badbytes):
             return True
@@ -236,9 +241,12 @@ class ChainBuilder:
         Example:
         chain = rop.add_to_mem(0x8048f124, 0x41414141)
         """
+        addr = rop_utils.cast_rop_value(addr, self.project)
+        value = rop_utils.cast_rop_value(value, self.project)
         return self._mem_writer.add_to_mem(addr, value, data_size=data_size)
 
     def write_to_mem(self, addr, data, fill_byte=b"\xff"):
+        addr = rop_utils.cast_rop_value(addr, self.project)
         return self._mem_writer.write_to_mem(addr, data, fill_byte=fill_byte)
 
     def _try_invoke_execve(self, path_addr):

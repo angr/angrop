@@ -1,6 +1,6 @@
 from . import rop_utils
 from .errors import RopException
-from .value import ROPValue
+from .rop_value import RopValue
 
 class RopChain:
     """
@@ -36,12 +36,9 @@ class RopChain:
         return result
 
     def add_value(self, value, needs_rebase=False):
-        if type(value) is not ROPValue:
-            value = ROPValue(value)
-            value.set_project(self._p)
-            value.rebase_analysis()
-        else:
-            value.set_project(self._p)
+        if type(value) is not RopValue:
+            value = RopValue(value, self._p)
+            value.rebase_analysis(chain=self)
         self._values.append(value)
         self.payload_len += self._p.arch.bytes
 
@@ -51,8 +48,9 @@ class RopChain:
         value = gadget.addr
         if self._pie:
             value -= self._p.loader.main_object.mapped_base
-        value = ROPValue(value, project=self._p)
-        value.set_rebase(True)
+        value = RopValue(value, self._p)
+        if self._pie:
+            value._rebase = True
         self.add_value(value)
 
     def add_constraint(self, cons):
@@ -69,7 +67,6 @@ class RopChain:
         :param constraints: constraints to use when concretizing values
         :return: a list of tuples of type (int, needs_rebase)
         """
-
         solver_state = self._blank_state.copy()
         if constraints is not None:
             if isinstance(constraints, (list, tuple)):
@@ -160,10 +157,8 @@ class RopChain:
                     if asmstring != "":
                         instruction_code = "\t# " + asmstring
 
-            if self._pie:
-                value -= self._p.loader.main_object.mapped_base
-
             if needs_rebase:
+                value -= self._p.loader.main_object.mapped_base
                 payload += "chain += " + pack_rebase % value + instruction_code
             else:
                 payload += "chain += " + pack % value + instruction_code

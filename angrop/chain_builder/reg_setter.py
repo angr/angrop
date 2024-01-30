@@ -4,12 +4,14 @@ import logging
 from collections import defaultdict
 from functools import cmp_to_key
 
+import claripy
 from angr.errors import SimUnsatError
 
 
 from .. import rop_utils
 from ..rop_chain import RopChain
 from ..errors import RopException
+from ..rop_value import RopValue
 
 l = logging.getLogger("angrop.chain_builder.reg_setter")
 
@@ -32,6 +34,11 @@ class RegSetter:
         """
         check if a pointer contains any bad byte
         """
+        if isinstance(ptr, RopValue):
+            if ptr.symbolic:
+                return False
+            else:
+                ptr = ptr.concreted
         raw_bytes = struct.pack(self.project.arch.struct_fmt(), ptr)
         if any(x in raw_bytes for x in self._badbytes):
             return True
@@ -46,7 +53,7 @@ class RegSetter:
         for reg, val in registers.items():
             chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in chain._gadgets])
             bv = getattr(state.regs, reg)
-            if bv.symbolic or state.solver.eval(bv != val):
+            if bv.symbolic or state.solver.eval(bv != val.data):
                 l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
                 return False
         return True
@@ -60,9 +67,10 @@ class RegSetter:
         if unknown_regs:
             raise RopException("unknown registers: %s" % unknown_regs)
 
-        # load from cache
-        #reg_tuple = tuple(sorted(registers.keys()))
-        #chains = self._chain_cache[reg_tuple]
+        # cast values to RopValue
+        for x in registers:
+            registers[x] = rop_utils.cast_rop_value(registers[x], self.project)
+
         chains = []
 
         gadgets = self._find_relevant_gadgets(**registers)
@@ -294,8 +302,13 @@ class RegSetter:
 
         # constrain the final registers
         rebase_state = test_symbolic_state.copy()
+        var_dict = {}
         for r, v in register_dict.items():
-            test_symbolic_state.add_constraints(state.registers.load(r) == v)
+            var = claripy.BVS(r, self.project.arch.bits)
+            var_name = var._encoded_name.decode()
+            var_dict[var_name] = v
+            test_symbolic_state.add_constraints(state.registers.load(r) == var)
+            test_symbolic_state.add_constraints(var == v.data)
 
         # constrain the "filler" values
         if self._roparg_filler is not None:
@@ -323,7 +336,19 @@ class RegSetter:
                 chain.add_gadget(gadgets[0])
                 gadgets = gadgets[1:]
             else:
-                chain.add_value(sym_word, needs_rebase=False)
+                # propagate the initial RopValue provided by users to preserve info like rebase
+                var = sym_word
+                for c in test_symbolic_state.solver.constraints:
+                    if len(c.variables) != 2: # it is always xx == yy
+                        continue
+                    if not sym_word.variables.intersection(c.variables):
+                        continue
+                    var_name = set(c.variables - sym_word.variables).pop()
+                    if var_name not in var_dict:
+                        continue
+                    var = var_dict[var_name]
+                    break
+                chain.add_value(var, needs_rebase=False)
 
         if len(gadgets) > 0:
             raise RopException("Didnt find all gadget addresses, something must've broke")
