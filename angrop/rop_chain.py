@@ -124,8 +124,8 @@ class RopChain:
 
         test_state = self._blank_state.copy()
 
-        for value, _ in reversed(self._values):
-            test_state.stack_push(value)
+        for value in reversed(self._values):
+            test_state.stack_push(value.data)
 
         sp = test_state.regs.sp
         return test_state.memory.load(sp, self.payload_len)

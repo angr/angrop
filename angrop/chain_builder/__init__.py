@@ -242,9 +242,6 @@ class ChainBuilder:
         return self._mem_writer.write_to_mem(addr, data, fill_byte=fill_byte)
 
     def _try_invoke_execve(self, path_addr):
-        cc = angr.SYSCALL_CC[self.project.arch.name]["default"](self.project.arch)
-        arg_regs = cc.ARG_REGS
-
         # next, try to invoke execve(path, ptr, ptr), where ptr points is either NULL or nullptr
         if 0 not in self.badbytes:
             ptr = 0

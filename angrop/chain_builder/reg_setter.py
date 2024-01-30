@@ -174,7 +174,7 @@ class RegSetter:
         for g1 in concrete_setter_gadgets:
             for g2 in delta_gadgets:
                 try:
-                    chain = self._build_reg_setting_chain([g1, g2], False,
+                    chain = self._build_reg_setting_chain([g1, g2], False, # pylint:disable=too-many-function-args
                                                          {reg: val}, g1.stack_change+g2.stack_change, [])
                     state = chain.exec()
                     bv = state.registers.load(reg)
@@ -377,7 +377,7 @@ class RegSetter:
         search_regs = set(registers)
 
         if modifiable_memory_range is not None and len(modifiable_memory_range) != 2:
-            raise Exception("modifiable_memory_range should be a tuple (low, high)")
+            raise RopException("modifiable_memory_range should be a tuple (low, high)")
 
         # find gadgets with sufficient partial control
         partial_controllers = {}
