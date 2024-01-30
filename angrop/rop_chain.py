@@ -1,5 +1,6 @@
 from . import rop_utils
 from .errors import RopException
+from .value import ROPValue
 
 from cle.address_translator import AT
 
@@ -7,7 +8,7 @@ class RopChain:
     """
     This class holds rop chains returned by the rop chain building methods such as rop.set_regs()
     """
-    def __init__(self, project, rop, state=None, rebase=True, badbytes=None):
+    def __init__(self, project, rop, state=None, badbytes=None):
         """
         rebase=False will force everything to use the addresses in angr
         """
@@ -20,9 +21,6 @@ class RopChain:
 
         # blank state used for solving
         self._blank_state = self._p.factory.blank_state() if state is None else state
-        self._pie = self._p.loader.main_object.image_base_delta != 0
-        self._rebase_val = self._blank_state.solver.BVS("base", self._p.arch.bits)
-        self._rebase = rebase
         self.badbytes = badbytes if badbytes else []
 
     def __add__(self, other):
@@ -39,12 +37,13 @@ class RopChain:
         return result
 
     def add_value(self, value, needs_rebase=False):
-        # override rebase if its not pie
-        if not self._rebase or not self._pie:
-            needs_rebase = False
-        if needs_rebase:
-            value -= self._p.loader.main_object.mapped_base
-        self._values.append((value, needs_rebase))
+        if type(value) is not ROPValue:
+            print(value)
+            value = ROPValue(value)
+            value.set_project(self._p)
+            value.rebase_analysis()
+            print("after rebase analysis:", value._value)
+        self._values.append(value)
         self.payload_len += self._p.arch.bytes
 
     def add_gadget(self, gadget):
@@ -59,13 +58,12 @@ class RopChain:
     @rop_utils.timeout(3)
     def _concretize_chain_values(self, constraints=None):
         """
-        we all the flexibilty of chains to have symbolic values, this helper function
+        with the flexibilty of chains to have symbolic values, this helper function
         makes the chain into a list of concrete ints before printing
         :param constraints: constraints to use when concretizing values
         :return: a list of tuples of type (int, needs_rebase)
         """
 
-        code_base = self._p.loader.main_object.mapped_base if self._pie else 0
         solver_state = self._blank_state.copy()
         if constraints is not None:
             if isinstance(constraints, (list, tuple)):
@@ -75,25 +73,26 @@ class RopChain:
                 solver_state.add_constraints(constraints)
 
         concrete_vals = []
-        for val, needs_rebase in self._values:
-            # if it is int, easy
-            if isinstance(val, int):
-                concrete_vals.append((val, needs_rebase))
+        for value in self._values:
+            print(value._value)
+            if not value.symbolic:
+                concrete_vals.append((value.concreted, value.rebase))
                 continue
 
-            if needs_rebase:
-                val += code_base
-
             # if it is symbolic, make sure it does not have badbytes in it
+            ast = value.ast
+            print(ast)
             constraints = []
             # for each byte, it should not be equal to any bad bytes
-            for idx in range(val.length//8):
-                b = val.get_byte(idx)
+            # TODO: we should do the badbyte verification when adding values
+            # not when concretizing them
+            for idx in range(ast.length//8):
+                b = ast.get_byte(idx)
                 constraints += [ b != c for c in self.badbytes]
             # apply the constraints
             for expr in constraints:
                 solver_state.solver.add(expr)
-            concrete_vals.append((solver_state.solver.eval(val), needs_rebase))
+            concrete_vals.append((solver_state.solver.eval(ast), value.rebase))
 
         return concrete_vals
 
@@ -175,18 +174,13 @@ class RopChain:
         """
         symbolically execute the ROP chain and return the final state
         """
-        code_base = self._p.loader.main_object.mapped_base if self._pie else 0
         state = self._blank_state.copy()
         state.solver.reload_solver([]) # remove constraints
-        state.regs.pc = self._values[0][0]
-        if self._values[0][1]: # if need rebase
-            state.regs.pc += code_base
+        state.regs.pc = self._values[0].concreted
         concrete_vals = self._concretize_chain_values()
         # the assumps that the first value in the chain is a code address
         # it sounds like a reasonable assumption to me. But I can be wrong.
-        for value, need_rebase in reversed(concrete_vals[1:]):
-            if need_rebase:
-                value += code_base
+        for value, _ in reversed(concrete_vals[1:]):
             state.stack_push(value)
         if max_steps is None:
             max_steps = len(self._gadgets)*2
@@ -195,14 +189,11 @@ class RopChain:
 
     def copy(self):
         cp = RopChain(self._p, self._rop)
-        cp._values = list(self._values)
         cp._gadgets = list(self._gadgets)
+        cp._values = list(self._values)
         cp.payload_len = self.payload_len
         cp._blank_state = self._blank_state.copy()
-        cp._pie = self._pie
-        cp._rebase_val = self._rebase_val
-        cp._rebase = self._rebase
-        cp.badbytes = self.badbytes
+        cp.badbytes = self.badbytes.copy()
 
         return cp
 

@@ -140,7 +140,7 @@ class MemWriter:
         bytes_per_write = mem_write.data_size//8 if not use_partial_controllers else 1
 
         # build the chain
-        chain = RopChain(self.project, self, rebase=self._rebase, badbytes=self.badbytes)
+        chain = RopChain(self.project, self, badbytes=self.badbytes)
         for i in range(0, len(string_data), bytes_per_write):
             to_write = string_data[i: i+bytes_per_write]
             # pad if needed
@@ -222,7 +222,7 @@ class MemWriter:
             final_value = 0
         else:
             raise RopException("This shouldn't happen")
-        chain = RopChain(self.project, self, rebase=self._rebase, badbytes=self.badbytes)
+        chain = RopChain(self.project, self, badbytes=self.badbytes)
         for i in range(0, len(data), bytes_per_write):
             chain = chain + self._change_mem_with_gadget(best_gadget, addr + i,
                                                          mem_change.data_size, final_val=final_value)
@@ -263,7 +263,7 @@ class MemWriter:
 
         # do the write
         offset = 0
-        chain = RopChain(self.project, self, rebase=self._rebase, badbytes=self.badbytes)
+        chain = RopChain(self.project, self,  badbytes=self.badbytes)
         for elem in elems:
             ptr = addr + offset
             if self._contain_badbyte(ptr):
@@ -371,16 +371,6 @@ class MemWriter:
 
         chain = self._set_regs(use_partial_controllers=use_partial_controllers, **reg_vals)
         chain.add_gadget(gadget)
-
-        # if the binary enables PIE, we need to mark the address as a pointer (need_rebase)
-        if chain._pie:
-            state = chain._blank_state
-            for idx, _ in enumerate(chain._values):
-                val, _ = chain._values[idx]
-                # because of how SMT works, we need to do double negation
-                if not state.solver.eval(val != addr):
-                    offset = val - self.project.loader.main_object.mapped_base
-                    chain._values[idx] = (offset, True)
 
         bytes_per_pop = self.project.arch.bytes
         chain.add_value(gadget.addr, needs_rebase=True)

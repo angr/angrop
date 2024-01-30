@@ -54,7 +54,7 @@ class RegSetter:
     def run(self, modifiable_memory_range=None, use_partial_controllers=False, rebase_regs=None, **registers):
         # TODO: nuke or support rebase_regs
         if len(registers) == 0:
-            return RopChain(self.project, None, rebase=self._rebase, badbytes=self._badbytes)
+            return RopChain(self.project, None, badbytes=self._badbytes)
 
         # sanity check
         unknown_regs = set(registers.keys()) - self._reg_set
@@ -323,7 +323,7 @@ class RegSetter:
 
         # create the ropchain
         res = RopChain(self.project, self, state=test_symbolic_state.copy(),
-                       rebase=self._rebase, badbytes=self._badbytes)
+                       badbytes=self._badbytes)
         for g in gadgets:
             res.add_gadget(g)
 
