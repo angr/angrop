@@ -20,7 +20,8 @@ class RopValue:
             self._value = claripy.BVV(self._value, self._project.arch.bits)
         pie = self._project.loader.main_object.pic
         self._code_base = self._project.loader.main_object.mapped_base if pie else 0
-        if not pie: self._rebase = False
+        if not pie:
+            self._rebase = False
 
     def __add__(self, other):
         cp = self.copy()
@@ -84,7 +85,7 @@ class RopValue:
     def ast(self):
         assert self._value.symbolic
         return self.data
-    
+
     @property
     def concreted(self):
         assert not self._value.symbolic
