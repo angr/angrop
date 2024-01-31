@@ -8,6 +8,7 @@ import angr
 import claripy
 
 from .reg_setter import RegSetter
+from .reg_mover import RegMover
 from .mem_writer import MemWriter
 from .. import rop_utils
 from .. import common
@@ -67,6 +68,8 @@ class ChainBuilder:
 
         self._reg_setter = RegSetter(project, gadgets, reg_list=reg_list, badbytes=badbytes,
                                      filler=self._roparg_filler)
+        self._reg_mover = RegMover(project, gadgets, reg_list=reg_list, badbytes=badbytes,
+                                     filler=self._roparg_filler)
         self._mem_writer = MemWriter(project, self._reg_setter, base_pointer, gadgets, badbytes=badbytes,
                                      filler=self._roparg_filler)
 
@@ -119,6 +122,16 @@ class ChainBuilder:
         """
 
         return self._reg_setter.run(*args, **kwargs)
+
+    def move_regs(self, **registers):
+        """
+        :param registers: dict of registers, key is the destination register, value is the source register
+        :return: a chain which will set the registers to the requested registers
+
+        example:
+        chain = rop.move_regs(rax='rcx', rcx='rbx')
+        """
+        return self._reg_mover.run(**registers)
 
     def _func_call(self, func_gadget, cc, args, extra_regs=None, modifiable_memory_range=None, ignore_registers=None,
                    use_partial_controllers=False, needs_return=True):

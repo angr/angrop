@@ -83,6 +83,8 @@ class RopRegMove:
             return False
         return self.from_reg == other.from_reg and self.to_reg == other.to_reg and self.bits == other.bits
 
+    def __repr__(self):
+        return f"RegMove: {self.to_reg} <= {self.from_reg} ({self.bits} bits)"
 
 class RopGadget:
     """
@@ -112,9 +114,9 @@ class RopGadget:
     def num_mem_access(self):
         return len(self.mem_reads) + len(self.mem_writes) + len(self.mem_changes)
 
-    def reg_same_effect(self, other):
+    def reg_set_same_effect(self, other):
         """
-        having the same register effect compared to the other gadget
+        having the same register setting effect compared to the other gadget
         """
         if self.popped_regs != other.popped_regs:
             return False
@@ -126,14 +128,33 @@ class RopGadget:
             return False
         return True
 
-    def reg_better_than(self, other):
+    def reg_set_better_than(self, other):
         """
-        whether this gadget is strictly better than the other in terms of register effect
+        whether this gadget is strictly better than the other in terms of register setting effect
         """
-        if not self.reg_same_effect(other):
+        if not self.reg_set_same_effect(other):
             return False
         if len(self.changed_regs) >= len(other.changed_regs) and \
                 self.stack_change <= other.stack_change and \
+                self.num_mem_access <= other.num_mem_access and \
+                self.block_length <= other.block_length:
+            return True
+        return False
+
+    def reg_move_same_effect(self, other):
+        """
+        having the same register moving effect compared to the other gadget
+        """
+        if set(self.reg_moves) != set(other.reg_moves):
+            return False
+        if self.reg_dependencies != other.reg_dependencies:
+            return False
+        return True
+
+    def reg_move_better_than(self, other):
+        if not self.reg_move_same_effect(other):
+            return False
+        if self.stack_change <= other.stack_change and \
                 self.num_mem_access <= other.num_mem_access and \
                 self.block_length <= other.block_length:
             return True
