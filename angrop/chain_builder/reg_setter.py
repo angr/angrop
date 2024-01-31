@@ -47,12 +47,12 @@ class RegSetter(Builder):
                 return False
         return True
 
-    def run(self, modifiable_memory_range=None, use_partial_controllers=False,  preserve_regs=set(), **registers):
+    def run(self, modifiable_memory_range=None, use_partial_controllers=False,  preserve_regs=None, **registers):
         if len(registers) == 0:
             return RopChain(self.project, None, badbytes=self._badbytes)
 
         # sanity check
-        preserve_regs = set(preserve_regs)
+        preserve_regs = set(preserve_regs) if preserve_regs else set()
         unknown_regs = set(registers.keys()).union(preserve_regs) - self._reg_set
         if unknown_regs:
             raise RopException("unknown registers: %s" % unknown_regs)

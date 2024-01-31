@@ -4,7 +4,6 @@ from angr.errors import SimUnsatError
 
 from .builder import Builder
 from .. import rop_utils
-from ..rop_value import RopValue
 from ..rop_chain import RopChain
 from ..errors import RopException
 from ..rop_gadget import RopRegMove
@@ -68,12 +67,12 @@ class RegMover(Builder):
             res += self._recursively_find_chains(gadgets, *todo)
         return res
 
-    def run(self, preserve_regs=set(), **registers):
+    def run(self, preserve_regs=None, **registers):
         if len(registers) == 0:
             return RopChain(self.project, None, badbytes=self._badbytes)
 
         # sanity check
-        preserve_regs = set(preserve_regs)
+        preserve_regs = set(preserve_regs) if preserve_regs else set()
         unknown_regs = set(registers.keys()).union(preserve_regs) - self._reg_set
         if unknown_regs:
             raise RopException("unknown registers: %s" % unknown_regs)
@@ -107,8 +106,8 @@ class RegMover(Builder):
 
         raise RopException("Couldn't move registers :(")
 
-
-    def _filter_gadgets(self, gadgets):
+    @staticmethod
+    def _filter_gadgets(gadgets):
         """
         filter gadgets having the same effect
         """

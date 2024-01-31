@@ -13,9 +13,8 @@ class RopValue:
         if type(value) is str:
             if value not in project.arch.default_symbolic_registers:
                 raise ValueError(f"unknown register: {value}!")
-            else:
-                self.reg_name = value
-                value = claripy.BVS(value, project.arch.bits)
+            self.reg_name = value
+            value = claripy.BVS(value, project.arch.bits)
 
         self._value = value # when rebase is needed, value here holds the offset
         self._project = project
