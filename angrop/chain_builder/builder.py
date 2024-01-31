@@ -14,7 +14,7 @@ class Builder:
     """
     def __init__(self, project, reg_list=None, badbytes=None, filler=None):
         self.project = project
-        self._reg_set = set(reg_list)
+        self._reg_set = set(reg_list) if reg_list else None
         self._badbytes = badbytes
         self._roparg_filler = filler
 

@@ -10,6 +10,7 @@ import claripy
 from .reg_setter import RegSetter
 from .reg_mover import RegMover
 from .mem_writer import MemWriter
+from .mem_changer import MemChanger
 from .. import rop_utils
 from .. import common
 from ..errors import RopException
@@ -71,6 +72,8 @@ class ChainBuilder:
         self._reg_mover = RegMover(project, gadgets, reg_list=reg_list, badbytes=badbytes,
                                      filler=self._roparg_filler)
         self._mem_writer = MemWriter(project, self._reg_setter, base_pointer, gadgets, badbytes=badbytes,
+                                     filler=self._roparg_filler)
+        self._mem_changer = MemChanger(project, self._reg_setter, base_pointer, gadgets, badbytes=badbytes,
                                      filler=self._roparg_filler)
 
     def _contain_badbyte(self, ptr):
@@ -255,7 +258,7 @@ class ChainBuilder:
         """
         addr = rop_utils.cast_rop_value(addr, self.project)
         value = rop_utils.cast_rop_value(value, self.project)
-        return self._mem_writer.add_to_mem(addr, value, data_size=data_size)
+        return self._mem_changer.add_to_mem(addr, value, data_size=data_size)
 
     def write_to_mem(self, addr, data, fill_byte=b"\xff"):
         addr = rop_utils.cast_rop_value(addr, self.project)
