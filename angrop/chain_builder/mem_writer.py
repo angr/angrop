@@ -104,16 +104,20 @@ class MemWriter(Builder):
         gadget_code = str(self.project.factory.block(gadget.addr).capstone)
         l.debug("building mem_write chain with gadget:\n%s", gadget_code)
         mem_write = gadget.mem_writes[0]
-        bytes_per_write = mem_write.data_size//8 if not use_partial_controllers else 1
 
         # build the chain
+        # there should be only two cases. Either it is a string, or it is a single badbyte
         chain = RopChain(self.project, self, badbytes=self.badbytes)
-        for i in range(0, len(string_data), bytes_per_write):
-            to_write = string_data[i: i+bytes_per_write]
-            # pad if needed
-            if len(to_write) < bytes_per_write:
-                to_write += fill_byte * (bytes_per_write-len(to_write))
-            chain += self._write_to_mem_with_gadget(gadget, addr + i, to_write, use_partial_controllers)
+        if len(string_data) == 1 and ord(string_data) in self.badbytes:
+            chain += self._write_to_mem_with_gadget(gadget, addr, string_data, use_partial_controllers)
+        else:
+            bytes_per_write = mem_write.data_size//8 if not use_partial_controllers else 1
+            for i in range(0, len(string_data), bytes_per_write):
+                to_write = string_data[i: i+bytes_per_write]
+                # pad if needed
+                if len(to_write) < bytes_per_write and fill_byte:
+                    to_write += fill_byte * (bytes_per_write-len(to_write))
+                chain += self._write_to_mem_with_gadget(gadget, addr + i, to_write, use_partial_controllers)
 
         return chain
 
@@ -168,7 +172,7 @@ class MemWriter(Builder):
             ptr = addr + offset
             if self._word_contain_badbyte(ptr):
                 raise RopException(f"{ptr:#x} contains bad byte!")
-            if elem not in self.badbytes:
+            if len(elem) != 1 or ord(elem) not in self.badbytes:
                 chain += self._write_to_mem(ptr, elem, fill_byte=fill_byte)
                 offset += len(elem)
             else:
