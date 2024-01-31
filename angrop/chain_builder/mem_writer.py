@@ -16,13 +16,11 @@ class MemWriter(Builder):
     part of angrop's chainbuilder engine, responsible for writing data into memory
     using various techniques
     """
-    def __init__(self, project, reg_setter, base_pointer, gadgets, badbytes=None, filler=None):
-        super().__init__(project, badbytes=badbytes, filler=filler)
+    def __init__(self, project, arch, gadgets, reg_setter, badbytes=None, filler=None):
+        super().__init__(project, arch, badbytes=badbytes, filler=filler)
 
         self._reg_setter = reg_setter
-        self._base_pointer = base_pointer
         self._mem_write_gadgets = self._get_all_mem_write_gadgets(gadgets)
-        self._test_symbolic_state = rop_utils.make_symbolic_state(self.project, self._reg_setter._reg_set)
 
     def _set_regs(self, *args, **kwargs):
         return self._reg_setter.run(*args, **kwargs)
@@ -50,7 +48,7 @@ class MemWriter(Builder):
 
         while possible_gadgets:
             # get the data from trying to set all the registers
-            registers = dict((reg, 0x41) for reg in self._reg_setter._reg_set)
+            registers = dict((reg, 0x41) for reg in self.arch.reg_set)
             l.debug("getting reg data for mem writes")
             _, _, reg_data = self._reg_setter._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
             l.debug("trying mem_write gadgets")
@@ -117,7 +115,7 @@ class MemWriter(Builder):
             # pad if needed
             if len(to_write) < bytes_per_write:
                 to_write += fill_byte * (bytes_per_write-len(to_write))
-            chain = chain + self._write_to_mem_with_gadget(gadget, addr + i, to_write, use_partial_controllers)
+            chain += self._write_to_mem_with_gadget(gadget, addr + i, to_write, use_partial_controllers)
 
         return chain
 
@@ -182,7 +180,7 @@ class MemWriter(Builder):
 
     def _write_to_mem_with_gadget(self, gadget, addr_val, data, use_partial_controllers=False):
         """
-        addr is a RopValue
+        addr_val is a RopValue
         """
         addr_bvs = claripy.BVS("addr", self.project.arch.bits)
 
@@ -193,18 +191,9 @@ class MemWriter(Builder):
         if use_partial_controllers and len(data) < self.project.arch.bytes:
             data = data.ljust(self.project.arch.bytes, b"\x00")
 
-        arch_bytes = self.project.arch.bytes
-        arch_endness = self.project.arch.memory_endness
-
         # constrain the successor to be at the gadget
         # emulate 'pop pc'
-        test_state = self._test_symbolic_state.copy()
-        rop_utils.make_reg_symbolic(test_state, self._base_pointer)
-
-        test_state.regs.ip = gadget.addr
-        test_state.add_constraints(
-            test_state.memory.load(test_state.regs.sp, arch_bytes, endness=arch_endness) == gadget.addr)
-        test_state.regs.sp += arch_bytes
+        test_state = self.make_sim_state(gadget.addr)
 
         # step the gadget
         pre_gadget_state = test_state

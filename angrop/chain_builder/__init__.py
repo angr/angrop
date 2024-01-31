@@ -25,24 +25,19 @@ class ChainBuilder:
     This class provides functions to generate common ropchains based on existing gadgets.
     """
 
-    def __init__(self, project, gadgets, duplicates, reg_list, base_pointer, badbytes, roparg_filler):
+    def __init__(self, project, gadgets, arch, badbytes, roparg_filler):
         """
         Initializes the chain builder.
 
-        :param project: Angr project
+        :param project: angr project
         :param gadgets: a list of RopGadget gadgets
-        :param duplicates:
-        :param reg_list: A list of multipurpose registers
-        :param base_pointer: The name ("offset") for base pointer register
+        :param arch: a RopArch object
         :param badbytes: A list with badbytes, which we should avoid
         :param roparg_filler: An integer used when popping superfluous registers
         """
         self.project = project
         self._gadgets = gadgets
-        # TODO get duplicates differently?
-        self._duplicates = duplicates
-        self._reg_list = reg_list
-        self._base_pointer = base_pointer
+        self.arch = arch
         self.badbytes = badbytes
         self._roparg_filler = roparg_filler
 
@@ -61,19 +56,16 @@ class ChainBuilder:
             else:
                 raise RopException("unknown unix platform")
 
-        # test state
-        self._test_symbolic_state = rop_utils.make_symbolic_state(self.project, self._reg_list)
-
         # filtered gadget cache
         self._filtered_reg_gadgets = None
 
-        self._reg_setter = RegSetter(project, gadgets, reg_list=reg_list, badbytes=badbytes,
+        self._reg_setter = RegSetter(project, arch, gadgets, badbytes=badbytes,
                                      filler=self._roparg_filler)
-        self._reg_mover = RegMover(project, gadgets, reg_list=reg_list, badbytes=badbytes,
+        self._reg_mover = RegMover(project, arch, gadgets, badbytes=badbytes,
                                      filler=self._roparg_filler)
-        self._mem_writer = MemWriter(project, self._reg_setter, base_pointer, gadgets, badbytes=badbytes,
+        self._mem_writer = MemWriter(project, arch, gadgets, self._reg_setter, badbytes=badbytes,
                                      filler=self._roparg_filler)
-        self._mem_changer = MemChanger(project, self._reg_setter, base_pointer, gadgets, badbytes=badbytes,
+        self._mem_changer = MemChanger(project, arch, gadgets, self._reg_setter, badbytes=badbytes,
                                      filler=self._roparg_filler)
 
     def _contain_badbyte(self, ptr):

@@ -15,8 +15,8 @@ class RegSetter(Builder):
     """
     TODO: get rid of Salls's code
     """
-    def __init__(self, project, gadgets, reg_list=None, badbytes=None, filler=None):
-        super().__init__(project, reg_list=reg_list, badbytes=badbytes, filler=filler)
+    def __init__(self, project, arch, gadgets, badbytes=None, filler=None):
+        super().__init__(project, arch, badbytes=badbytes, filler=filler)
         self._reg_setting_gadgets = self._filter_gadgets(gadgets)
         self.hard_chain_cache = {}
 
@@ -55,7 +55,7 @@ class RegSetter(Builder):
 
         # sanity check
         preserve_regs = set(preserve_regs) if preserve_regs else set()
-        unknown_regs = set(registers.keys()).union(preserve_regs) - self._reg_set
+        unknown_regs = set(registers.keys()).union(preserve_regs) - self.arch.reg_set
         if unknown_regs:
             raise RopException("unknown registers: %s" % unknown_regs)
 
@@ -467,7 +467,7 @@ class RegSetter(Builder):
             return False
 
         # set the register
-        state = rop_utils.make_symbolic_state(self.project, self._reg_set)
+        state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set)
         state.registers.store(reg, 0)
         state.regs.ip = gadget.addr
         # store A's past the end of the stack

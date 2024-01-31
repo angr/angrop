@@ -15,13 +15,11 @@ class MemChanger(Builder):
     """
     part of angrop's chainbuilder engine, responsible for adding values to a memory location
     """
-    def __init__(self, project, reg_setter, base_pointer, gadgets, badbytes=None, filler=None):
-        super().__init__(project, badbytes=badbytes, filler=filler)
+    def __init__(self, project, arch, gadgets, reg_setter, badbytes=None, filler=None):
+        super().__init__(project, arch, badbytes=badbytes, filler=filler)
 
         self._reg_setter = reg_setter
-        self._base_pointer = base_pointer
         self._mem_change_gadgets = self._get_all_mem_change_gadgets(gadgets)
-        self._test_symbolic_state = rop_utils.make_symbolic_state(self.project, self._reg_setter._reg_set)
 
     def _set_regs(self, *args, **kwargs):
         return self._reg_setter.run(*args, **kwargs)
@@ -87,23 +85,16 @@ class MemChanger(Builder):
         if (final_val is not None and difference is not None) or (final_val is None and difference is None):
             raise RopException("must specify difference or final value and not both")
 
-        arch_bytes = self.project.arch.bytes
         arch_endness = self.project.arch.memory_endness
 
         # constrain the successor to be at the gadget
         # emulate 'pop pc'
-        test_state = self._test_symbolic_state.copy()
-        rop_utils.make_reg_symbolic(test_state, self._base_pointer)
+        test_state = self.make_sim_state(gadget.addr)
 
         if difference is not None:
             test_state.memory.store(addr, test_state.solver.BVV(~difference, data_size)) # pylint:disable=invalid-unary-operand-type
         if final_val is not None:
             test_state.memory.store(addr, test_state.solver.BVV(~final_val, data_size)) # pylint:disable=invalid-unary-operand-type
-
-        test_state.regs.ip = gadget.addr
-        test_state.add_constraints(
-            test_state.memory.load(test_state.regs.sp, arch_bytes, endness=arch_endness) == gadget.addr)
-        test_state.regs.sp += arch_bytes
 
         # step the gadget
         pre_gadget_state = test_state

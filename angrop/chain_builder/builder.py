@@ -12,11 +12,28 @@ class Builder:
     """
     a generic class to bootstrap more complicated chain building functionality
     """
-    def __init__(self, project, reg_list=None, badbytes=None, filler=None):
+    def __init__(self, project, arch, badbytes=None, filler=None):
         self.project = project
-        self._reg_set = set(reg_list) if reg_list else None
+        self.arch = arch
         self._badbytes = badbytes
         self._roparg_filler = filler
+
+    def make_sim_state(self, pc):
+        """
+        make a symbolic state with all general purpose register + base pointer symbolized
+        and emulate a `pop pc` situation
+        """
+        arch_bytes = self.project.arch.bytes
+        arch_endness = self.project.arch.memory_endness
+
+        state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set)
+        rop_utils.make_reg_symbolic(state, self.arch.base_pointer)
+
+        state.regs.ip = pc
+        state.add_constraints(state.memory.load(state.regs.sp, arch_bytes, endness=arch_endness) == pc)
+        state.regs.sp += arch_bytes
+        state.solver._solver.timeout = 5000
+        return state
 
     @staticmethod
     def _sort_chains(chains):
@@ -61,22 +78,15 @@ class Builder:
         FIXME: trim this disgusting function
         """
 
-        # create a symbolic state
-        test_symbolic_state = rop_utils.make_symbolic_state(self.project, self._reg_set)
+        # emulate a 'pop pc' of the first gadget
+        test_symbolic_state = self.make_sim_state(gadgets[0].addr)
+
         addrs = [g.addr for g in gadgets]
         addrs.append(test_symbolic_state.solver.BVS("next_addr", self.project.arch.bits))
 
         arch_bytes = self.project.arch.bytes
-        arch_endness = self.project.arch.memory_endness
 
-        # emulate a 'pop pc' of the first gadget
         state = test_symbolic_state
-        state.regs.ip = addrs[0]
-        # the stack pointer must begin pointing to our first gadget
-        state.add_constraints(state.memory.load(state.regs.sp, arch_bytes, endness=arch_endness) == addrs[0])
-        # push the stack pointer down, like a pop would do
-        state.regs.sp += arch_bytes
-        state.solver._solver.timeout = 5000
 
         # step through each gadget
         # for each gadget, constrain memory addresses and add constraints for the successor

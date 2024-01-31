@@ -281,8 +281,8 @@ class ROP(Analysis):
         if len(self._gadgets) == 0:
             l.warning("Could not find gadgets for %s", self.project)
             l.warning("check your badbytes and make sure find_gadgets() or load_gadgets() was called.")
-        self._chain_builder = chain_builder.ChainBuilder(self.project, self.gadgets, self._duplicates,
-                                                         self.arch.reg_list, self.arch.base_pointer, self.badbytes,
+        self._chain_builder = chain_builder.ChainBuilder(self.project, self.gadgets,
+                                                         self.arch, self.badbytes,
                                                          self.roparg_filler)
         return self._chain_builder
 
