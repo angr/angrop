@@ -15,14 +15,12 @@ class MemChanger(Builder):
     """
     part of angrop's chainbuilder engine, responsible for adding values to a memory location
     """
-    def __init__(self, project, arch, gadgets, reg_setter, badbytes=None, filler=None):
-        super().__init__(project, arch, badbytes=badbytes, filler=filler)
-
-        self._reg_setter = reg_setter
-        self._mem_change_gadgets = self._get_all_mem_change_gadgets(gadgets)
+    def __init__(self, chain_builder):
+        super().__init__(chain_builder)
+        self._mem_change_gadgets = self._get_all_mem_change_gadgets(self.chain_builder.gadgets)
 
     def _set_regs(self, *args, **kwargs):
-        return self._reg_setter.run(*args, **kwargs)
+        return self.chain_builder._reg_setter.run(*args, **kwargs)
 
     @staticmethod
     def _get_all_mem_change_gadgets(gadgets):
@@ -50,9 +48,9 @@ class MemChanger(Builder):
                     if x.mem_changes[0].op in ('__add__', '__sub__') and x.mem_changes[0].data_size == data_size}
 
         # get the data from trying to set all the registers
-        registers = dict((reg, 0x41) for reg in self._reg_setter._reg_set)
+        registers = dict((reg, 0x41) for reg in self.chain_builder._reg_setter._reg_set)
         l.debug("getting reg data for mem adds")
-        _, _, reg_data = self._reg_setter._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
+        _, _, reg_data = self.chain_builder._reg_setter._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
         l.debug("trying mem_add gadgets")
 
         best_stack_change = 0xffffffff
@@ -142,9 +140,3 @@ class MemChanger(Builder):
         for _ in range(gadget.stack_change // bytes_per_pop - 1):
             chain.add_value(self._get_fill_val())
         return chain
-
-    def _get_fill_val(self):
-        if self._roparg_filler is not None:
-            return self._roparg_filler
-        else:
-            return claripy.BVS("filler", self.project.arch.bits)

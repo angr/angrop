@@ -61,14 +61,14 @@ def test_badbyte():
     assert all(x not in chain.payload_str() for x in [0, 0xa])
 
     # make sure it can write '/bin/sh\x00\n' into memory, notice that '\x00' and '\n' are bad bytes
-    ptr = rop.chain_builder._get_ptr_to_writable(9+4)
+    ptr = rop.chain_builder._mem_writer._get_ptr_to_writable(9+4)
     chain = rop.write_to_mem(ptr, b'/bin/sh\x00\n')
     state = chain.exec()
     assert state.solver.eval(state.memory.load(ptr, 9), cast_to=bytes)
     assert all(x not in chain.payload_str() for x in [0, 0xa])
 
     # finally, make sure setting multiple registers can work
-    nullptr = rop.chain_builder._get_ptr_to_null()
+    nullptr = rop.chain_builder._mem_writer._get_ptr_to_null()
     chain = rop.set_regs(eax=0xb, ebx=ptr, ecx=nullptr, edx=nullptr)
     state = chain.exec()
     assert not state.regs.eax.symbolic

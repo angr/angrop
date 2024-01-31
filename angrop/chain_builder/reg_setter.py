@@ -15,9 +15,9 @@ class RegSetter(Builder):
     """
     TODO: get rid of Salls's code
     """
-    def __init__(self, project, arch, gadgets, badbytes=None, filler=None):
-        super().__init__(project, arch, badbytes=badbytes, filler=filler)
-        self._reg_setting_gadgets = self._filter_gadgets(gadgets)
+    def __init__(self, chain_builder):
+        super().__init__(chain_builder)
+        self._reg_setting_gadgets = self._filter_gadgets(self.chain_builder.gadgets)
         self.hard_chain_cache = {}
 
     def verify(self, chain, preserve_regs, registers):
@@ -51,7 +51,7 @@ class RegSetter(Builder):
 
     def run(self, modifiable_memory_range=None, use_partial_controllers=False,  preserve_regs=None, **registers):
         if len(registers) == 0:
-            return RopChain(self.project, None, badbytes=self._badbytes)
+            return RopChain(self.project, None, badbytes=self.badbytes)
 
         # sanity check
         preserve_regs = set(preserve_regs) if preserve_regs else set()

@@ -16,14 +16,12 @@ class MemWriter(Builder):
     part of angrop's chainbuilder engine, responsible for writing data into memory
     using various techniques
     """
-    def __init__(self, project, arch, gadgets, reg_setter, badbytes=None, filler=None):
-        super().__init__(project, arch, badbytes=badbytes, filler=filler)
-
-        self._reg_setter = reg_setter
-        self._mem_write_gadgets = self._get_all_mem_write_gadgets(gadgets)
+    def __init__(self, chain_builder):
+        super().__init__(chain_builder)
+        self._mem_write_gadgets = self._get_all_mem_write_gadgets(self.chain_builder.gadgets)
 
     def _set_regs(self, *args, **kwargs):
-        return self._reg_setter.run(*args, **kwargs)
+        return self.chain_builder._reg_setter.run(*args, **kwargs)
 
     @staticmethod
     def _get_all_mem_write_gadgets(gadgets):
@@ -50,7 +48,7 @@ class MemWriter(Builder):
             # get the data from trying to set all the registers
             registers = dict((reg, 0x41) for reg in self.arch.reg_set)
             l.debug("getting reg data for mem writes")
-            _, _, reg_data = self._reg_setter._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
+            _, _, reg_data = self.chain_builder._reg_setter._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
             l.debug("trying mem_write gadgets")
 
             # limit the maximum size of the chain
@@ -77,7 +75,7 @@ class MemWriter(Builder):
                 use_partial_controllers = True
                 l.warning("Trying to use partial controllers for memory write")
                 l.debug("getting reg data for mem writes")
-                _, _, reg_data = self._reg_setter._find_reg_setting_gadgets(max_stack_change=0x50,
+                _, _, reg_data = self.chain_builder._reg_setter._find_reg_setting_gadgets(max_stack_change=0x50,
                                                                 use_partial_controllers=True,
                                                                 **registers)
                 l.debug("trying mem_write gadgets")
@@ -109,7 +107,7 @@ class MemWriter(Builder):
         bytes_per_write = mem_write.data_size//8 if not use_partial_controllers else 1
 
         # build the chain
-        chain = RopChain(self.project, self, badbytes=self._badbytes)
+        chain = RopChain(self.project, self, badbytes=self.badbytes)
         for i in range(0, len(string_data), bytes_per_write):
             to_write = string_data[i: i+bytes_per_write]
             # pad if needed
@@ -145,18 +143,18 @@ class MemWriter(Builder):
             raise RopException("fill_byte is not a one byte string, aborting")
         if not isinstance(data, bytes):
             raise RopException("data is not a byte string, aborting")
-        if ord(fill_byte) in self._badbytes:
+        if ord(fill_byte) in self.badbytes:
             raise RopException("fill_byte is a bad byte!")
 
         # split the string into smaller elements so that we can
         # handle bad bytes
-        if all(x not in self._badbytes for x in data):
+        if all(x not in self.badbytes for x in data):
             elems = [data]
         else:
             elems = []
             e = b''
             for x in data:
-                if x not in self._badbytes:
+                if x not in self.badbytes:
                     e += bytes([x])
                 else:
                     elems.append(e)
@@ -165,12 +163,12 @@ class MemWriter(Builder):
 
         # do the write
         offset = 0
-        chain = RopChain(self.project, self, badbytes=self._badbytes)
+        chain = RopChain(self.project, self, badbytes=self.badbytes)
         for elem in elems:
             ptr = addr + offset
             if self._word_contain_badbyte(ptr):
                 raise RopException(f"{ptr:#x} contains bad byte!")
-            if elem not in self._badbytes:
+            if elem not in self.badbytes:
                 chain += self._write_to_mem(ptr, elem, fill_byte=fill_byte)
                 offset += len(elem)
             else:
@@ -257,9 +255,3 @@ class MemWriter(Builder):
         if not state.solver.eval(sim_data == data):
             raise RopException("memory write fails")
         return chain
-
-    def _get_fill_val(self):
-        if self._roparg_filler is not None:
-            return self._roparg_filler
-        else:
-            return claripy.BVS("filler", self.project.arch.bits)

@@ -234,7 +234,7 @@ class ROP(Analysis):
         badbytes = [x if type(x) == int else ord(x) for x in badbytes]
         self.badbytes = badbytes
         if len(self._gadgets) > 0:
-            self.chain_builder._set_badbytes(self.badbytes)
+            self.chain_builder.set_badbytes(self.badbytes)
 
     def set_roparg_filler(self, roparg_filler):
         """
@@ -250,7 +250,7 @@ class ROP(Analysis):
 
         self.roparg_filler = roparg_filler
         if len(self._gadgets) > 0:
-            self.chain_builder._set_roparg_filler(self.roparg_filler)
+            self.chain_builder.set_roparg_filler(self.roparg_filler)
 
     def get_badbytes(self):
         """
