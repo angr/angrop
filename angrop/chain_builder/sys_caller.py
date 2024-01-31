@@ -123,7 +123,7 @@ class SysCaller(FuncCaller):
         # FIXME: does any arch/OS take syscall arguments on stack? (windows? sysenter?)
         smallest = None
         stack_arguments = args[len(cc.ARG_REGS):]
-        for gadget in [x for x in self._gadgets if x.starts_with_syscall]:
+        for gadget in [x for x in self.chain_builder.gadgets if x.starts_with_syscall]:
             # adjust stack change for ret
             stack_change = gadget.stack_change - self.project.arch.bytes
             required_space = len(stack_arguments) * self.project.arch.bytes
