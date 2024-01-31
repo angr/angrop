@@ -138,73 +138,7 @@ class MemWriter(Builder):
                 pass
             gadget, use_partial_controllers  = next(gen, (None, None))
 
-        try:
-            return self._write_to_mem_v2(addr, string_data)
-        except (RopException, angr.errors.SimEngineError, angr.errors.SimUnsatError):
-            pass
-
         raise RopException("Fail to write data to memory :(")
-
-    def _write_to_mem_v2(self, addr, data):
-        """
-        :param addr: address to store the string
-        :param data: string to store
-        :return: a rop chain
-        """
-        # assume we need intersection of addr_dependencies and data_dependencies to be 0
-        # TODO could allow mem_reads as long as we control the address?
-        # TODO implement better, allow adding a single byte repeatedly
-
-        possible_gadgets = [x for x in self._mem_change_gadgets if x.mem_changes[0].op in ("__or__", "__and__")]
-
-        # get the data from trying to set all the registers
-        registers = dict((reg, 0x41) for reg in self._reg_setter._reg_set)
-        l.debug("getting reg data for mem adds")
-        _, _, reg_data = self._reg_setter._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
-        l.debug("trying mem_add gadgets")
-
-        best_stack_change = 0xffffffff
-        best_gadget = None
-        for t, vals in reg_data.items():
-            if vals[1] >= best_stack_change:
-                continue
-            for g in possible_gadgets:
-                mem_change = g.mem_changes[0]
-                if (set(mem_change.addr_dependencies) | set(mem_change.data_dependencies)).issubset(set(t)):
-                    stack_change = g.stack_change + vals[1]
-                    bytes_per_write = mem_change.data_size//8
-                    stack_change *= bytes_per_write
-                    if stack_change < best_stack_change:
-                        best_gadget = g
-                        best_stack_change = stack_change
-
-        if best_gadget is None:
-            raise RopException("Couldnt set registers for any memory add gadget")
-
-        l.debug("Now building the mem const chain")
-        mem_change = best_gadget.mem_changes[0]
-        bytes_per_write = mem_change.data_size//8
-
-        # build the chain
-        if mem_change.op == "__or__":
-            final_value = -1
-        elif mem_change.op == "__and__":
-            final_value = 0
-        else:
-            raise RopException("This shouldn't happen")
-        chain = RopChain(self.project, self, badbytes=self._badbytes)
-        for i in range(0, len(data), bytes_per_write):
-            chain = chain + self._change_mem_with_gadget(best_gadget, addr + i,
-                                                         mem_change.data_size, final_val=final_value)
-        # FIXME for other adds
-        for i in range(0, len(data), 4):
-            to_write = data[i: i+4]
-            # pad if needed
-            if len(to_write) < 4:
-                to_write += b"\xff" * (4-len(to_write))
-            to_add = struct.unpack("<I", to_write)[0] - final_value
-            chain += self.add_to_mem(addr+i, to_add, 32)
-        return chain
 
     def write_to_mem(self, addr, data, fill_byte=b"\xff"):
 
