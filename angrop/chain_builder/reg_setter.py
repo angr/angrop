@@ -15,9 +15,9 @@ class RegSetter(Builder):
     """
     TODO: get rid of Salls's code
     """
-    def __init__(self, project, gadgets, reg_list=None, badbytes=None, filler=None):
-        super().__init__(project, reg_list=reg_list, badbytes=badbytes, filler=filler)
-        self._reg_setting_gadgets = self._filter_gadgets(gadgets)
+    def __init__(self, chain_builder):
+        super().__init__(chain_builder)
+        self._reg_setting_gadgets = self._filter_gadgets(self.chain_builder.gadgets)
         self.hard_chain_cache = {}
 
     def verify(self, chain, preserve_regs, registers):
@@ -51,11 +51,11 @@ class RegSetter(Builder):
 
     def run(self, modifiable_memory_range=None, use_partial_controllers=False,  preserve_regs=None, **registers):
         if len(registers) == 0:
-            return RopChain(self.project, None, badbytes=self._badbytes)
+            return RopChain(self.project, None, badbytes=self.badbytes)
 
         # sanity check
         preserve_regs = set(preserve_regs) if preserve_regs else set()
-        unknown_regs = set(registers.keys()).union(preserve_regs) - self._reg_set
+        unknown_regs = set(registers.keys()).union(preserve_regs) - self.arch.reg_set
         if unknown_regs:
             raise RopException("unknown registers: %s" % unknown_regs)
 
@@ -95,10 +95,13 @@ class RegSetter(Builder):
     def _find_relevant_gadgets(self, **registers):
         """
         find gadgets that may pop/load/change requested registers
+        exclude gadgets that do symbolic memory access
         """
         gadgets = set({})
         for g in self._reg_setting_gadgets:
             if g.makes_syscall:
+                continue
+            if g.has_symbolic_access():
                 continue
             for reg in registers:
                 if reg in g.popped_regs:
@@ -467,7 +470,7 @@ class RegSetter(Builder):
             return False
 
         # set the register
-        state = rop_utils.make_symbolic_state(self.project, self._reg_set)
+        state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set)
         state.registers.store(reg, 0)
         state.regs.ip = gadget.addr
         # store A's past the end of the stack

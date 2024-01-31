@@ -177,7 +177,7 @@ def make_initial_state(project, stack_gsize):
     return initial_state
 
 
-def make_symbolic_state(project, reg_list, stack_gsize=80):
+def make_symbolic_state(project, reg_set, stack_gsize=80):
     """
     converts an input state into a state with symbolic registers
     :return: the symbolic state
@@ -185,7 +185,7 @@ def make_symbolic_state(project, reg_list, stack_gsize=80):
     input_state = make_initial_state(project, stack_gsize)
     symbolic_state = input_state.copy()
     # overwrite all registers
-    for reg in reg_list:
+    for reg in reg_set:
         symbolic_state.registers.store(reg, symbolic_state.solver.BVS("sreg_" + reg + "-", project.arch.bits))
     # restore sp
     symbolic_state.regs.sp = input_state.regs.sp

@@ -9,23 +9,23 @@ class ROPArch:
         self.max_sym_mem_access = 4
         self.alignment = project.arch.instruction_alignment
         self.max_block_size = self.alignment * 8
-        self.reg_list = self._get_reg_list()
+        self.reg_set = self._get_reg_set()
 
         a = project.arch
         self.base_pointer = a.register_names[a.bp_offset]
 
-    def _get_reg_list(self):
+    def _get_reg_set(self):
         """
-        get the list of names of general-purpose registers
+        get the set of names of general-purpose registers
         """
         arch = self.project.arch
         _sp_reg = arch.register_names[arch.sp_offset]
         _ip_reg = arch.register_names[arch.ip_offset]
 
         # get list of general-purpose registers
-        self._reg_list = arch.default_symbolic_registers
+        default_regs = arch.default_symbolic_registers
         # prune the register list of the instruction pointer and the stack pointer
-        return [r for r in self._reg_list if r not in (_sp_reg, _ip_reg)]
+        return {r for r in default_regs if r not in (_sp_reg, _ip_reg)}
 
     def block_make_sense(self, block):
         return True

@@ -12,11 +12,35 @@ class Builder:
     """
     a generic class to bootstrap more complicated chain building functionality
     """
-    def __init__(self, project, reg_list=None, badbytes=None, filler=None):
-        self.project = project
-        self._reg_set = set(reg_list)
-        self._badbytes = badbytes
-        self._roparg_filler = filler
+    def __init__(self, chain_builder):
+        self.chain_builder = chain_builder
+        self.project = chain_builder.project
+        self.arch = chain_builder.arch
+
+    @property
+    def badbytes(self):
+        return self.chain_builder.badbytes
+
+    @property
+    def roparg_filler(self):
+        return self.chain_builder.roparg_filler
+
+    def make_sim_state(self, pc):
+        """
+        make a symbolic state with all general purpose register + base pointer symbolized
+        and emulate a `pop pc` situation
+        """
+        arch_bytes = self.project.arch.bytes
+        arch_endness = self.project.arch.memory_endness
+
+        state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set)
+        rop_utils.make_reg_symbolic(state, self.arch.base_pointer)
+
+        state.regs.ip = pc
+        state.add_constraints(state.memory.load(state.regs.sp, arch_bytes, endness=arch_endness) == pc)
+        state.regs.sp += arch_bytes
+        state.solver._solver.timeout = 5000
+        return state
 
     @staticmethod
     def _sort_chains(chains):
@@ -47,9 +71,34 @@ class Builder:
             else:
                 ptr = ptr.concreted
         raw_bytes = struct.pack(self.project.arch.struct_fmt(), ptr)
-        if any(x in raw_bytes for x in self._badbytes):
+        if any(x in raw_bytes for x in self.badbytes):
             return True
         return False
+
+    def _get_ptr_to_writable(self, size):
+        """
+        get a pointer to writable region that can fit `size` bytes
+        it shouldn't contain bad byte
+        """
+        # get all writable segments
+        segs = [ s for s in self.project.loader.main_object.segments if s.is_writable ]
+        # enumerate through all address to find a good address
+        for seg in segs:
+            for addr in range(seg.min_addr, seg.max_addr):
+                if all(not self._word_contain_badbyte(x) for x in range(addr, addr+size, self.project.arch.bytes)):
+                    return addr
+        return None
+
+    def _get_ptr_to_null(self):
+        # get all non-writable segments
+        segs = [ s for s in self.project.loader.main_object.segments if not s.is_writable ]
+        # enumerate through all address to find a good address
+        for seg in segs:
+            null = b'\x00'*self.project.arch.bytes
+            for addr in self.project.loader.memory.find(null, search_min=seg.min_addr, search_max=seg.max_addr):
+                if not self._word_contain_badbyte(addr):
+                    return addr
+        return None
 
     @rop_utils.timeout(2)
     def _build_reg_setting_chain(self, gadgets, modifiable_memory_range, register_dict, stack_change):
@@ -61,22 +110,15 @@ class Builder:
         FIXME: trim this disgusting function
         """
 
-        # create a symbolic state
-        test_symbolic_state = rop_utils.make_symbolic_state(self.project, self._reg_set)
+        # emulate a 'pop pc' of the first gadget
+        test_symbolic_state = self.make_sim_state(gadgets[0].addr)
+
         addrs = [g.addr for g in gadgets]
         addrs.append(test_symbolic_state.solver.BVS("next_addr", self.project.arch.bits))
 
         arch_bytes = self.project.arch.bytes
-        arch_endness = self.project.arch.memory_endness
 
-        # emulate a 'pop pc' of the first gadget
         state = test_symbolic_state
-        state.regs.ip = addrs[0]
-        # the stack pointer must begin pointing to our first gadget
-        state.add_constraints(state.memory.load(state.regs.sp, arch_bytes, endness=arch_endness) == addrs[0])
-        # push the stack pointer down, like a pop would do
-        state.regs.sp += arch_bytes
-        state.solver._solver.timeout = 5000
 
         # step through each gadget
         # for each gadget, constrain memory addresses and add constraints for the successor
@@ -110,20 +152,20 @@ class Builder:
             test_symbolic_state.add_constraints(var == v.data)
 
         # constrain the "filler" values
-        if self._roparg_filler is not None:
+        if self.roparg_filler is not None:
             for i in range(stack_change // bytes_per_pop):
                 sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
                                                            endness=self.project.arch.memory_endness)
                 # check if we can constrain val to be the roparg_filler
-                if test_symbolic_state.solver.satisfiable((sym_word == self._roparg_filler,)) and \
-                        rebase_state.solver.satisfiable((sym_word == self._roparg_filler,)):
+                if test_symbolic_state.solver.satisfiable((sym_word == self.roparg_filler,)) and \
+                        rebase_state.solver.satisfiable((sym_word == self.roparg_filler,)):
                     # constrain the val to be the roparg_filler
-                    test_symbolic_state.add_constraints(sym_word == self._roparg_filler)
-                    rebase_state.add_constraints(sym_word == self._roparg_filler)
+                    test_symbolic_state.add_constraints(sym_word == self.roparg_filler)
+                    rebase_state.add_constraints(sym_word == self.roparg_filler)
 
         # create the ropchain
         chain = RopChain(self.project, self, state=test_symbolic_state.copy(),
-                       badbytes=self._badbytes)
+                       badbytes=self.badbytes)
 
         # iterate through the stack values that need to be in the chain
         for i in range(stack_change // bytes_per_pop):
@@ -152,3 +194,9 @@ class Builder:
         if len(gadgets) > 0:
             raise RopException("Didnt find all gadget addresses, something must've broke")
         return chain
+
+    def _get_fill_val(self):
+        if self.roparg_filler is not None:
+            return self.roparg_filler
+        else:
+            return claripy.BVS("filler", self.project.arch.bits)

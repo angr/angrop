@@ -234,7 +234,7 @@ class ROP(Analysis):
         badbytes = [x if type(x) == int else ord(x) for x in badbytes]
         self.badbytes = badbytes
         if len(self._gadgets) > 0:
-            self.chain_builder._set_badbytes(self.badbytes)
+            self.chain_builder.set_badbytes(self.badbytes)
 
     def set_roparg_filler(self, roparg_filler):
         """
@@ -250,7 +250,7 @@ class ROP(Analysis):
 
         self.roparg_filler = roparg_filler
         if len(self._gadgets) > 0:
-            self.chain_builder._set_roparg_filler(self.roparg_filler)
+            self.chain_builder.set_roparg_filler(self.roparg_filler)
 
     def get_badbytes(self):
         """
@@ -281,8 +281,8 @@ class ROP(Analysis):
         if len(self._gadgets) == 0:
             l.warning("Could not find gadgets for %s", self.project)
             l.warning("check your badbytes and make sure find_gadgets() or load_gadgets() was called.")
-        self._chain_builder = chain_builder.ChainBuilder(self.project, self.gadgets, self._duplicates,
-                                                         self.arch.reg_list, self.arch.base_pointer, self.badbytes,
+        self._chain_builder = chain_builder.ChainBuilder(self.project, self.gadgets,
+                                                         self.arch, self.badbytes,
                                                          self.roparg_filler)
         return self._chain_builder
 

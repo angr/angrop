@@ -29,7 +29,7 @@ class GadgetAnalyzer:
         # initial state that others are based off, all analysis should copy the state first and work on
         # the copied state
         self._stack_bsize = stack_gsize * self.project.arch.bytes # number of controllable bytes on stack
-        self._state = rop_utils.make_symbolic_state(self.project, self.arch.reg_list, stack_gsize=stack_gsize)
+        self._state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set, stack_gsize=stack_gsize)
         self._concrete_sp = self._state.solver.eval(self._state.regs.sp)
 
         # architecture stuff. we assume every architecture has registers that implements stackframes,
@@ -77,7 +77,7 @@ class GadgetAnalyzer:
         except RopException as e:
             l.debug("... %s", e)
             return None
-        except (claripy.errors.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error):
+        except (claripy.errors.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError):
             return None
         except (claripy.ClaripyFrontendError, angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e:
             l.warning("... claripy error: %s", e)
@@ -300,7 +300,7 @@ class GadgetAnalyzer:
         """
         collect registers that are concretized after symbolically executing the block (for example, xor rax, rax)
         """
-        for reg in self.arch.reg_list:
+        for reg in self.arch.reg_set:
             val = state.registers.load(reg)
             if val.symbolic:
                 continue
@@ -749,10 +749,10 @@ class GadgetAnalyzer:
             if a.type == "reg" and a.action == "read":
                 try:
                     reg_name = rop_utils.get_reg_name(self.project.arch, a.offset)
-                    if reg_name in self.arch.reg_list:
+                    if reg_name in self.arch.reg_set:
                         all_reg_reads.add(reg_name)
                     elif reg_name != self._sp_name:
-                        l.info("reg read from register not in reg_list: %s", reg_name)
+                        l.info("reg read from register not in reg_set: %s", reg_name)
                 except RegNotFoundException as e:
                     l.debug(e)
         return all_reg_reads
@@ -768,10 +768,10 @@ class GadgetAnalyzer:
             if a.type == "reg" and a.action == "write":
                 try:
                     reg_name = rop_utils.get_reg_name(self.project.arch, a.offset)
-                    if reg_name in self.arch.reg_list:
+                    if reg_name in self.arch.reg_set:
                         all_reg_writes.add(reg_name)
                     elif reg_name != self._sp_name:
-                        l.info("reg write from register not in reg_list: %s", reg_name)
+                        l.info("reg write from register not in reg_set: %s", reg_name)
                 except RegNotFoundException as e:
                     l.debug(e)
         return all_reg_writes
