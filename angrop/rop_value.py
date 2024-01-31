@@ -6,8 +6,16 @@ class RopValue:
     Automatically handles rebase
     """
     def __init__(self, value, project):
-        if not isinstance(value, (int, claripy.ast.bv.BV)):
+        if not isinstance(value, (int, str, claripy.ast.bv.BV)):
             raise ValueError("bad value type!")
+
+        self.reg_name = None
+        if type(value) is str:
+            if value not in project.arch.default_symbolic_registers:
+                raise ValueError(f"unknown register: {value}!")
+            self.reg_name = value
+            value = claripy.BVS(value, project.arch.bits)
+
         self._value = value # when rebase is needed, value here holds the offset
         self._project = project
         self._rebase = None # rebase needs to be either specified or inferred
@@ -85,6 +93,10 @@ class RopValue:
     def ast(self):
         assert self._value.symbolic
         return self.data
+
+    @property
+    def is_register(self):
+        return self.reg_name is not None
 
     @property
     def concreted(self):

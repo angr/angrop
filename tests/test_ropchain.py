@@ -28,7 +28,7 @@ def test_chain_exec():
     # build a ROP chain using the gadget
     chain = angrop.rop_chain.RopChain(proj, rop.chain_builder)
     chain.add_gadget(gadget)
-    chain.add_value(0x41414141, needs_rebase=False)
+    chain.add_value(0x41414141)
 
     # make sure the execution succeeds
     state = chain.exec()

@@ -8,7 +8,6 @@ class RopChain:
     """
     def __init__(self, project, rop, state=None, badbytes=None):
         """
-        rebase=False will force everything to use the addresses in angr
         """
         self._p = project
         self._pie = self._p.loader.main_object.pic
@@ -35,7 +34,7 @@ class RopChain:
         result.payload_len = self.payload_len + other.payload_len
         return result
 
-    def add_value(self, value, needs_rebase=False):
+    def add_value(self, value):
         if type(value) is not RopValue:
             value = RopValue(value, self._p)
             value.rebase_analysis(chain=self)
@@ -104,8 +103,8 @@ class RopChain:
             base_addr = self._p.loader.main_object.mapped_base
         test_state = self._blank_state.copy()
         concrete_vals = self._concretize_chain_values(constraints)
-        for value, needs_rebase in reversed(concrete_vals):
-            if needs_rebase:
+        for value, rebased in reversed(concrete_vals):
+            if rebased:
                 test_state.stack_push(value - self._p.loader.main_object.mapped_base + base_addr)
             else:
                 test_state.stack_push(value)
@@ -145,7 +144,7 @@ class RopChain:
 
         gadget_dict = {g.addr:g for g in self._gadgets}
         concrete_vals = self._concretize_chain_values(constraints)
-        for value, needs_rebase in concrete_vals:
+        for value, rebased in concrete_vals:
 
             instruction_code = ""
             if print_instructions:
@@ -155,7 +154,7 @@ class RopChain:
                     if asmstring != "":
                         instruction_code = "\t# " + asmstring
 
-            if needs_rebase:
+            if rebased:
                 value -= self._p.loader.main_object.mapped_base
                 payload += "chain += " + pack_rebase % value + instruction_code
             else:

@@ -1,50 +1,26 @@
 import heapq
-import struct
 import logging
 from collections import defaultdict
-from functools import cmp_to_key
 
-import claripy
 from angr.errors import SimUnsatError
 
-
+from .builder import Builder
 from .. import rop_utils
 from ..rop_chain import RopChain
 from ..errors import RopException
-from ..rop_value import RopValue
 
 l = logging.getLogger("angrop.chain_builder.reg_setter")
 
-class RegSetter:
+class RegSetter(Builder):
     """
     TODO: get rid of Salls's code
     """
-    def __init__(self, project, gadgets, reg_list=None, badbytes=None, rebase=False, filler=None):
-        self.project = project
-        self._reg_set = set(reg_list)
-        self._badbytes = badbytes
-        self._rebase = rebase
-
+    def __init__(self, project, gadgets, reg_list=None, badbytes=None, filler=None):
+        super().__init__(project, reg_list=reg_list, badbytes=badbytes, filler=filler)
         self._reg_setting_gadgets = self._filter_gadgets(gadgets)
-        self._roparg_filler = filler
-
         self.hard_chain_cache = {}
 
-    def _contain_badbyte(self, ptr):
-        """
-        check if a pointer contains any bad byte
-        """
-        if isinstance(ptr, RopValue):
-            if ptr.symbolic:
-                return False
-            else:
-                ptr = ptr.concreted
-        raw_bytes = struct.pack(self.project.arch.struct_fmt(), ptr)
-        if any(x in raw_bytes for x in self._badbytes):
-            return True
-        return False
-
-    def verify(self, chain, registers):
+    def verify(self, chain, preserve_regs, registers):
         """
         given a potential chain, verify whether the chain can set the registers correctly by symbolically
         execute the chain
@@ -54,22 +30,32 @@ class RegSetter:
             chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in chain._gadgets])
             bv = getattr(state.regs, reg)
             for act in state.history.actions.hardcopy:
-                if act.type != "mem":
+                if act.type not in ("mem", "reg"):
                     continue
-                if act.addr.ast.variables:
-                    l.exception("memory access outside stackframe\n%s\n", chain_str)
-                    return False
+                if act.type == 'mem':
+                    if act.addr.ast.variables:
+                        l.exception("memory access outside stackframe\n%s\n", chain_str)
+                        return False
+                if act.type == 'reg' and act.action == 'write':
+                    # get the full name of the register
+                    offset = act.offset
+                    offset -= act.offset % self.project.arch.bytes
+                    reg_name = self.project.arch.register_size_names[offset, self.project.arch.bytes]
+                    if reg_name in preserve_regs:
+                        l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
+                        return False
             if bv.symbolic or state.solver.eval(bv != val.data):
                 l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
                 return False
         return True
 
-    def run(self, modifiable_memory_range=None, use_partial_controllers=False,  **registers):
+    def run(self, modifiable_memory_range=None, use_partial_controllers=False,  preserve_regs=None, **registers):
         if len(registers) == 0:
             return RopChain(self.project, None, badbytes=self._badbytes)
 
         # sanity check
-        unknown_regs = set(registers.keys()) - self._reg_set
+        preserve_regs = set(preserve_regs) if preserve_regs else set()
+        unknown_regs = set(registers.keys()).union(preserve_regs) - self._reg_set
         if unknown_regs:
             raise RopException("unknown registers: %s" % unknown_regs)
 
@@ -77,18 +63,18 @@ class RegSetter:
         for x in registers:
             registers[x] = rop_utils.cast_rop_value(registers[x], self.project)
 
-        chains = []
-
         gadgets = self._find_relevant_gadgets(**registers)
+
+        chains = []
 
         # find the chain provided by the graph search algorithm
         best_chain, _, _ = self._find_reg_setting_gadgets(modifiable_memory_range,
-                                                                       use_partial_controllers, **registers)
+                                                          use_partial_controllers, **registers)
         if best_chain:
             chains += [best_chain]
 
         # find chains using BFS based on pops
-        chains += self._find_all_candidate_chains(gadgets, **registers)
+        chains += self._find_all_candidate_chains(gadgets, preserve_regs.copy(), **registers)
 
         for gadgets in chains:
             chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in gadgets])
@@ -98,7 +84,7 @@ class RegSetter:
                 chain = self._build_reg_setting_chain(gadgets, modifiable_memory_range,
                                                      registers, stack_change)
                 chain._concretize_chain_values()
-                if self.verify(chain, registers):
+                if self.verify(chain, preserve_regs, registers):
                     #self._chain_cache[reg_tuple].append(gadgets)
                     return chain
             except (RopException, SimUnsatError):
@@ -126,6 +112,10 @@ class RegSetter:
         return gadgets
 
     def _recursively_find_chains(self, gadgets, chain, preserve_regs, todo_regs, hard_preserve_regs):
+        """
+        preserve_regs: soft preservation, can be overwritten as long as it gets back to control
+        hard_preserve_regs: cannot touch these regs at all
+        """
         if not todo_regs:
             return [chain]
 
@@ -149,25 +139,6 @@ class RegSetter:
         for todo in todo_list:
             res += self._recursively_find_chains(gadgets, *todo)
         return res
-
-    @staticmethod
-    def _sort_chains(chains):
-        def cmp_func(chain1, chain2):
-            stack_change1 = sum(x.stack_change for x in chain1)
-            stack_change2 = sum(x.stack_change for x in chain2)
-            if stack_change1 > stack_change2:
-                return 1
-            elif stack_change1 < stack_change2:
-                return -1
-
-            num_mem_access1 = sum(x.num_mem_access for x in chain1)
-            num_mem_access2 = sum(x.num_mem_access for x in chain2)
-            if num_mem_access1 > num_mem_access2:
-                return 1
-            if num_mem_access1 < num_mem_access2:
-                return -1
-            return 0
-        return sorted(chains, key=cmp_to_key(cmp_func))
 
     @staticmethod
     def _find_concrete_chains(gadgets, registers):
@@ -201,14 +172,14 @@ class RegSetter:
                     pass
         return None
 
-    def _find_all_candidate_chains(self, gadgets, **registers):
+    def _find_all_candidate_chains(self, gadgets, preserve_regs, **registers):
         """
         1. find gadgets that set concrete values to the target values, such as xor eax, eax to set eax to 0
         2. find all pop only chains by BFS search
         TODO: handle moves
         """
         # get the list of regs that cannot be popped (call it hard_regs)
-        hard_regs = [reg for reg, val in registers.items() if self._contain_badbyte(val)]
+        hard_regs = [reg for reg, val in registers.items() if self._word_contain_badbyte(val)]
         if len(hard_regs) > 1:
             l.error("too many registers contain bad bytes! bail out! %s", registers)
             return []
@@ -233,9 +204,10 @@ class RegSetter:
                 return []
             registers.pop(reg)
 
+        preserve_regs.update(hard_regs)
         # use the original pop techniques to set other registers
-        chains = self._recursively_find_chains(gadgets, hard_chain, set(hard_regs),
-                                               set(registers.keys()), set(hard_regs))
+        chains = self._recursively_find_chains(gadgets, hard_chain, preserve_regs,
+                                               set(registers.keys()), preserve_regs)
         return self._sort_chains(chains)
 
     @staticmethod
@@ -248,7 +220,7 @@ class RegSetter:
         while True:
             to_remove = set({})
             for g in gadgets-skip:
-                to_remove.update({x for x in gadgets-{g} if g.reg_better_than(x)})
+                to_remove.update({x for x in gadgets-{g} if g.reg_set_better_than(x)})
                 if to_remove:
                     break
                 skip.add(g)
@@ -256,110 +228,6 @@ class RegSetter:
                 break
             gadgets -= to_remove
         return gadgets
-
-
-    ################# Salls's Code Space ###################
-    @rop_utils.timeout(2)
-    def _build_reg_setting_chain(self, gadgets, modifiable_memory_range, register_dict, stack_change):
-        """
-        This function figures out the actual values needed in the chain
-        for a particular set of gadgets and register values
-        This is done by stepping a symbolic state through each gadget
-        then constraining the final registers to the values that were requested
-        FIXME: trim this disgusting function
-        """
-
-        # create a symbolic state
-        test_symbolic_state = rop_utils.make_symbolic_state(self.project, self._reg_set)
-        addrs = [g.addr for g in gadgets]
-        addrs.append(test_symbolic_state.solver.BVS("next_addr", self.project.arch.bits))
-
-        arch_bytes = self.project.arch.bytes
-        arch_endness = self.project.arch.memory_endness
-
-        # emulate a 'pop pc' of the first gadget
-        state = test_symbolic_state
-        state.regs.ip = addrs[0]
-        # the stack pointer must begin pointing to our first gadget
-        state.add_constraints(state.memory.load(state.regs.sp, arch_bytes, endness=arch_endness) == addrs[0])
-        # push the stack pointer down, like a pop would do
-        state.regs.sp += arch_bytes
-        state.solver._solver.timeout = 5000
-
-        # step through each gadget
-        # for each gadget, constrain memory addresses and add constraints for the successor
-        for addr in addrs[1:]:
-            succ = rop_utils.step_to_unconstrained_successor(self.project, state)
-            state.add_constraints(succ.regs.ip == addr)
-            # constrain reads/writes
-            for a in succ.log.actions:
-                if a.type == "mem" and a.addr.ast.symbolic:
-                    if modifiable_memory_range is None:
-                        raise RopException("Symbolic memory address when there shouldnt have been")
-                    test_symbolic_state.add_constraints(a.addr.ast >= modifiable_memory_range[0])
-                    test_symbolic_state.add_constraints(a.addr.ast < modifiable_memory_range[1])
-            test_symbolic_state.add_constraints(succ.regs.ip == addr)
-            # get to the unconstrained successor
-            state = rop_utils.step_to_unconstrained_successor(self.project, state)
-
-        # re-adjuest the stack pointer
-        sp = test_symbolic_state.regs.sp
-        sp -= arch_bytes
-        bytes_per_pop = arch_bytes
-
-        # constrain the final registers
-        rebase_state = test_symbolic_state.copy()
-        var_dict = {}
-        for r, v in register_dict.items():
-            var = claripy.BVS(r, self.project.arch.bits)
-            var_name = var._encoded_name.decode()
-            var_dict[var_name] = v
-            test_symbolic_state.add_constraints(state.registers.load(r) == var)
-            test_symbolic_state.add_constraints(var == v.data)
-
-        # constrain the "filler" values
-        if self._roparg_filler is not None:
-            for i in range(stack_change // bytes_per_pop):
-                sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
-                                                           endness=self.project.arch.memory_endness)
-                # check if we can constrain val to be the roparg_filler
-                if test_symbolic_state.solver.satisfiable((sym_word == self._roparg_filler,)) and \
-                        rebase_state.solver.satisfiable((sym_word == self._roparg_filler,)):
-                    # constrain the val to be the roparg_filler
-                    test_symbolic_state.add_constraints(sym_word == self._roparg_filler)
-                    rebase_state.add_constraints(sym_word == self._roparg_filler)
-
-        # create the ropchain
-        chain = RopChain(self.project, self, state=test_symbolic_state.copy(),
-                       badbytes=self._badbytes)
-
-        # iterate through the stack values that need to be in the chain
-        for i in range(stack_change // bytes_per_pop):
-            sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
-                                                       endness=self.project.arch.memory_endness)
-
-            val = test_symbolic_state.solver.eval(sym_word)
-            if len(gadgets) > 0 and val == gadgets[0].addr:
-                chain.add_gadget(gadgets[0])
-                gadgets = gadgets[1:]
-            else:
-                # propagate the initial RopValue provided by users to preserve info like rebase
-                var = sym_word
-                for c in test_symbolic_state.solver.constraints:
-                    if len(c.variables) != 2: # it is always xx == yy
-                        continue
-                    if not sym_word.variables.intersection(c.variables):
-                        continue
-                    var_name = set(c.variables - sym_word.variables).pop()
-                    if var_name not in var_dict:
-                        continue
-                    var = var_dict[var_name]
-                    break
-                chain.add_value(var, needs_rebase=False)
-
-        if len(gadgets) > 0:
-            raise RopException("Didnt find all gadget addresses, something must've broke")
-        return chain
 
     @staticmethod
     def _tuple_to_gadgets(data, reg_tuple):
@@ -380,7 +248,6 @@ class RegSetter:
     def _verify_chain(chain, regs):
         """
         make sure the new chain can control the registers
-        # TODO: maybe use symoblic execution to verify it?
         """
         g = chain[-1]
         if g.transit_type == 'jmp_reg':
@@ -582,17 +449,6 @@ class RegSetter:
 
         return end_regs, partial_regs
 
-    def _get_single_ret(self):
-        # start with a ret instruction
-        ret_addr = None
-        for g in self._reg_setting_gadgets:
-            if len(g.changed_regs) == 0 and len(g.mem_writes) == 0 and \
-                    len(g.mem_reads) == 0 and len(g.mem_changes) == 0 and \
-                    g.stack_change == self.project.arch.bytes:
-                ret_addr = g.addr
-                break
-        return ret_addr
-
     def _check_if_sufficient_partial_control(self, gadget, reg, value):
         # doesnt change it
         if reg not in gadget.changed_regs:
@@ -629,3 +485,14 @@ class RegSetter:
                     return False
             return True
         return False
+
+    def _get_single_ret(self):
+        # start with a ret instruction
+        ret_addr = None
+        for g in self._reg_setting_gadgets:
+            if len(g.changed_regs) == 0 and len(g.mem_writes) == 0 and \
+                    len(g.mem_reads) == 0 and len(g.mem_changes) == 0 and \
+                    g.stack_change == self.project.arch.bytes:
+                ret_addr = g.addr
+                break
+        return ret_addr
