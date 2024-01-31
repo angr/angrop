@@ -1,4 +1,3 @@
-import struct
 import logging
 
 import angr
@@ -48,7 +47,8 @@ class MemWriter(Builder):
             # get the data from trying to set all the registers
             registers = dict((reg, 0x41) for reg in self.arch.reg_set)
             l.debug("getting reg data for mem writes")
-            _, _, reg_data = self.chain_builder._reg_setter._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
+            reg_setter = self.chain_builder._reg_setter
+            _, _, reg_data = reg_setter._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
             l.debug("trying mem_write gadgets")
 
             # limit the maximum size of the chain

@@ -77,7 +77,7 @@ class GadgetAnalyzer:
         except RopException as e:
             l.debug("... %s", e)
             return None
-        except (claripy.errors.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error):
+        except (claripy.errors.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError):
             return None
         except (claripy.ClaripyFrontendError, angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e:
             l.warning("... claripy error: %s", e)

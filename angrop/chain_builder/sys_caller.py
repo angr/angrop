@@ -109,7 +109,7 @@ class SysCaller(FuncCaller):
         the call is made
         :param syscall_num: the syscall number to execute
         :param args: the register values to have set at system call time
-        :param ignore_registers: list of registers which shouldn't be set
+        :param preserve_regs: list of registers which shouldn't be set
         :param needs_return: whether to continue the ROP after invoking the syscall
         :return: a RopChain which makes the system with the requested register contents
         """

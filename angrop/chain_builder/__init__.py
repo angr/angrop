@@ -87,7 +87,7 @@ class ChainBuilder:
         """
         :param address: address or name of function to call
         :param args: a list/tuple of arguments to the function
-        :param ignore_registers: list of registers which shouldn't be set
+        :param preserve_regs: list of registers which shouldn't be set
         :param needs_return: whether to continue the ROP after invoking the function
         :return: a RopChain which inovkes the function with the arguments
         """
@@ -99,7 +99,7 @@ class ChainBuilder:
         the call is made
         :param syscall_num: the syscall number to execute
         :param args: the register values to have set at system call time
-        :param ignore_registers: list of registers which shouldn't be set
+        :param preserve_regs: list of registers which shouldn't be set
         :param needs_return: whether to continue the ROP after invoking the syscall
         :return: a RopChain which makes the system with the requested register contents
         """

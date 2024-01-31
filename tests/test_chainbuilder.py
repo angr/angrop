@@ -63,7 +63,7 @@ def test_ignore_regs():
         rop.save_gadgets(cache_path)
 
     chain1 = rop.set_regs(rdi=0x402715)
-    chain2 = rop.func_call('puts', [0x402704], ignore_registers=['rdi'])
+    chain2 = rop.func_call('puts', [0x402704], preserve_regs=['rdi'])
     chain = chain1+chain2
     state = chain.exec()
     assert state.posix.dumps(1) == b'Failed to parse username.\n'

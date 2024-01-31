@@ -13,16 +13,14 @@ class FuncCaller(Builder):
     handle function calls by automatically detecting the target binary's
     calling convention
     """
-    def __init__(self, chain_builder):
-        super().__init__(chain_builder)
 
-    def _func_call(self, func_gadget, cc, args, extra_regs=None, modifiable_memory_range=None, ignore_registers=None,
+    def _func_call(self, func_gadget, cc, args, extra_regs=None, modifiable_memory_range=None, preserve_regs=None,
                    use_partial_controllers=False, needs_return=True):
         assert type(args) in [list, tuple], "function arguments must be a list or tuple!"
         arch_bytes = self.project.arch.bytes
         registers = {} if extra_regs is None else extra_regs
-        if ignore_registers is None:
-            ignore_registers = []
+        if preserve_regs is None:
+            preserve_regs = []
 
         # distinguish register and stack arguments
         register_arguments = args
@@ -34,7 +32,7 @@ class FuncCaller(Builder):
         # set register arguments
         for arg, reg in zip(register_arguments, cc.ARG_REGS):
             registers[reg] = arg
-        for reg in ignore_registers:
+        for reg in preserve_regs:
             registers.pop(reg, None)
         chain = self.chain_builder.set_regs(modifiable_memory_range=modifiable_memory_range,
                               use_partial_controllers=use_partial_controllers,
@@ -87,7 +85,7 @@ class FuncCaller(Builder):
         """
         :param address: address or name of function to call
         :param args: a list/tuple of arguments to the function
-        :param ignore_registers: list of registers which shouldn't be set
+        :param preserve_regs: list of registers which shouldn't be set
         :param needs_return: whether to continue the ROP after invoking the function
         :return: a RopChain which inovkes the function with the arguments
         """

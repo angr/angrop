@@ -1,13 +1,10 @@
-import struct
 import logging
 
 import angr
-import claripy
 
 from .builder import Builder
 from .. import rop_utils
 from ..errors import RopException
-from ..rop_chain import RopChain
 
 l = logging.getLogger(__name__)
 
@@ -48,7 +45,7 @@ class MemChanger(Builder):
                     if x.mem_changes[0].op in ('__add__', '__sub__') and x.mem_changes[0].data_size == data_size}
 
         # get the data from trying to set all the registers
-        registers = dict((reg, 0x41) for reg in self.chain_builder._reg_setter._reg_set)
+        registers = dict((reg, 0x41) for reg in self.chain_builder.arch.reg_set)
         l.debug("getting reg data for mem adds")
         _, _, reg_data = self.chain_builder._reg_setter._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
         l.debug("trying mem_add gadgets")
