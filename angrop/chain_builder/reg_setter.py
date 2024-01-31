@@ -72,7 +72,7 @@ class RegSetter(Builder):
             chains += [best_chain]
 
         # find chains using BFS based on pops
-        chains += self._find_all_candidate_chains(gadgets, preserve_regs, **registers)
+        chains += self._find_all_candidate_chains(gadgets, preserve_regs.copy(), **registers)
 
         for gadgets in chains:
             chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in gadgets])
@@ -138,6 +138,7 @@ class RegSetter(Builder):
             res += self._recursively_find_chains(gadgets, *todo)
         return res
 
+    @staticmethod
     def _find_concrete_chains(gadgets, registers):
         chains = []
         for g in gadgets:

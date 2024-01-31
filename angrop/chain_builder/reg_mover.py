@@ -89,7 +89,7 @@ class RegMover(Builder):
         gadgets = self._find_relevant_gadgets(moves)
 
         # use greedy algorithm to find a chain that can do all the moves
-        chains = self._recursively_find_chains(gadgets, [], preserve_regs, moves)
+        chains = self._recursively_find_chains(gadgets, [], preserve_regs.copy(), moves)
         chains = self._sort_chains(chains)
 
         # now see whether any of the chain candidates can work
