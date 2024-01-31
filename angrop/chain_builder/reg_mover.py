@@ -19,9 +19,9 @@ class RegMover(Builder):
         super().__init__(project, reg_list=reg_list, badbytes=badbytes, filler=filler)
         self._reg_moving_gadgets = self._filter_gadgets(gadgets)
 
-    def verify(self, chain, registers):
+    def verify(self, chain, preserve_regs, registers):
         """
-        given a potential chain, verify whether the chain can set the registers correctly by symbolically
+        given a potential chain, verify whether the chain can move the registers correctly by symbolically
         execute the chain
         """
         state = chain.exec()
@@ -31,9 +31,22 @@ class RegMover(Builder):
                 chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in chain._gadgets])
                 l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
                 return False
+            for act in state.history.actions.hardcopy:
+                if act.type not in ("mem", "reg"):
+                    continue
+                if act.type == 'mem':
+                    if act.addr.ast.variables:
+                        l.exception("memory access outside stackframe\n%s\n", chain_str)
+                        return False
+                if act.type == 'reg' and act.action == 'write':
+                    # get the full name of the register
+                    reg_name = self.project.arch.register_size_names[act.offset, self.project.arch.bytes]
+                    if reg_name in preserve_regs:
+                        l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
+                        return False
         return True
 
-    def _recursively_find_chains(self, gadgets, chain, preserve_regs, todo_moves):
+    def _recursively_find_chains(self, gadgets, chain, hard_preserve_regs, todo_moves):
         if not todo_moves:
             return [chain]
 
@@ -42,9 +55,9 @@ class RegMover(Builder):
             new_moves = set(g.reg_moves).intersection(todo_moves)
             if not new_moves:
                 continue
-            if g.changed_regs.intersection(preserve_regs):
+            if g.changed_regs.intersection(hard_preserve_regs):
                 continue
-            new_preserve = preserve_regs.copy()
+            new_preserve = hard_preserve_regs.copy()
             new_preserve.update({x.to_reg for x in new_moves})
             new_chain = chain.copy()
             new_chain.append(g)
@@ -55,12 +68,13 @@ class RegMover(Builder):
             res += self._recursively_find_chains(gadgets, *todo)
         return res
 
-    def run(self, **registers):
+    def run(self, preserve_regs=set(), **registers):
         if len(registers) == 0:
             return RopChain(self.project, None, badbytes=self._badbytes)
 
         # sanity check
-        unknown_regs = set(registers.keys()) - self._reg_set
+        preserve_regs = set(preserve_regs)
+        unknown_regs = set(registers.keys()).union(preserve_regs) - self._reg_set
         if unknown_regs:
             raise RopException("unknown registers: %s" % unknown_regs)
 
@@ -75,7 +89,7 @@ class RegMover(Builder):
         gadgets = self._find_relevant_gadgets(moves)
 
         # use greedy algorithm to find a chain that can do all the moves
-        chains = self._recursively_find_chains(gadgets, [], set(), moves)
+        chains = self._recursively_find_chains(gadgets, [], preserve_regs, moves)
         chains = self._sort_chains(chains)
 
         # now see whether any of the chain candidates can work
@@ -86,7 +100,7 @@ class RegMover(Builder):
             try:
                 chain = self._build_reg_setting_chain(gadgets, None, registers, stack_change)
                 chain._concretize_chain_values()
-                if self.verify(chain, registers):
+                if self.verify(chain, preserve_regs, registers):
                     return chain
             except (RopException, SimUnsatError):
                 pass

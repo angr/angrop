@@ -20,7 +20,7 @@ class RegSetter(Builder):
         self._reg_setting_gadgets = self._filter_gadgets(gadgets)
         self.hard_chain_cache = {}
 
-    def verify(self, chain, registers):
+    def verify(self, chain, preserve_regs, registers):
         """
         given a potential chain, verify whether the chain can set the registers correctly by symbolically
         execute the chain
@@ -30,22 +30,30 @@ class RegSetter(Builder):
             chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in chain._gadgets])
             bv = getattr(state.regs, reg)
             for act in state.history.actions.hardcopy:
-                if act.type != "mem":
+                if act.type not in ("mem", "reg"):
                     continue
-                if act.addr.ast.variables:
-                    l.exception("memory access outside stackframe\n%s\n", chain_str)
-                    return False
+                if act.type == 'mem':
+                    if act.addr.ast.variables:
+                        l.exception("memory access outside stackframe\n%s\n", chain_str)
+                        return False
+                if act.type == 'reg' and act.action == 'write':
+                    # get the full name of the register
+                    reg_name = self.project.arch.register_size_names[act.offset, self.project.arch.bytes]
+                    if reg_name in preserve_regs:
+                        l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
+                        return False
             if bv.symbolic or state.solver.eval(bv != val.data):
                 l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
                 return False
         return True
 
-    def run(self, modifiable_memory_range=None, use_partial_controllers=False,  **registers):
+    def run(self, modifiable_memory_range=None, use_partial_controllers=False,  preserve_regs=set(), **registers):
         if len(registers) == 0:
             return RopChain(self.project, None, badbytes=self._badbytes)
 
         # sanity check
-        unknown_regs = set(registers.keys()) - self._reg_set
+        preserve_regs = set(preserve_regs)
+        unknown_regs = set(registers.keys()).union(preserve_regs) - self._reg_set
         if unknown_regs:
             raise RopException("unknown registers: %s" % unknown_regs)
 
@@ -59,12 +67,12 @@ class RegSetter(Builder):
 
         # find the chain provided by the graph search algorithm
         best_chain, _, _ = self._find_reg_setting_gadgets(modifiable_memory_range,
-                                                                       use_partial_controllers, **registers)
+                                                          use_partial_controllers, **registers)
         if best_chain:
             chains += [best_chain]
 
         # find chains using BFS based on pops
-        chains += self._find_all_candidate_chains(gadgets, **registers)
+        chains += self._find_all_candidate_chains(gadgets, preserve_regs, **registers)
 
         for gadgets in chains:
             chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in gadgets])
@@ -74,7 +82,7 @@ class RegSetter(Builder):
                 chain = self._build_reg_setting_chain(gadgets, modifiable_memory_range,
                                                      registers, stack_change)
                 chain._concretize_chain_values()
-                if self.verify(chain, registers):
+                if self.verify(chain, preserve_regs, registers):
                     #self._chain_cache[reg_tuple].append(gadgets)
                     return chain
             except (RopException, SimUnsatError):
@@ -102,6 +110,10 @@ class RegSetter(Builder):
         return gadgets
 
     def _recursively_find_chains(self, gadgets, chain, preserve_regs, todo_regs, hard_preserve_regs):
+        """
+        preserve_regs: soft preservation, can be overwritten as long as it gets back to control
+        hard_preserve_regs: cannot touch these regs at all
+        """
         if not todo_regs:
             return [chain]
 
@@ -157,7 +169,7 @@ class RegSetter(Builder):
                     pass
         return None
 
-    def _find_all_candidate_chains(self, gadgets, **registers):
+    def _find_all_candidate_chains(self, gadgets, preserve_regs, **registers):
         """
         1. find gadgets that set concrete values to the target values, such as xor eax, eax to set eax to 0
         2. find all pop only chains by BFS search
@@ -189,9 +201,10 @@ class RegSetter(Builder):
                 return []
             registers.pop(reg)
 
+        preserve_regs.update(hard_regs)
         # use the original pop techniques to set other registers
-        chains = self._recursively_find_chains(gadgets, hard_chain, set(hard_regs),
-                                               set(registers.keys()), set(hard_regs))
+        chains = self._recursively_find_chains(gadgets, hard_chain, preserve_regs,
+                                               set(registers.keys()), preserve_regs)
         return self._sort_chains(chains)
 
     @staticmethod

@@ -109,19 +109,30 @@ def test_ropvalue():
     chain = rop.write_to_mem(value, b"/bin/sh\x00")
     assert sum(not x._rebase for x in chain._values) == 2 # 2 values
 
-#def test_reg_move():
-#    cache_path = os.path.join(CACHE_DIR, "bronze_ropchain")
-#    proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "bronze_ropchain"), auto_load_libs=False)
-#    rop = proj.analyses.ROP()
-#
-#    if os.path.exists(cache_path):
-#        rop.load_gadgets(cache_path)
-#    else:
-#        rop.find_gadgets()
-#        rop.save_gadgets(cache_path)
-#
-#    chain = rop.set_regs(eax="ecx")
-#    import IPython; IPython.embed()
+def test_reg_move():
+    cache_path = os.path.join(CACHE_DIR, "bronze_ropchain")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "bronze_ropchain"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    # test single register move
+    chain = rop.set_regs(ecx=0x41414141)
+    chain += rop.move_regs(eax="ecx")
+    state = chain.exec()
+    assert state.regs.eax.concrete_value == 0x41414141
+
+    # test multiple register moves at the same time
+    chain = rop.set_regs(ecx=0x42424242)
+    chain += rop.set_regs(ebx=0x41414141, preserve_regs=['ecx'])
+    chain += rop.move_regs(edx='ebx', eax='ecx')
+    state = chain.exec()
+    assert state.regs.eax.concrete_value == 0x42424242
+    assert state.regs.edx.concrete_value == 0x41414141
 
 def run_all():
     functions = globals()
