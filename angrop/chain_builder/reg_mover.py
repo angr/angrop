@@ -139,6 +139,8 @@ class RegMover(Builder):
         for g in self._reg_moving_gadgets:
             if g.makes_syscall:
                 continue
+            if g.has_symbolic_access():
+                continue
             if g.bp_moves_to_sp:
                 continue
             if moves.intersection(set(g.reg_moves)):

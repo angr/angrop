@@ -95,10 +95,13 @@ class RegSetter(Builder):
     def _find_relevant_gadgets(self, **registers):
         """
         find gadgets that may pop/load/change requested registers
+        exclude gadgets that do symbolic memory access
         """
         gadgets = set({})
         for g in self._reg_setting_gadgets:
             if g.makes_syscall:
+                continue
+            if g.has_symbolic_access():
                 continue
             for reg in registers:
                 if reg in g.popped_regs:

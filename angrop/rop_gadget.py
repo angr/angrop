@@ -33,11 +33,14 @@ class RopMemAccess:
         """
         return self.addr_constant or self.addr_controllers or self.addr_stack_controllers
 
+    def is_symbolic_access(self):
+        return self.addr_controllable() or bool(self.addr_dependencies)
+
     def addr_controllable(self):
-        return self.addr_controllers or self.addr_stack_controllers
+        return bool(self.addr_controllers or self.addr_stack_controllers)
 
     def data_controllable(self):
-        return self.data_controllers or self.data_stack_controllers
+        return bool(self.data_controllers or self.data_stack_controllers)
 
     def addr_data_independent(self):
         return len(set(self.addr_controllers) & set(self.data_controllers)) == 0 and \
@@ -113,6 +116,10 @@ class RopGadget:
     @property
     def num_mem_access(self):
         return len(self.mem_reads) + len(self.mem_writes) + len(self.mem_changes)
+
+    def has_symbolic_access(self):
+        accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)
+        return any(x.is_symbolic_access() for x in accesses)
 
     def reg_set_same_effect(self, other):
         """
