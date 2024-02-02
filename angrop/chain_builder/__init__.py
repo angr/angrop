@@ -41,6 +41,7 @@ class ChainBuilder:
 
     def set_regs(self, *args, **kwargs):
         """
+        :param preserve_regs: set of registers to preserve, e.g. ('eax', 'ebx')
         :param registers: dict of registers to values
         :return: a chain which will set the registers to the requested values
 
@@ -51,6 +52,7 @@ class ChainBuilder:
 
     def move_regs(self, **registers):
         """
+        :param preserve_regs: set of registers to preserve, e.g. ('eax', 'ebx')
         :param registers: dict of registers, key is the destination register, value is the source register
         :return: a chain which will set the registers to the requested registers
 
@@ -87,7 +89,7 @@ class ChainBuilder:
         """
         :param address: address or name of function to call
         :param args: a list/tuple of arguments to the function
-        :param preserve_regs: list of registers which shouldn't be set
+        :param preserve_regs: set of registers to preserve, e.g. ('eax', 'ebx')
         :param needs_return: whether to continue the ROP after invoking the function
         :return: a RopChain which inovkes the function with the arguments
         """
@@ -99,7 +101,7 @@ class ChainBuilder:
         the call is made
         :param syscall_num: the syscall number to execute
         :param args: the register values to have set at system call time
-        :param preserve_regs: list of registers which shouldn't be set
+        :param preserve_regs: set of registers to preserve, e.g. ('eax', 'ebx')
         :param needs_return: whether to continue the ROP after invoking the syscall
         :return: a RopChain which makes the system with the requested register contents
         """
