@@ -99,6 +99,9 @@ class GadgetAnalyzer:
             l.debug("... checking if block makes sense")
             block = self.project.factory.block(addr)
 
+            if not block.capstone.insns:
+                return False
+
             if not self.arch.block_make_sense(block):
                 return False
 
