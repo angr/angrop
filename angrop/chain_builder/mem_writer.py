@@ -258,4 +258,9 @@ class MemWriter(Builder):
         sim_data = state.memory.load(addr_val.data, len(data))
         if not state.solver.eval(sim_data == data):
             raise RopException("memory write fails")
+        # the next pc must come from the stack
+        if len(state.regs.pc.variables) != 1:
+            return False
+        if not set(state.regs.pc.variables).pop().startswith("symbolic_stack"):
+            return False
         return chain

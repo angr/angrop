@@ -43,6 +43,11 @@ class RegMover(Builder):
                     if reg_name in preserve_regs:
                         l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
                         return False
+        # the next pc must come from the stack
+        if len(state.regs.pc.variables) != 1:
+            return False
+        if not set(state.regs.pc.variables).pop().startswith("symbolic_stack"):
+            return False
         return True
 
     def _recursively_find_chains(self, gadgets, chain, hard_preserve_regs, todo_moves):

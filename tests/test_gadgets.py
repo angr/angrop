@@ -50,6 +50,22 @@ def test_arm_mem_change_gadget():
     rop._initialize_gadget_analyzer()
 
     """
+    0x0004f08c <+28>:	ldr	r2, [r4, #48]	; 0x30
+    0x0004f08e <+30>:	asrs	r3, r3, #2
+    0x0004f090 <+32>:	str	r3, [r5, #8]
+    0x0004f092 <+34>:	str	r2, [r5, #0]
+    0x0004f094 <+36>:	str	r5, [r4, #48]	; 0x30
+    0x0004f096 <+38>:	pop	{r3, r4, r5, pc}
+    """
+    gadget = rop._gadget_analyzer.analyze_gadget(0x44f08c+1) # thumb mode
+    assert gadget
+    assert not gadget.mem_changes
+
+    gadget = rop._gadget_analyzer.analyze_gadget(0x459eea+1) # thumb mode
+    assert gadget
+    assert not gadget.mem_changes
+
+    """
     4b1e30  ldr     r1, [r6]
     4b1e32  add     r4, r1
     4b1e34  str     r4, [r6]

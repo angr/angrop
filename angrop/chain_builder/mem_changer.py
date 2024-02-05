@@ -46,6 +46,8 @@ class MemChanger(Builder):
             data_size = self.project.arch.bits
 
         possible_gadgets = {x for x in self._mem_add_gadgets if x.mem_changes[0].data_size == data_size}
+        if not possible_gadgets:
+            raise RopException("Fail to find any gadget that can perform memory adding...")
 
         # get the data from trying to set all the registers
         registers = dict((reg, 0x41) for reg in self.chain_builder.arch.reg_set)
@@ -73,6 +75,19 @@ class MemChanger(Builder):
 
         # build the chain
         chain = self._add_mem_with_gadget(best_gadget, addr, data_size, difference=value)
+
+        # verify the chain actually works
+        chain2 = chain.copy()
+        chain2._blank_state.memory.store(addr.data, 0x42424242, self.project.arch.bytes)
+        state = chain2.exec()
+        sim_data = state.memory.load(addr.data, self.project.arch.bytes)
+        if not state.solver.eval(sim_data == 0x42424242 + value.data):
+            raise RopException("memory add fails - 1")
+        # the next pc must come from the stack
+        if len(state.regs.pc.variables) != 1:
+            raise RopException("memory add fails - 2")
+        if not set(state.regs.pc.variables).pop().startswith("symbolic_stack"):
+            raise RopException("memory add fails - 3")
         return chain
 
     def _add_mem_with_gadget(self, gadget, addr, data_size, final_val=None, difference=None):
