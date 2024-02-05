@@ -45,6 +45,8 @@ def test_jump_gadget():
     assert 'ra' in jump_regs
 
 def test_arm_mem_change_gadget():
+    # pylint: disable=pointless-string-statement
+
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
     rop._initialize_gadget_analyzer()
@@ -104,7 +106,7 @@ def test_arm_mem_change_gadget():
 
 def run_all():
     functions = globals()
-    all_functions = dict([x for x in functions.items() if x[0].startswith('test_')])
+    all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
     for f in sorted(all_functions.keys()):
         if hasattr(all_functions[f], '__call__'):
             all_functions[f]()

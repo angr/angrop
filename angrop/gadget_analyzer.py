@@ -146,8 +146,6 @@ class GadgetAnalyzer:
         except angr.UnsupportedIROpError:
             l.debug("... angr unsupported op error")
             return False
-        except angr.UnsupportedSyscallError:
-            return False
         except angr.AngrError:
             return False
         except AttributeError:
@@ -564,7 +562,8 @@ class GadgetAnalyzer:
         return mem_access
 
     def _build_mem_change(self, read_action, write_action, gadget, init_state, final_state):
-        # to change memory, write data must have at least two arguments: <sym_read> <op> <data>, such as `add [rax], rbx`
+        # to change memory, write data must have at least two arguments:
+        # <sym_read> <op> <data>, such as `add [rax], rbx`
         if len(write_action.data.ast.args) <= 1:
             return None
 
@@ -578,34 +577,33 @@ class GadgetAnalyzer:
             return None
 
         # identify the symbolic data controller
-        data_idx = None
-        for i in range(len(write_action.data.ast.args)):
+        sym_data = None
+        for d in write_action.data.ast.args:
             # filter out concrete values
-            if not isinstance(write_action.data.ast.args[i], claripy.ast.bv.BV):
+            if not isinstance(d, claripy.ast.bv.BV):
                 continue
             # filter out the symbolic read itself
             # FIXME: technically, there could be cases where the controller also comes from a symbolic read
             # but we don't handle it atm
-            vars = write_action.data.ast.args[i].variables
-            if any(x.startswith('symbolic_read_unconstrained_') for x in vars):
+            vs = d.variables
+            if any(x.startswith('symbolic_read_unconstrained_') for x in vs):
                 continue
             # TODO: we don't handle the cases where there are multiple data dependencies
-            if data_idx is not None:
+            if sym_data is not None:
                 return None
-            data_idx = i
-        if data_idx is None:
+            sym_data = d
+        if sym_data is None:
             return None
 
         # FIXME: here, if the action does a constant increment
         # such as mov rax, [rbx]; inc rax; mov [rbx], rax,
         # this gadget will be ignored by us, which is not great
-        data_dependencies = rop_utils.get_ast_dependency(write_action.data.ast.args[data_idx])
+        data_dependencies = rop_utils.get_ast_dependency(sym_data)
         if len(data_dependencies) != 1:
-            return
-        data_controllers = rop_utils.get_ast_controllers(init_state, write_action.data.ast.args[data_idx],
-                                                         data_dependencies)
+            return None
+        data_controllers = rop_utils.get_ast_controllers(init_state, sym_data, data_dependencies)
         if len(data_controllers) != 1:
-            return
+            return None
 
         mem_change = self._build_mem_access(read_action, gadget, init_state, final_state)
         mem_change.op = write_action.data.ast.op
@@ -641,7 +639,7 @@ class GadgetAnalyzer:
                 continue
 
             # we don't like floating point stuff
-            elif isinstance(a.data.ast, (claripy.fp.FPV, claripy.ast.FP)):
+            if isinstance(a.data.ast, (claripy.fp.FPV, claripy.ast.FP)):
                 continue
 
             # ignore read/write on stack
