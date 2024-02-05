@@ -564,31 +564,45 @@ class GadgetAnalyzer:
         return mem_access
 
     def _build_mem_change(self, read_action, write_action, gadget, init_state, final_state):
-        if not write_action.data.ast.symbolic:
-            return None
+        # to change memory, write data must have at least two arguments: <sym_read> <op> <data>, such as `add [rax], rbx`
         if len(write_action.data.ast.args) <= 1:
             return None
 
-        # to change memory, the data must consist of at least a symbolic read
-        sread_idx = None
-        vars0 = write_action.data.ast.args[0].variables
-        vars1 = write_action.data.ast.args[1].variables
-        if any(x.startswith('symbolic_read_unconstrained_') for x in vars0):
-            sread_idx = 0
-        elif any(x.startswith('symbolic_read_unconstrained_') for x in vars1):
-            sread_idx = 1
-        else: # this data doesn't contain symbolic read
+        # to change memory, the read must be symbolic and the write data must be derived from
+        # the symbolic read data
+        read_variables = {x for x in read_action.data.ast.variables if x.startswith('symbolic_read_unconstrained')}
+        if not read_variables:
+            return None
+        write_variables = {x for x in write_action.data.ast.variables if x.startswith('symbolic_read_unconstrained')}
+        if not read_variables.intersection(write_variables):
             return None
 
-        other_idx = 1 - sread_idx
+        # identify the symbolic data controller
+        data_idx = None
+        for i in range(len(write_action.data.ast.args)):
+            # filter out concrete values
+            if not isinstance(write_action.data.ast.args[i], claripy.ast.bv.BV):
+                continue
+            # filter out the symbolic read itself
+            # FIXME: technically, there could be cases where the controller also comes from a symbolic read
+            # but we don't handle it atm
+            vars = write_action.data.ast.args[i].variables
+            if any(x.startswith('symbolic_read_unconstrained_') for x in vars):
+                continue
+            # TODO: we don't handle the cases where there are multiple data dependencies
+            if data_idx is not None:
+                return None
+            data_idx = i
+        if data_idx is None:
+            return None
 
         # FIXME: here, if the action does a constant increment
         # such as mov rax, [rbx]; inc rax; mov [rbx], rax,
         # this gadget will be ignored by us, which is not great
-        data_dependencies = rop_utils.get_ast_dependency(write_action.data.ast.args[other_idx])
+        data_dependencies = rop_utils.get_ast_dependency(write_action.data.ast.args[data_idx])
         if len(data_dependencies) != 1:
             return
-        data_controllers = rop_utils.get_ast_controllers(init_state, write_action.data.ast.args[other_idx],
+        data_controllers = rop_utils.get_ast_controllers(init_state, write_action.data.ast.args[data_idx],
                                                          data_dependencies)
         if len(data_controllers) != 1:
             return
