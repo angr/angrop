@@ -14,6 +14,14 @@ Typically, it can generate rop chains (especially long chains) faster than human
 
 It includes functions to generate chains which are commonly used in exploitation and CTF's, such as setting registers, and calling functions.
 
+## Architectures
+Supported architectures:
+* x86/x64
+* ARM
+* MIPS
+It should be relatively easy to support other architectures that are supported by `angr`.
+If you'd like to use `angrop` on other architectures, please create an issue and we will look into it :)
+
 ## Usage
 
 The ROP analysis finds rop gadgets and can automatically build rop chains.
