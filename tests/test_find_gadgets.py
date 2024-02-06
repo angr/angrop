@@ -50,6 +50,16 @@ def test_symbolic_memory_access_from_stack():
 
     assert all(gadget_exists(rop, x) for x in [0x000103f4])
 
+def test_arm_thumb_mode():
+    proj = angr.Project(os.path.join(bin_path, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
+    rop._initialize_gadget_analyzer()
+
+    gadget = rop._gadget_analyzer.analyze_gadget(0x4bf858+1)
+
+    assert gadget
+    assert gadget.block_length == 6
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

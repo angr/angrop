@@ -56,6 +56,15 @@ class ARM(ROPArch):
     def __init__(self, project, kernel_mode=False):
         super().__init__(project, kernel_mode=kernel_mode)
         self.is_thumb = False # by default, we don't use thumb mode
+        self.alignment = self.project.arch.bytes
+
+    def set_thumb(self):
+        self.is_thumb = True
+        self.alignment = 2
+
+    def set_arm(self):
+        self.is_thumb = False
+        self.alignment = self.project.arch.bytes
 
     def block_make_sense(self, block):
         # disable conditional jumps, for now
@@ -66,7 +75,9 @@ class ARM(ROPArch):
         return True
         
 class MIPS(ROPArch):
-    pass
+    def __init__(self, project, kernel_mode=False):
+        super().__init__(project, kernel_mode=kernel_mode)
+        self.alignment = self.project.arch.bytes
 
 def get_arch(project, kernel_mode=False):
     name = project.arch.name

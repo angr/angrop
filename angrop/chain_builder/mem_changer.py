@@ -15,6 +15,7 @@ class MemChanger(Builder):
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
         self._mem_change_gadgets = self._get_all_mem_change_gadgets(self.chain_builder.gadgets)
+        self._mem_add_gadgets = self._get_all_mem_add_gadgets()
 
     def _set_regs(self, *args, **kwargs):
         return self.chain_builder._reg_setter.run(*args, **kwargs)
@@ -30,19 +31,23 @@ class MemChanger(Builder):
             if g.stack_change <= 0:
                 continue
             for m_access in g.mem_changes:
+                # assume we need intersection of addr_dependencies and data_dependencies to be 0
                 if m_access.addr_controllable() and m_access.data_controllable() and m_access.addr_data_independent():
                     possible_gadgets.add(g)
         return possible_gadgets
 
+    def _get_all_mem_add_gadgets(self):
+        return {x for x in self._mem_change_gadgets if x.mem_changes[0].op in ('__add__', '__sub__')}
+
     def add_to_mem(self, addr, value, data_size=None):
-        # assume we need intersection of addr_dependencies and data_dependencies to be 0
         # TODO could allow mem_reads as long as we control the address?
 
         if data_size is None:
             data_size = self.project.arch.bits
 
-        possible_gadgets = {x for x in self._mem_change_gadgets
-                    if x.mem_changes[0].op in ('__add__', '__sub__') and x.mem_changes[0].data_size == data_size}
+        possible_gadgets = {x for x in self._mem_add_gadgets if x.mem_changes[0].data_size == data_size}
+        if not possible_gadgets:
+            raise RopException("Fail to find any gadget that can perform memory adding...")
 
         # get the data from trying to set all the registers
         registers = dict((reg, 0x41) for reg in self.chain_builder.arch.reg_set)
@@ -69,10 +74,23 @@ class MemChanger(Builder):
         l.debug("Now building the mem add chain")
 
         # build the chain
-        chain = self._change_mem_with_gadget(best_gadget, addr, data_size, difference=value)
+        chain = self._add_mem_with_gadget(best_gadget, addr, data_size, difference=value)
+
+        # verify the chain actually works
+        chain2 = chain.copy()
+        chain2._blank_state.memory.store(addr.data, 0x42424242, self.project.arch.bytes)
+        state = chain2.exec()
+        sim_data = state.memory.load(addr.data, self.project.arch.bytes)
+        if not state.solver.eval(sim_data == 0x42424242 + value.data):
+            raise RopException("memory add fails - 1")
+        # the next pc must come from the stack
+        if len(state.regs.pc.variables) != 1:
+            raise RopException("memory add fails - 2")
+        if not set(state.regs.pc.variables).pop().startswith("symbolic_stack"):
+            raise RopException("memory add fails - 3")
         return chain
 
-    def _change_mem_with_gadget(self, gadget, addr, data_size, final_val=None, difference=None):
+    def _add_mem_with_gadget(self, gadget, addr, data_size, final_val=None, difference=None):
         # sanity check for simple gadget
         if len(gadget.mem_writes) + len(gadget.mem_changes) != 1 or len(gadget.mem_reads) != 0:
             raise RopException("too many memory accesses for my lazy implementation")
@@ -87,9 +105,9 @@ class MemChanger(Builder):
         test_state = self.make_sim_state(gadget.addr)
 
         if difference is not None:
-            test_state.memory.store(addr, test_state.solver.BVV(~difference, data_size)) # pylint:disable=invalid-unary-operand-type
+            test_state.memory.store(addr.concreted, test_state.solver.BVV(~(difference.concreted), data_size)) # pylint:disable=invalid-unary-operand-type
         if final_val is not None:
-            test_state.memory.store(addr, test_state.solver.BVV(~final_val, data_size)) # pylint:disable=invalid-unary-operand-type
+            test_state.memory.store(addr.concreted, test_state.solver.BVV(~final_val, data_size)) # pylint:disable=invalid-unary-operand-type
 
         # step the gadget
         pre_gadget_state = test_state
@@ -109,20 +127,20 @@ class MemChanger(Builder):
             raise RopException("Couldn't find the matching action")
 
         # constrain the addr
-        test_state.add_constraints(the_action.addr.ast == addr)
-        pre_gadget_state.add_constraints(the_action.addr.ast == addr)
+        test_state.add_constraints(the_action.addr.ast == addr.concreted)
+        pre_gadget_state.add_constraints(the_action.addr.ast == addr.concreted)
         pre_gadget_state.options.discard(angr.options.AVOID_MULTIVALUED_WRITES)
         pre_gadget_state.options.discard(angr.options.AVOID_MULTIVALUED_READS)
         state = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
 
         # constrain the data
         if final_val is not None:
-            test_state.add_constraints(state.memory.load(addr, data_size//8, endness=arch_endness) ==
+            test_state.add_constraints(state.memory.load(addr.concreted, data_size//8, endness=arch_endness) ==
                                        test_state.solver.BVV(final_val, data_size))
         if difference is not None:
-            test_state.add_constraints(state.memory.load(addr, data_size//8, endness=arch_endness) -
-                                       test_state.memory.load(addr, data_size//8, endness=arch_endness) ==
-                                       test_state.solver.BVV(difference, data_size))
+            test_state.add_constraints(state.memory.load(addr.concreted, data_size//8, endness=arch_endness) -
+                                       test_state.memory.load(addr.concreted, data_size//8, endness=arch_endness) ==
+                                       test_state.solver.BVV(difference.concreted, data_size))
 
         # get the actual register values
         all_deps = list(mem_change.addr_dependencies) + list(mem_change.data_dependencies)

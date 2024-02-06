@@ -44,9 +44,69 @@ def test_jump_gadget():
     assert 't9' in jump_regs
     assert 'ra' in jump_regs
 
+def test_arm_mem_change_gadget():
+    # pylint: disable=pointless-string-statement
+
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
+    rop._initialize_gadget_analyzer()
+
+    """
+    0x0004f08c <+28>:	ldr	r2, [r4, #48]	; 0x30
+    0x0004f08e <+30>:	asrs	r3, r3, #2
+    0x0004f090 <+32>:	str	r3, [r5, #8]
+    0x0004f092 <+34>:	str	r2, [r5, #0]
+    0x0004f094 <+36>:	str	r5, [r4, #48]	; 0x30
+    0x0004f096 <+38>:	pop	{r3, r4, r5, pc}
+    """
+    gadget = rop._gadget_analyzer.analyze_gadget(0x44f08c+1) # thumb mode
+    assert gadget
+    assert not gadget.mem_changes
+
+    gadget = rop._gadget_analyzer.analyze_gadget(0x459eea+1) # thumb mode
+    assert gadget
+    assert not gadget.mem_changes
+
+    """
+    4b1e30  ldr     r1, [r6]
+    4b1e32  add     r4, r1
+    4b1e34  str     r4, [r6]
+    4b1e36  pop     {r3, r4, r5, r6, r7, pc}
+    """
+    gadget = rop._gadget_analyzer.analyze_gadget(0x4b1e30+1) # thumb mode
+    assert gadget.mem_changes
+
+    """
+    4c1e78  ldr     r1, [r4,#0x14]
+    4c1e7a  add     r1, r5
+    4c1e7c  str     r1, [r4,#0x14]
+    4c1e7e  pop     {r3, r4, r5, pc}
+    """
+    gadget = rop._gadget_analyzer.analyze_gadget(0x4c1e78+1) # thumb mode
+    assert gadget.mem_changes
+
+    """
+    4c1ea4  ldr     r2, [r3,#0x14]
+    4c1ea6  adds    r2, #0x4
+    4c1ea8  str     r2, [r3,#0x14]
+    4c1eaa  bx      lr
+    """
+    gadget = rop._gadget_analyzer.analyze_gadget(0x4c1ea4+1) # thumb mode
+    assert not gadget.mem_changes
+
+    """
+    4c1e8e  ldr     r1, [r4,#0x14]
+    4c1e90  str     r5, [r4,#0x10]
+    4c1e92  add     r1, r5
+    4c1e94  str     r1, [r4,#0x14]
+    4c1e96  pop     {r3, r4, r5, pc}
+    """
+    gadget = rop._gadget_analyzer.analyze_gadget(0x4c1e8e+1) # thumb mode
+    assert gadget.mem_changes
+
 def run_all():
     functions = globals()
-    all_functions = dict([x for x in functions.items() if x[0].startswith('test_')])
+    all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
     for f in sorted(all_functions.keys()):
         if hasattr(all_functions[f], '__call__'):
             all_functions[f]()

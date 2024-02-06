@@ -13,7 +13,7 @@ from angr.analyses.bindiff import UnmatchedStatementsException
 from . import chain_builder
 from . import gadget_analyzer
 from . import common
-from .arch import get_arch
+from .arch import get_arch, ARM
 from .errors import RopException
 from .rop_gadget import RopGadget, StackPivot
 
@@ -77,7 +77,7 @@ class ROP(Analysis):
         if max_sym_mem_access:
             self.arch.max_sym_mem_access = max_sym_mem_access
         if is_thumb:
-            self.arch.is_thumb = is_thumb
+            self.arch.set_thumb()
 
         # get ret locations
         self._ret_locations = None
@@ -118,7 +118,8 @@ class ROP(Analysis):
     def _initialize_gadget_analyzer(self):
 
         # find locations to analyze
-        self._ret_locations = self._get_ret_locations()
+        if self._only_check_near_rets and not self._ret_locations:
+            self._ret_locations = self._get_ret_locations()
         num_to_check = self._num_addresses_to_check()
 
         # fast mode
@@ -338,9 +339,10 @@ class ROP(Analysis):
         """
         :return: all the addresses to check
         """
+        # align block size
+        alignment = self.arch.alignment
+        offset = 1 if isinstance(self.arch, ARM) and self.arch.is_thumb else 0
         if self._only_check_near_rets:
-            # align block size
-            alignment = self.arch.alignment
             block_size = (self.arch.max_block_size & ((1 << self.project.arch.bits) - alignment)) + alignment
             slices = [(addr-block_size, addr) for addr in self._ret_locations]
             current_addr = 0
@@ -350,14 +352,15 @@ class ROP(Analysis):
                 for i in range(current_addr, end_addr, alignment):
                     segment = self.project.loader.main_object.find_segment_containing(i)
                     if segment is not None and segment.is_executable:
-                        yield i
+                        yield i+offset
                 current_addr = max(current_addr, end_addr)
         else:
             for segment in self.project.loader.main_object.segments:
                 if segment.is_executable:
                     l.debug("Analyzing segment with address range: 0x%x, 0x%x", segment.min_addr, segment.max_addr)
-                    for addr in range(segment.min_addr, segment.max_addr):
-                        yield addr
+                    start = segment.min_addr + (alignment - segment.min_addr % alignment)
+                    for addr in range(start, segment.max_addr, alignment):
+                        yield addr+offset
 
     def _num_addresses_to_check(self):
         if self._only_check_near_rets:
@@ -367,9 +370,11 @@ class ROP(Analysis):
             return sum(1 for _ in self._addresses_to_check())
         else:
             num = 0
+            alignment = self.arch.alignment
             for segment in self.project.loader.main_object.segments:
                 if segment.is_executable:
-                    num += (segment.max_addr - segment.min_addr)
+                    start = segment.min_addr + (alignment - segment.min_addr % alignment)
+                    num += (segment.max_addr - start) // alignment
             return num
 
     def _get_ret_locations(self):

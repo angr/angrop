@@ -11,10 +11,8 @@ from .rop_value import RopValue
 def gadget_to_asmstring(project, gadget):
     if not gadget.block_length:
         return ""
-    code = project.loader.memory.load(gadget.addr, gadget.block_length)
-    md = project.arch.capstone
-    return "; ".join(["%s %s" %(i.mnemonic, i.op_str) for i in md.disasm(code,gadget.addr)])
-
+    block = project.factory.block(gadget.addr)
+    return "; ".join(["%s %s" %(i.mnemonic, i.op_str) for i in block.capstone.insns])
 
 def get_ast_dependency(ast):
     """

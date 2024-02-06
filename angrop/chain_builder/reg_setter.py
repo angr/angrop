@@ -42,11 +42,16 @@ class RegSetter(Builder):
                     offset -= act.offset % self.project.arch.bytes
                     reg_name = self.project.arch.register_size_names[offset, self.project.arch.bytes]
                     if reg_name in preserve_regs:
-                        l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
+                        l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation - 1.", chain_str)
                         return False
             if bv.symbolic or state.solver.eval(bv != val.data):
-                l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
+                l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation - 2.", chain_str)
                 return False
+        # the next pc must come from the stack
+        if len(state.regs.pc.variables) != 1:
+            return False
+        if not set(state.regs.pc.variables).pop().startswith("symbolic_stack"):
+            return False
         return True
 
     def run(self, modifiable_memory_range=None, use_partial_controllers=False,  preserve_regs=None, **registers):

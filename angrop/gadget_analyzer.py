@@ -1,4 +1,5 @@
 import logging
+from collections import defaultdict
 
 import angr
 import pyvex
@@ -99,6 +100,9 @@ class GadgetAnalyzer:
             l.debug("... checking if block makes sense")
             block = self.project.factory.block(addr)
 
+            if not block.capstone.insns:
+                return False
+
             if not self.arch.block_make_sense(block):
                 return False
 
@@ -141,8 +145,6 @@ class GadgetAnalyzer:
             return False
         except angr.UnsupportedIROpError:
             l.debug("... angr unsupported op error")
-            return False
-        except angr.UnsupportedSyscallError:
             return False
         except angr.AngrError:
             return False
@@ -502,121 +504,114 @@ class GadgetAnalyzer:
 
         gadget.stack_change = stack_changes[0]
 
-    def _analyze_mem_access(self, final_state, init_state, gadget):
+    def _build_mem_access(self, a, gadget, init_state, final_state):
         """
-        analyzes memory accesses and stores their info in the gadget
-        :param final_state: the stepped state, init_state is an ancestor of it.
-        :param init_state: the input state for testing
-        :param gadget: the gadget to store mem acccess in
+        translate an angr symbolic action to angrop MemAccess
         """
-        last_action = None
-        for a in final_state.history.actions.hardcopy:
-            if a.type != 'mem':
-                continue
+        mem_access = RopMemAccess()
 
-            mem_access = RopMemAccess()
+        # handle the memory access address
+        # case 1: the address is not symbolic
+        if not a.addr.ast.symbolic:
+            mem_access.addr_constant = init_state.solver.eval(a.addr.ast)
+        # case 2: the symbolic address comes from registers
+        elif all(x.startswith("sreg_") for x in a.addr.ast.variables):
+            mem_access.addr_dependencies = rop_utils.get_ast_dependency(a.addr.ast)
+            mem_access.addr_controllers = rop_utils.get_ast_controllers(init_state, a.addr.ast,
+                                                                        mem_access.addr_dependencies)
+        # case 3: the symbolic address comes from controlled stack
+        elif all(x.startswith("symbolic_stack") for x in a.addr.ast.variables):
+            mem_access.addr_stack_controllers = set(a.addr.ast.variables)
+        # case 4: both, we don't handle it now yet
+        else:
+            raise RopException("angrop does not handle symbolic address that depends on both regs and stack atm")
 
-            # handle the memory access address
-            # case 1: the address is not symbolic
-            if not a.addr.ast.symbolic:
-                mem_access.addr_constant = init_state.solver.eval(a.addr.ast)
-            # case 2: the symbolic address comes from registers
-            elif all(x.startswith("sreg_") for x in a.addr.ast.variables):
-                mem_access.addr_dependencies = rop_utils.get_ast_dependency(a.addr.ast)
-                mem_access.addr_controllers = rop_utils.get_ast_controllers(init_state, a.addr.ast,
-                                                                            mem_access.addr_dependencies)
-            # case 3: the symbolic address comes from controlled stack
-            elif all(x.startswith("symbolic_stack") for x in a.addr.ast.variables):
-                mem_access.addr_stack_controllers = set(a.addr.ast.variables)
-            # case 4: both, we don't handle it now yet
+        if a.action == "write":
+            # for writes we want what the data depends on
+            test_data = init_state.solver.eval_upto(a.data.ast, 2)
+            if len(test_data) > 1:
+                mem_access.data_dependencies = rop_utils.get_ast_dependency(a.data.ast)
+                mem_access.data_controllers = rop_utils.get_ast_controllers(init_state, a.data.ast,
+                                                                            mem_access.data_dependencies)
+            elif len(test_data) == 1:
+                mem_access.data_constant = test_data[0]
             else:
-                raise RopException("angrop does not handle symbolic address that depends on both regs and stack atm")
+                raise Exception("No data values, something went wrong")
+        elif a.action == "read":
+            # for reads we want to know if any register will have the data after
+            succ_state = final_state
+            bits_to_extend = self.project.arch.bits - a.data.ast.size()
+            # if bits_to_extend is negative it breaks everything, and we probably dont care about it
+            if bits_to_extend >= 0:
+                for reg in gadget.changed_regs:
+                    # skip popped regs
+                    if reg in gadget.popped_regs:
+                        continue
+                    # skip registers which have known dependencies
+                    if reg in gadget.reg_dependencies and len(gadget.reg_dependencies[reg]) > 0:
+                        continue
+                    test_constraint = claripy.And(
+                        succ_state.registers.load(reg) != a.data.ast.zero_extend(bits_to_extend),
+                        succ_state.registers.load(reg) != a.data.ast.sign_extend(bits_to_extend))
 
-            # don't need to inform user of stack reads/writes
-            stack_min_addr = self._concrete_sp - 0x20
-            # TODO should this be changed, so that we can more easily understand writes outside the frame
-            stack_max_addr = max(stack_min_addr + self._stack_bsize, stack_min_addr + gadget.stack_change)
-            if mem_access.addr_constant is not None and \
-                    stack_min_addr <= mem_access.addr_constant < stack_max_addr:
+                    if not succ_state.solver.satisfiable(extra_constraints=(test_constraint,)):
+                        mem_access.data_dependencies.add(reg)
+
+        mem_access.data_size = a.data.ast.size()
+        mem_access.addr_size = a.addr.ast.size()
+        return mem_access
+
+    def _build_mem_change(self, read_action, write_action, gadget, init_state, final_state):
+        # to change memory, write data must have at least two arguments:
+        # <sym_read> <op> <data>, such as `add [rax], rbx`
+        if len(write_action.data.ast.args) <= 1:
+            return None
+
+        # to change memory, the read must be symbolic and the write data must be derived from
+        # the symbolic read data
+        read_variables = {x for x in read_action.data.ast.variables if x.startswith('symbolic_read_unconstrained')}
+        if not read_variables:
+            return None
+        write_variables = {x for x in write_action.data.ast.variables if x.startswith('symbolic_read_unconstrained')}
+        if not read_variables.intersection(write_variables):
+            return None
+
+        # identify the symbolic data controller
+        sym_data = None
+        for d in write_action.data.ast.args:
+            # filter out concrete values
+            if not isinstance(d, claripy.ast.bv.BV):
                 continue
+            # filter out the symbolic read itself
+            # FIXME: technically, there could be cases where the controller also comes from a symbolic read
+            # but we don't handle it atm
+            vs = d.variables
+            if any(x.startswith('symbolic_read_unconstrained_') for x in vs):
+                continue
+            # TODO: we don't handle the cases where there are multiple data dependencies
+            if sym_data is not None:
+                return None
+            sym_data = d
+        if sym_data is None:
+            return None
 
-            if a.action == "write":
-                # special case for read than write form the same addr
-                if last_action is not None and last_action.action == "read" and \
-                        last_action.addr.ast is a.addr.ast and \
-                        last_action.ins_addr == a.ins_addr:
-                    mem_change = gadget.mem_reads[-1]
-                    gadget.mem_reads = gadget.mem_reads[:-1]
-                    # get the actual change in certain cases
-                    self._get_mem_change_op_and_data(mem_change, a, init_state)
-                    gadget.mem_changes.append(mem_change)
-                    last_action = None
-                    continue
-
-                # for writes we want what the data depends on
-                test_data = init_state.solver.eval_upto(a.data.ast, 2)
-                if len(test_data) > 1:
-                    mem_access.data_dependencies = rop_utils.get_ast_dependency(a.data.ast)
-                    mem_access.data_controllers = rop_utils.get_ast_controllers(init_state, a.data.ast,
-                                                                                mem_access.data_dependencies)
-                elif len(test_data) == 1:
-                    mem_access.data_constant = test_data[0]
-                else:
-                    raise Exception("No data values, something went wrong")
-            elif a.action == "read" and not isinstance(a.data.ast, claripy.fp.FPV) and \
-                    not isinstance(a.data.ast, claripy.ast.FP):
-                # for reads we want to know if any register will have the data after
-                succ_state = final_state
-                bits_to_extend = self.project.arch.bits - a.data.ast.size()
-                # if bits_to_extend is negative it breaks everything, and we probably dont care about it
-                if bits_to_extend >= 0:
-                    for reg in gadget.changed_regs:
-                        # skip popped regs
-                        if reg in gadget.popped_regs:
-                            continue
-                        # skip registers which have known dependencies
-                        if reg in gadget.reg_dependencies and len(gadget.reg_dependencies[reg]) > 0:
-                            continue
-                        test_constraint = claripy.And(
-                            succ_state.registers.load(reg) != a.data.ast.zero_extend(bits_to_extend),
-                            succ_state.registers.load(reg) != a.data.ast.sign_extend(bits_to_extend))
-
-                        if not succ_state.solver.satisfiable(extra_constraints=(test_constraint,)):
-                            mem_access.data_dependencies.add(reg)
-
-            mem_access.data_size = a.data.ast.size()
-            mem_access.addr_size = a.addr.ast.size()
-
-            last_action = a
-            if a.action == "read":
-                gadget.mem_reads.append(mem_access)
-            if a.action == "write":
-                gadget.mem_writes.append(mem_access)
-
-    @staticmethod
-    def _get_mem_change_op_and_data(mem_change, write_action, symbolic_state):
-        if not write_action.data.ast.symbolic:
-            return
-        if len(write_action.data.ast.args) != 2:
-            return
-        if not write_action.data.ast.args[0].symbolic:
-            return
-
-        vars0 = list(write_action.data.ast.args[0].variables)
-        if not len(vars0) == 1 and vars0[0].startswith("symbolic_read_sreg_"):
-            return
-
-        data_dependencies = rop_utils.get_ast_dependency(write_action.data.ast.args[1])
+        # FIXME: here, if the action does a constant increment
+        # such as mov rax, [rbx]; inc rax; mov [rbx], rax,
+        # this gadget will be ignored by us, which is not great
+        data_dependencies = rop_utils.get_ast_dependency(sym_data)
         if len(data_dependencies) != 1:
-            return
-        data_controllers = rop_utils.get_ast_controllers(symbolic_state, write_action.data.ast.args[1],
-                                                         data_dependencies)
+            return None
+        data_controllers = rop_utils.get_ast_controllers(init_state, sym_data, data_dependencies)
         if len(data_controllers) != 1:
-            return
+            return None
 
+        mem_change = self._build_mem_access(read_action, gadget, init_state, final_state)
         mem_change.op = write_action.data.ast.op
         mem_change.data_dependencies = data_dependencies
         mem_change.data_controllers = data_controllers
+        mem_change.data_size = write_action.data.ast.size()
+        mem_change.addr_size = write_action.addr.ast.size()
+        return mem_change
 
     def _does_syscall(self, symbolic_p):
         """
@@ -628,6 +623,64 @@ class GadgetAnalyzer:
                 return True
 
         return False
+
+    def _analyze_mem_access(self, final_state, init_state, gadget):
+        """
+        analyzes memory accesses and stores their info in the gadget
+        :param final_state: the stepped state, init_state is an ancestor of it.
+        :param init_state: the input state for testing
+        :param gadget: the gadget to store mem acccess in
+        """
+        all_mem_actions = []
+
+        # step 1: filter out irrelevant actions and irrelevant memory accesses
+        for a in final_state.history.actions.hardcopy:
+            if a.type != 'mem':
+                continue
+
+            # we don't like floating point stuff
+            if isinstance(a.data.ast, (claripy.fp.FPV, claripy.ast.FP)):
+                continue
+
+            # ignore read/write on stack
+            if not a.addr.ast.symbolic:
+                addr_constant = init_state.solver.eval(a.addr.ast)
+                stack_min_addr = self._concrete_sp - 0x20
+                # TODO should this be changed, so that we can more easily understand writes outside the frame
+                stack_max_addr = max(stack_min_addr + self._stack_bsize, stack_min_addr + gadget.stack_change)
+                if addr_constant is not None and \
+                        stack_min_addr <= addr_constant < stack_max_addr:
+                    continue
+            all_mem_actions.append(a)
+
+        # step 2: identify memory change accesses by indexing using the memory address as the key
+        # specifically, if there is a read/write sequence on the same memory address,
+        # and no subsequent memory actions on that same address, then the two actions will be
+        # merged into a memory change action
+        d = defaultdict(list)
+        for a in all_mem_actions:
+            d[a.addr.ast].append(a)
+        to_del = set()
+        for addr, actions in d.items():
+            if len(actions) != 2:
+                continue
+            if actions[0].action != 'read' or actions[1].action != 'write':
+                continue
+            mem_change = self._build_mem_change(actions[0], actions[1], gadget, init_state, final_state)
+            if mem_change:
+                to_del.add(addr)
+                gadget.mem_changes.append(mem_change)
+        for addr in to_del:
+            for m in d[addr]:
+                all_mem_actions.remove(m)
+
+        # step 3: add all left memory actions to either read/write memory accesses stashes
+        for a in all_mem_actions:
+            mem_access = self._build_mem_access(a, gadget, init_state, final_state)
+            if a.action == "read":
+                gadget.mem_reads.append(mem_access)
+            if a.action == "write":
+                gadget.mem_writes.append(mem_access)
 
     def _check_pivot(self, symbolic_p, symbolic_state, addr):
         """
