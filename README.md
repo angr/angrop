@@ -19,6 +19,7 @@ Supported architectures:
 * x86/x64
 * ARM
 * MIPS
+
 It should be relatively easy to support other architectures that are supported by `angr`.
 If you'd like to use `angrop` on other architectures, please create an issue and we will look into it :)
 
