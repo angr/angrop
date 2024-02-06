@@ -670,9 +670,9 @@ class GadgetAnalyzer:
             if mem_change:
                 to_del.add(addr)
                 gadget.mem_changes.append(mem_change)
-        all_mem_actions = set(all_mem_actions)
-        for x in to_del:
-            all_mem_actions -= set(d[x])
+        for addr in to_del:
+            for m in d[addr]:
+                all_mem_actions.remove(m)
 
         # step 3: add all left memory actions to either read/write memory accesses stashes
         for a in all_mem_actions:
