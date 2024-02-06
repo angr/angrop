@@ -1,4 +1,5 @@
 import logging
+from functools import cmp_to_key
 
 import angr
 
@@ -16,6 +17,20 @@ class MemChanger(Builder):
         super().__init__(chain_builder)
         self._mem_change_gadgets = self._get_all_mem_change_gadgets(self.chain_builder.gadgets)
         self._mem_add_gadgets = self._get_all_mem_add_gadgets()
+
+    def verify(self, chain, addr, value, _):
+        # verify the chain actually works
+        chain2 = chain.copy()
+        chain2._blank_state.memory.store(addr.data, 0x42424242, self.project.arch.bytes)
+        state = chain2.exec()
+        sim_data = state.memory.load(addr.data, self.project.arch.bytes, endness=self.project.arch.memory_endness)
+        if not state.solver.eval(sim_data == 0x42424242 + value.data):
+            raise RopException("memory add fails - 1")
+        # the next pc must come from the stack
+        if len(state.regs.pc.variables) != 1:
+            raise RopException("memory add fails - 2")
+        if not set(state.regs.pc.variables).pop().startswith("symbolic_stack"):
+            raise RopException("memory add fails - 3")
 
     def _set_regs(self, *args, **kwargs):
         return self.chain_builder._reg_setter.run(*args, **kwargs)
@@ -39,6 +54,27 @@ class MemChanger(Builder):
     def _get_all_mem_add_gadgets(self):
         return {x for x in self._mem_change_gadgets if x.mem_changes[0].op in ('__add__', '__sub__')}
 
+    @staticmethod
+    def _sort_gadgets(gadgets):
+        def cmp_func(g1, g2):
+            # prefer gadget with fewer memory accesses
+            if g1.num_mem_access > g2.num_mem_access:
+                return 1
+            if g1.num_mem_access < g2.num_mem_access:
+                return -1
+            # prefer gadget taking less space
+            if g1.stack_change > g2.stack_change:
+                return 1
+            elif g1.stack_change < g2.stack_change:
+                return -1
+            # prefer shorter gadget
+            if g1.block_length > g2.block_length:
+                return 1
+            elif g1.block_length < g2.block_length:
+                return -1
+            return 0
+        return sorted(gadgets, key=cmp_to_key(cmp_func))
+
     def add_to_mem(self, addr, value, data_size=None):
         # TODO could allow mem_reads as long as we control the address?
 
@@ -55,40 +91,33 @@ class MemChanger(Builder):
         _, _, reg_data = self.chain_builder._reg_setter._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
         l.debug("trying mem_add gadgets")
 
-        best_stack_change = 0xffffffff
-        best_gadget = None
-        for t, vals in reg_data.items():
-            if vals[1] >= best_stack_change:
-                continue
+        # filter out gadgets that certainly cannot be used for add_mem
+        # e.g. we can't set needed registers
+        gadgets = []
+        for t, _ in reg_data.items():
             for g in possible_gadgets:
                 mem_change = g.mem_changes[0]
                 if (set(mem_change.addr_dependencies) | set(mem_change.data_dependencies)).issubset(set(t)):
-                    stack_change = g.stack_change + vals[1]
-                    if stack_change < best_stack_change:
-                        best_gadget = g
-                        best_stack_change = stack_change
+                    gadgets.append(g)
 
-        if best_gadget is None:
+        # sort the gadgets with number of memory accesses and stack_change
+        gadgets = self._sort_gadgets(gadgets)
+
+        if not gadgets:
             raise RopException("Couldnt set registers for any memory add gadget")
 
         l.debug("Now building the mem add chain")
 
-        # build the chain
-        chain = self._add_mem_with_gadget(best_gadget, addr, data_size, difference=value)
+        # try to build the chain
+        try:
+            for g in gadgets:
+                chain = self._add_mem_with_gadget(g, addr, data_size, difference=value)
+                self.verify(chain, addr, value, data_size)
+                return chain
+        except RopException:
+            pass
 
-        # verify the chain actually works
-        chain2 = chain.copy()
-        chain2._blank_state.memory.store(addr.data, 0x42424242, self.project.arch.bytes)
-        state = chain2.exec()
-        sim_data = state.memory.load(addr.data, self.project.arch.bytes)
-        if not state.solver.eval(sim_data == 0x42424242 + value.data):
-            raise RopException("memory add fails - 1")
-        # the next pc must come from the stack
-        if len(state.regs.pc.variables) != 1:
-            raise RopException("memory add fails - 2")
-        if not set(state.regs.pc.variables).pop().startswith("symbolic_stack"):
-            raise RopException("memory add fails - 3")
-        return chain
+        raise RopException("Fail to perform add_to_mem!")
 
     def _add_mem_with_gadget(self, gadget, addr, data_size, final_val=None, difference=None):
         # sanity check for simple gadget

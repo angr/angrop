@@ -160,6 +160,11 @@ def test_add_to_mem():
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
 
+    chain = rop.write_to_mem(0xdeadbeef, b'CCCC') # 0x43434343
+    chain += rop.add_to_mem(0xdeadbeef, 0x62a000)
+    state = chain.exec()
+    assert state.mem[0xdeadbeef].long.unsigned.concrete == 0x43a5e343
+
     chain = rop.write_to_mem(0x41414140, b'CCCC') # 0x43434343
     chain += rop.add_to_mem(0x41414140, 0x42424242)
 
