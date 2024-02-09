@@ -5,10 +5,10 @@ import angr
 import pyvex
 import claripy
 
-from . import rop_utils
-from .arch import get_arch
-from .rop_gadget import RopGadget, RopMemAccess, RopRegMove, StackPivot
-from .errors import RopException, RegNotFoundException
+from .. import rop_utils
+from ..arch import get_arch
+from ..rop_gadget import RopGadget, RopMemAccess, RopRegMove, PivotGadget
+from ..errors import RopException, RegNotFoundException
 
 l = logging.getLogger("angrop.gadget_analyzer")
 
@@ -694,7 +694,7 @@ class GadgetAnalyzer:
         pivot = None
         reg_deps = rop_utils.get_ast_dependency(symbolic_p.regs.sp)
         if len(reg_deps) == 1:
-            pivot = StackPivot(addr)
+            pivot = PivotGadget(addr)
             pivot.sp_from_reg = list(reg_deps)[0]
         elif len(symbolic_p.regs.sp.variables) == 1 and \
                 list(symbolic_p.regs.sp.variables)[0].startswith("symbolic_stack"):
@@ -705,7 +705,7 @@ class GadgetAnalyzer:
             if offset is None or offset % 8 != 0:
                 return None
             offset_bytes = offset//8
-            pivot = StackPivot(addr)
+            pivot = PivotGadget(addr)
             pivot.sp_popped_offset = offset_bytes
 
         if pivot is not None:

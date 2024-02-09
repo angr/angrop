@@ -251,12 +251,16 @@ class RopGadget:
         return out
 
 
-class StackPivot:
+class PivotGadget(RopGadget):
     """
-    stack pivot gadget
+    stack pivot gadget, the definition of a PivotGadget is that
+    it modifies the stack pointer register
+    TODO: so currently, it cannot directly construct a `pop rbp; leave ret;`
+    chain to pivot stack
     """
     def __init__(self, addr):
-        self.addr = addr
+        super().__init__(addr)
+        #self.addr = addr
         self.sp_from_reg = None
         self.sp_popped_offset = None
 
@@ -269,4 +273,8 @@ class StackPivot:
         return s
 
     def __repr__(self):
-        return "<Pivot %#x>" % self.addr
+        return "<PivotGadget %#x>" % self.addr
+    
+    def copy(self):
+        new = super().copy()
+        return new
