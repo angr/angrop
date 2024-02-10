@@ -215,10 +215,22 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
         # the bug makes angr may merge sim_actions from two instructions into one
         # making analysis based on sim_actions inaccurate
         num_insts = len(state.block().capstone.insns)
-        for i in range(num_insts):
+        if not num_insts:
+            raise RopException("No instructions!")
+
+        last_inst_addr = state.block().capstone.insns[-1].address
+        for _ in range(num_insts):
             succ = project.factory.successors(state, num_inst=1)
-            if i != num_insts - 1:
+            if state.addr != last_inst_addr:
+                if not succ.flat_successors:
+                    raise RopException("Something is wrong")
                 state = succ.flat_successors[0]
+            else:
+                succ = project.factory.successors(state, num_inst=1)
+                break
+        else:
+            raise RopException("Fail to reach the last instruction!")
+
         if len(succ.flat_successors) + len(succ.unconstrained_successors) != 1:
             raise RopException("Does not get to a single successor")
         if len(succ.flat_successors) == 1 and max_steps > 0:

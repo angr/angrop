@@ -417,8 +417,6 @@ class GadgetAnalyzer:
             if not init_state.solver.satisfiable(extra_constraints=[final_state.regs.sp == 0x41414100]):
                 return None
             # make sure the control after pivot is reasonable
-            print('='*0x40)
-            self.project.factory.block(init_state.addr).pp()
 
             # find where the ip is read from
             saved_ip_addr = None
@@ -534,7 +532,6 @@ class GadgetAnalyzer:
         elif type(gadget) is PivotGadget:
             last_sp = None
             for act in final_state.history.actions:
-                print(act)
                 if act.type == 'reg' and act.action == 'write' and act.storage == self.arch.stack_pointer:
                     if not act.data.ast.symbolic:
                         last_sp = act.data.ast

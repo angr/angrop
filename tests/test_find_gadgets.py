@@ -120,6 +120,20 @@ def test_pivot_gadget():
     assert type(gadget) == RopGadget
     assert gadget.stack_change == 0x10 # 3 pops + 1 ret
 
+    proj = angr.Project(os.path.join(bin_path, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
+
+    """
+    4c7b5a  mov     sp, r7
+    4c7b5c  pop.w   {r4, r5, r6, r7, r8, sb, sl, fp, pc
+    """
+
+    #rop.find_gadgets(show_progress=False)
+    gadget = rop.analyze_gadget(0x4c7b5a+1)
+    assert type(gadget) == PivotGadget
+    assert gadget.stack_change == 0
+
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
