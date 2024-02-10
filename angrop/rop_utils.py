@@ -187,10 +187,7 @@ def make_symbolic_state(project, reg_set, stack_gsize=80):
         symbolic_state.registers.store(reg, symbolic_state.solver.BVS("sreg_" + reg + "-", project.arch.bits))
     # restore sp
     symbolic_state.regs.sp = input_state.regs.sp
-    # restore bp
-    symbolic_state.regs.bp = input_state.regs.bp
     return symbolic_state
-
 
 def make_reg_symbolic(state, reg):
     state.registers.store(reg,
@@ -214,7 +211,14 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
         # nums
         state.options.add(angr.options.BYPASS_UNSUPPORTED_SYSCALL)
 
-        succ = project.factory.successors(state)
+        # FIXME: we step instruction by instruction because of an angr bug: xxxx
+        # the bug makes angr may merge sim_actions from two instructions into one
+        # making analysis based on sim_actions inaccurate
+        num_insts = len(state.block().capstone.insns)
+        for i in range(num_insts):
+            succ = project.factory.successors(state, num_inst=1)
+            if i != num_insts - 1:
+                state = succ.flat_successors[0]
         if len(succ.flat_successors) + len(succ.unconstrained_successors) != 1:
             raise RopException("Does not get to a single successor")
         if len(succ.flat_successors) == 1 and max_steps > 0:

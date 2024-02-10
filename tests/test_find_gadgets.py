@@ -3,6 +3,7 @@ import logging
 
 import angr
 import angrop  # pylint: disable=unused-import
+from angrop.rop_gadget import RopGadget, PivotGadget
 
 l = logging.getLogger(__name__)
 
@@ -55,6 +56,69 @@ def test_arm_thumb_mode():
 
     assert gadget
     assert gadget.block_length == 6
+
+def test_pivot_gadget():
+    proj = angr.Project(os.path.join(tests_dir, "i386", "bronze_ropchain"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    #rop.find_gadgets_single_threaded(show_progress=False)
+
+    """
+    80488e8  leave
+    80488e9  ret
+    """
+    gadget = rop.analyze_gadget(0x80488e8)
+    assert type(gadget) == PivotGadget
+    assert gadget.stack_change == 0
+
+    """
+    8048592  xchg    esp, eax
+    8048593  ret     0xca21
+    """
+    gadget = rop.analyze_gadget(0x8048592)
+    assert not gadget
+
+    """
+    8048998  pop     ecx
+    8048999  pop     ebx
+    804899a  pop     ebp
+    804899b  lea     esp, [ecx-0x4]
+    804899e  ret
+    """
+    gadget = rop.analyze_gadget(0x8048998)
+    assert type(gadget) == PivotGadget
+    assert gadget.stack_change == 0xc
+
+    """
+    8048fd6  xchg    esp, eax
+    8048fd7  ret
+    """
+    gadget = rop.analyze_gadget(0x8048fd6)
+    assert type(gadget) == PivotGadget
+    assert gadget.stack_change == 0
+
+    """
+    8052cac  lea     esp, [ebp-0xc]
+    8052caf  pop     ebx
+    8052cb0  pop     esi
+    8052cb1  pop     edi
+    8052cb2  pop     ebp
+    8052cb3  ret
+    """
+    gadget = rop.analyze_gadget(0x8052cac)
+    assert type(gadget) == PivotGadget
+    assert gadget.stack_change == 0
+
+    """
+    805658c  add    BYTE PTR [eax],al
+    805658e  pop    ebx
+    805658f  pop    esi
+    8056590  pop    edi
+    8056591  ret
+    """
+    gadget = rop.analyze_gadget(0x805658c)
+    assert type(gadget) == RopGadget
+    assert gadget.stack_change == 0x10 # 3 pops + 1 ret
 
 def run_all():
     functions = globals()

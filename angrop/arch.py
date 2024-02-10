@@ -12,6 +12,7 @@ class ROPArch:
         self.reg_set = self._get_reg_set()
 
         a = project.arch
+        self.stack_pointer = a.register_names[a.sp_offset]
         self.base_pointer = a.register_names[a.bp_offset]
 
     def _get_reg_set(self):
