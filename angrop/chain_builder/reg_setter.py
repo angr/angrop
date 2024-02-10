@@ -335,9 +335,6 @@ class RegSetter(Builder):
                 # ignore gadgets which don't have a positive stack change
                 if g.stack_change <= 0:
                     continue
-                # ignore base pointer moves for now
-                if g.bp_moves_to_sp:
-                    continue
 
                 stack_change = data[regs][1]
                 new_stack_change = stack_change + g.stack_change
@@ -469,9 +466,6 @@ class RegSetter(Builder):
             return False
         # make sure the register doesnt depend on itself
         if reg in gadget.reg_dependencies and reg in gadget.reg_dependencies[reg]:
-            return False
-        # make sure the gadget doesnt pop bp
-        if gadget.bp_moves_to_sp:
             return False
 
         # set the register

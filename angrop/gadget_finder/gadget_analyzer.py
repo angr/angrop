@@ -264,11 +264,6 @@ class GadgetAnalyzer:
             #FIXME: technically, it can be negative, e.g. call instructions
             return None
 
-        # if the sp moves to the bp we have to handle it differently
-        if not gadget.bp_moves_to_sp and self.arch.base_pointer != self.arch.stack_pointer:
-            rop_utils.make_reg_symbolic(init_state, self.arch.base_pointer)
-            final_state = rop_utils.step_to_unconstrained_successor(self.project, init_state)
-
         l.info("... checking for syscall availability")
         gadget.makes_syscall = self._does_syscall(final_state)
         gadget.starts_with_syscall = self._starts_with_syscall(addr)
@@ -323,7 +318,7 @@ class GadgetAnalyzer:
 
         exit_target = exit_action.target.ast
 
-        stack_change = gadget.stack_change if not gadget.bp_moves_to_sp else None
+        stack_change = gadget.stack_change if type(gadget) == RopGadget else None
 
         for reg in self._get_reg_writes(final_state):
             # we assume any register in reg_writes changed
@@ -505,22 +500,16 @@ class GadgetAnalyzer:
             sp_change = final_state.regs.sp - init_state.regs.sp
 
             # analyze the results
-            gadget.bp_moves_to_sp = False
             if len(dependencies) > 1:
                 raise RopException("SP has multiple dependencies")
             if len(dependencies) == 0 and sp_change.symbolic:
                 raise RopException("SP change is uncontrolled")
 
+            assert self.arch.base_pointer not in dependencies
             if len(dependencies) == 0 and not sp_change.symbolic:
                 stack_changes = [init_state.solver.eval(sp_change)]
             elif list(dependencies)[0] == self.arch.stack_pointer:
                 stack_changes = init_state.solver.eval_upto(sp_change, 2)
-            elif list(dependencies)[0] == self.arch.base_pointer:
-                # FIXME: I think this code is meant to handle leave; ret
-                # but I wonder whether lea rsp, [rbp+offset] is a thing
-                sp_change = final_state.regs.sp - init_state.regs.bp
-                stack_changes = init_state.solver.eval_upto(sp_change, 2)
-                gadget.bp_moves_to_sp = True
             else:
                 raise RopException("SP does not depend on SP or BP")
 

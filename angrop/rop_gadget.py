@@ -105,7 +105,6 @@ class RopGadget:
         self.mem_writes = []
         self.mem_changes = []
         self.reg_moves = []
-        self.bp_moves_to_sp = None # whether the new sp depends on bp, e.g. 'leave; ret' overwrites sp with bp
         self.block_length = None
         self.makes_syscall = False
         self.starts_with_syscall = False
@@ -128,8 +127,6 @@ class RopGadget:
         if self.popped_regs != other.popped_regs:
             return False
         if self.concrete_regs != other.concrete_regs:
-            return False
-        if self.bp_moves_to_sp != other.bp_moves_to_sp:
             return False
         if self.reg_dependencies != other.reg_dependencies:
             return False
@@ -169,10 +166,7 @@ class RopGadget:
 
     def __str__(self):
         s = "Gadget %#x\n" % self.addr
-        if self.bp_moves_to_sp:
-            s += "Stack change: bp + %#x\n" % self.stack_change
-        else:
-            s += "Stack change: %#x\n" % self.stack_change
+        s += "Stack change: %#x\n" % self.stack_change
         s += "Changed registers: " + str(self.changed_regs) + "\n"
         s += "Popped registers: " + str(self.popped_regs) + "\n"
         for move in self.reg_moves:
@@ -241,7 +235,6 @@ class RopGadget:
         out.mem_changes = list(self.mem_changes)
         out.mem_writes = list(self.mem_writes)
         out.reg_moves = list(self.reg_moves)
-        out.bp_moves_to_sp = self.bp_moves_to_sp
         out.block_length = self.block_length
         out.makes_syscall = self.makes_syscall
         out.starts_with_syscall = self.starts_with_syscall

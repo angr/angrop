@@ -146,8 +146,6 @@ class RegMover(Builder):
                 continue
             if g.has_symbolic_access():
                 continue
-            if g.bp_moves_to_sp:
-                continue
             if moves.intersection(set(g.reg_moves)):
                 gadgets.add(g)
         return gadgets

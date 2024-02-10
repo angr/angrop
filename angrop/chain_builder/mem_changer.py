@@ -41,8 +41,6 @@ class MemChanger(Builder):
         for g in gadgets:
             if len(g.mem_reads) + len(g.mem_writes) > 0 or len(g.mem_changes) != 1:
                 continue
-            if g.bp_moves_to_sp:
-                continue
             if g.stack_change <= 0:
                 continue
             for m_access in g.mem_changes:
