@@ -77,7 +77,7 @@ def test_pivot_gadget():
     gadget = rop.analyze_gadget(0x4c7b5a+1)
     assert gadget is not None
 
-    proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "i386_glibc_2.35"), auto_load_libs=False)
+    proj = angr.Project(os.path.join(tests_dir, "i386", "i386_glibc_2.35"), auto_load_libs=False)
     rop = proj.analyses.ROP()
     """
     439ad3  pop     esp
@@ -90,6 +90,11 @@ def test_pivot_gadget():
     """
     gadget = rop.analyze_gadget(0x439ad3)
     assert gadget is None
+
+def test_syscall_gadget():
+    proj = angr.Project(os.path.join(tests_dir, "i386", "bronze_ropchain"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+    assert all(gadget_exists(rop, x) for x in [0x0806f860, 0x0806f85e, 0x080939e3, 0x0806f2f1])
 
 def run_all():
     functions = globals()

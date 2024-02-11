@@ -199,7 +199,7 @@ def cast_rop_value(val, project):
         val.rebase_analysis()
     return val
 
-def step_to_unconstrained_successor(project, state, max_steps=2, allow_simprocedures=False):
+def step_to_unconstrained_successor(project, state, max_steps=2, allow_simprocedures=False, stop_at_syscall=False):
     """
     steps up to two times to try to find an unconstrained successor
     :param state: the input state
@@ -222,18 +222,26 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
         if not segment or not segment.is_executable:
             raise RopException(f"{state} is not executable!")
 
-        last_inst_addr = state.block().capstone.insns[-1].address
-        for _ in range(num_insts):
-            succ = project.factory.successors(state, num_inst=1)
-            if state.addr != last_inst_addr:
-                if not succ.flat_successors:
-                    raise RopException("Something is wrong")
-                state = succ.flat_successors[0]
-            else:
-                succ = project.factory.successors(state, num_inst=1)
-                break
+        if state.block().vex.jumpkind.startswith('Ijk_Sys'):
+            # go to kernel space and back takes two steps
+            succ = project.factory.successors(state)
+            state = succ.flat_successors[0]
+            if stop_at_syscall:
+                return state
+            succ = project.factory.successors(state)
         else:
-            raise RopException("Fail to reach the last instruction!")
+            last_inst_addr = state.block().capstone.insns[-1].address
+            for _ in range(num_insts):
+                succ = project.factory.successors(state, num_inst=1)
+                if state.addr != last_inst_addr:
+                    if not succ.flat_successors:
+                        raise RopException("Something is wrong")
+                    state = succ.flat_successors[0]
+                else:
+                    succ = project.factory.successors(state, num_inst=1)
+                    break
+            else:
+                raise RopException("Fail to reach the last instruction!")
 
         if len(succ.flat_successors) + len(succ.unconstrained_successors) != 1:
             raise RopException("Does not get to a single successor")

@@ -16,20 +16,9 @@ class SysCaller(FuncCaller):
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
 
-        self._syscall_instruction = None
-        if self.project.arch.linux_name == "x86_64":
-            self._syscall_instructions = {b"\x0f\x05"}
-        elif self.project.arch.linux_name == "i386":
-            self._syscall_instructions = {b"\xcd\x80"}
-
-        self._execve_syscall = None
-        if "unix" in self.project.loader.main_object.os.lower():
-            if self.project.arch.bits == 64:
-                self._execve_syscall = 59
-            elif self.project.arch.bits == 32:
-                self._execve_syscall = 11
-            else:
-                raise RopException("unknown unix platform")
+        if "unix" not in self.project.loader.main_object.os.lower():
+            raise RopException("unknown unix platform")
+        self._execve_syscall = 0x3b if self.project.arch.bits == 64 else 0xb
 
     def _get_syscall_locations(self):
         """
@@ -113,6 +102,7 @@ class SysCaller(FuncCaller):
         :param needs_return: whether to continue the ROP after invoking the syscall
         :return: a RopChain which makes the system with the requested register contents
         """
+        syscall_locs = self._get_syscall_locations()
 
         # set the system call number
         extra_regs = {}

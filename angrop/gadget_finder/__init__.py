@@ -58,6 +58,7 @@ class GadgetFinder:
 
         # internal stuff
         self._ret_locations = None
+        self._syscall_locations = None
         self._cache = None # cache seen blocks, dict(block_hash => sets of addresses)
         self._gadget_analyzer = None
 
@@ -77,6 +78,8 @@ class GadgetFinder:
         return self._gadget_analyzer
 
     def _initialize_gadget_analyzer(self):
+
+        self._syscall_locations = self._get_syscall_locations_by_string()
 
         # find locations to analyze
         if self.only_check_near_rets and not self._ret_locations:
@@ -208,6 +211,8 @@ class GadgetFinder:
                         yield i+offset
                 current_addr = max(current_addr, end_addr)
         else:
+            for addr in self._syscall_locations:
+                yield addr+offset
             for segment in self.project.loader.main_object.segments:
                 if segment.is_executable:
                     l.debug("Analyzing segment with address range: 0x%x, 0x%x", segment.min_addr, segment.max_addr)
@@ -228,7 +233,7 @@ class GadgetFinder:
                 if segment.is_executable:
                     start = segment.min_addr + (alignment - segment.min_addr % alignment)
                     num += (segment.max_addr - start) // alignment
-            return num
+            return num + len(self._syscall_locations)
 
     def _get_ret_locations(self):
         """
@@ -276,11 +281,22 @@ class GadgetFinder:
         uses a string filter to find the return instructions
         :return: all the locations in the binary with a ret instruction
         """
-        if self.project.arch.linux_name in ("x86_64", "i386"):
-            ret_instructions = {b"\xc2", b"\xc3", b"\xca", b"\xcb"}
-        else:
+        if not self.arch.ret_insts:
             raise RopException("Only have ret strings for i386 and x86_64")
-        fmt = b'(' + b')|('.join(ret_instructions) + b')'
+        return self._get_locations_by_strings(self.arch.ret_insts)
+
+    def _get_syscall_locations_by_string(self):
+        """
+        uses a string filter to find all the system calls instructions
+        :return: all the locations in the binary with a system call instruction
+        """
+        if not self.arch.syscall_insts:
+            l.warning("Only have syscall strings for i386 and x86_64")
+            return []
+        return self._get_locations_by_strings(self.arch.syscall_insts)
+
+    def _get_locations_by_strings(self, strings):
+        fmt = b'(' + b')|('.join(strings) + b')'
 
         addrs = []
         state = self.project.factory.entry_state()

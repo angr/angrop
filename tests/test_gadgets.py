@@ -2,7 +2,7 @@ import os
 
 import angr
 import angrop # pylint: disable=unused-import
-from angrop.rop_gadget import RopGadget, PivotGadget
+from angrop.rop_gadget import RopGadget, PivotGadget, SyscallGadget
 
 BIN_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "binaries")
 CACHE_DIR = os.path.join(BIN_DIR, 'tests_data', 'angrop_gadgets_cache')
@@ -204,6 +204,43 @@ def test_pivot_gadget():
     assert gadget.stack_change == 0
     assert gadget.stack_change_after_pivot == 0x24
     assert len(gadget.sp_controllers) == 1 and gadget.sp_controllers.pop() == 'r7'
+
+def test_syscall_gadget():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "i386_glibc_2.35"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    gadget = rop.analyze_gadget(0x437765)
+    assert type(gadget) == SyscallGadget
+    assert gadget.stack_change == 0
+    assert not gadget.can_return
+
+    gadget = rop.analyze_gadget(0x5212f6)
+    assert type(gadget) == SyscallGadget
+    assert gadget.stack_change == 0
+    assert not gadget.can_return
+
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "bronze_ropchain"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    gadget = rop.analyze_gadget(0x0806f860)
+    assert type(gadget) == SyscallGadget
+    assert gadget.stack_change == 0x4
+    assert gadget.can_return
+
+    gadget = rop.analyze_gadget(0x0806f85e)
+    assert type(gadget) == SyscallGadget
+    assert gadget.stack_change == 0x4
+    assert gadget.can_return
+
+    gadget = rop.analyze_gadget(0x080939e3)
+    assert type(gadget) == SyscallGadget
+    assert gadget.stack_change == 0x0
+    assert not gadget.can_return
+
+    gadget = rop.analyze_gadget(0x0806f2f1)
+    assert type(gadget) == SyscallGadget
+    assert gadget.stack_change == 0x0
+    assert not gadget.can_return
 
 def run_all():
     functions = globals()

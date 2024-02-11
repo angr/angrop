@@ -112,8 +112,6 @@ class RopGadget:
         self.mem_changes = []
 
         # transition information, i.e. how to pass the control flow to the next gadget
-        self.makes_syscall = False
-        self.starts_with_syscall = False
         self.transit_type = None
         self.jump_reg = None
         self.pc_reg = None
@@ -285,4 +283,35 @@ class PivotGadget(RopGadget):
         new.stack_change_after_pivot = self.stack_change_after_pivot
         new.sp_reg_controllers = set(self.sp_reg_controllers)
         new.sp_stack_controllers = set(self.sp_stack_controllers)
+        return new
+
+class SyscallGadget(RopGadget):
+    """
+    we collect two types of syscall gadgets:
+    1. with return: syscall; ret
+    2. without return: syscall; xxxx
+    """
+    def __init__(self, addr):
+        super().__init__(addr)
+        self.makes_syscall = False
+        self.starts_with_syscall = False
+
+    def __str__(self):
+        s = f"SyscallGadget {self.addr:#x}\n"
+        s += f"  stack change: {self.stack_change:#x}\n"
+        s += f"  transit type: {self.transit_type}\n"
+        s += f"  can return: {self.can_return}\n"
+        return s
+
+    def __repr__(self):
+        return f"<SyscallGadget {self.addr:#x}>"
+
+    @property
+    def can_return(self):
+        return self.transit_type != 'syscall'
+
+    def copy(self):
+        new = super().copy()
+        new.makes_syscall = self.makes_syscall
+        new.starts_with_syscall = self.starts_with_syscall
         return new

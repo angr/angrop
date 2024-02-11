@@ -7,7 +7,7 @@ import claripy
 
 from .. import rop_utils
 from ..arch import get_arch
-from ..rop_gadget import RopGadget, RopMemAccess, RopRegMove, PivotGadget
+from ..rop_gadget import RopGadget, RopMemAccess, RopRegMove, PivotGadget, SyscallGadget
 from ..errors import RopException, RegNotFoundException
 
 l = logging.getLogger("angrop.gadget_analyzer")
@@ -16,6 +16,7 @@ l = logging.getLogger("angrop.gadget_analyzer")
 # like, mov rsp, rax; ret 0x1000 is not OK
 # mov rsp, rax; ret 0x20 is OK
 MAX_PIVOT_BYTES = 0x100
+
 
 class GadgetAnalyzer:
     """
@@ -54,7 +55,8 @@ class GadgetAnalyzer:
             if not self._can_reach_unconstrained(addr):
                 l.debug("... cannot get to unconstrained successor according to static analysis")
                 return None
-            init_state, final_state = self._reach_unconstrained(addr)
+
+            init_state, final_state = self._reach_unconstrained_or_syscall(addr)
 
             ctrl_type = self._check_for_control_type(init_state, final_state)
             if not ctrl_type:
@@ -153,6 +155,15 @@ class GadgetAnalyzer:
 
         return True
 
+    def is_in_kernel(self, state):
+        ip = state.ip
+        if not ip.symbolic:
+            obj = self.project.loader.find_object_containing(ip.concrete_value)
+            if obj.binary == 'cle##kernel':
+                return True
+            return False
+        return False
+
     def _can_reach_unconstrained(self, addr, max_steps=2):
         """
         Use static analysis to check whether the address can lead to unconstrained targets
@@ -179,19 +190,29 @@ class GadgetAnalyzer:
 
         return self._can_reach_unconstrained(target_block_addr, max_steps-1)
 
-    def _reach_unconstrained(self, addr):
+    def _reach_unconstrained_or_syscall(self, addr):
         init_state = self._state.copy()
         init_state.ip = addr
 
         # it will raise errors if angr fails to step the state
-        final_state = rop_utils.step_to_unconstrained_successor(self.project, state=init_state)
+        final_state = rop_utils.step_to_unconstrained_successor(self.project, state=init_state, stop_at_syscall=True)
 
-        return init_state, final_state
+        if self.is_in_kernel(final_state):
+            state = final_state.copy()
+            try:
+                succ = self.project.factory.successors(state)
+                state = succ.flat_successors[0]
+                state2 = rop_utils.step_to_unconstrained_successor(self.project, state=state)
+            except Exception:
+                return init_state, final_state
+        return init_state, state2
 
     def _identify_transit_type(self, final_state, ctrl_type):
         # FIXME: not always jump, could be call as well
         if ctrl_type == 'register':
             return "jmp_reg"
+        if ctrl_type == 'syscall':
+            return ctrl_type
 
         if ctrl_type == 'pivot':
             variables = list(final_state.ip.variables)
@@ -226,7 +247,9 @@ class GadgetAnalyzer:
         transit_type = self._identify_transit_type(final_state, ctrl_type)
 
         # create the gadget
-        if ctrl_type == 'pivot':
+        if ctrl_type == 'syscall' or self._does_syscall(final_state):
+            gadget = SyscallGadget(addr=addr)
+        elif ctrl_type == 'pivot':
             gadget = PivotGadget(addr=addr)
         else:
             gadget = RopGadget(addr=addr)
@@ -391,11 +414,15 @@ class GadgetAnalyzer:
         :return: the data provenance of the controlled ip in the final state, either the stack or registers
         """
 
-        # the ip is controlled by stack
-        if self._check_if_stack_controls_ast(final_state.ip, init_state):
-            return "stack"
-
         ip = final_state.ip
+
+        # this gadget arrives a syscall
+        if self.is_in_kernel(final_state):
+            return 'syscall'
+
+        # the ip is controlled by stack
+        if self._check_if_stack_controls_ast(ip, init_state):
+            return "stack"
 
         # the ip is not controlled by regs
         if not ip.variables:
@@ -496,7 +523,7 @@ class GadgetAnalyzer:
         :param gadget: the gadget in which to store the sp change
         """
         dependencies = self._get_reg_dependencies(final_state, "sp")
-        if type(gadget) is RopGadget:
+        if type(gadget) in (RopGadget, SyscallGadget):
             sp_change = final_state.regs.sp - init_state.regs.sp
 
             # analyze the results
