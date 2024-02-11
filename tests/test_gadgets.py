@@ -2,6 +2,7 @@ import os
 
 import angr
 import angrop # pylint: disable=unused-import
+from angrop.rop_gadget import RopGadget, PivotGadget
 
 BIN_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "binaries")
 CACHE_DIR = os.path.join(BIN_DIR, 'tests_data', 'angrop_gadgets_cache')
@@ -103,6 +104,93 @@ def test_arm_mem_change_gadget():
     """
     gadget = rop._gadget_analyzer.analyze_gadget(0x4c1e8e+1) # thumb mode
     assert gadget.mem_changes
+
+def test_pivot_gadget():
+    # pylint: disable=pointless-string-statement
+
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "bronze_ropchain"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    """
+    80488e8  leave
+    80488e9  ret
+    """
+    gadget = rop.analyze_gadget(0x80488e8)
+    assert type(gadget) == PivotGadget
+    assert gadget.stack_change == 0
+    assert gadget.stack_change_after_pivot == 0x8
+    assert len(gadget.sp_controllers) == 1 and gadget.sp_controllers.pop() == 'ebp'
+
+
+    """
+    8048592  xchg    esp, eax
+    8048593  ret     0xca21
+    """
+    gadget = rop.analyze_gadget(0x8048592)
+    assert not gadget
+
+    """
+    8048998  pop     ecx
+    8048999  pop     ebx
+    804899a  pop     ebp
+    804899b  lea     esp, [ecx-0x4]
+    804899e  ret
+    """
+    gadget = rop.analyze_gadget(0x8048998)
+    assert type(gadget) == PivotGadget
+    assert gadget.stack_change == 0xc
+    assert gadget.stack_change_after_pivot == 0x4
+    assert len(gadget.sp_controllers) == 1 and gadget.sp_controllers.pop().startswith('symbolic_stack_')
+
+    """
+    8048fd6  xchg    esp, eax
+    8048fd7  ret
+    """
+    gadget = rop.analyze_gadget(0x8048fd6)
+    assert type(gadget) == PivotGadget
+    assert gadget.stack_change == 0
+    assert gadget.stack_change_after_pivot == 0x4
+    assert len(gadget.sp_controllers) == 1 and gadget.sp_controllers.pop() == 'eax'
+
+    """
+    8052cac  lea     esp, [ebp-0xc]
+    8052caf  pop     ebx
+    8052cb0  pop     esi
+    8052cb1  pop     edi
+    8052cb2  pop     ebp
+    8052cb3  ret
+    """
+    gadget = rop.analyze_gadget(0x8052cac)
+    assert type(gadget) == PivotGadget
+    assert gadget.stack_change == 0
+    assert gadget.stack_change_after_pivot == 0x14
+    assert len(gadget.sp_controllers) == 1 and gadget.sp_controllers.pop() == 'ebp'
+
+    """
+    805658c  add    BYTE PTR [eax],al
+    805658e  pop    ebx
+    805658f  pop    esi
+    8056590  pop    edi
+    8056591  ret
+    """
+    gadget = rop.analyze_gadget(0x805658c)
+    assert type(gadget) == RopGadget
+    assert gadget.stack_change == 0x10 # 3 pops + 1 ret
+
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
+
+    """
+    4c7b5a  mov     sp, r7
+    4c7b5c  pop.w   {r4, r5, r6, r7, r8, sb, sl, fp, pc}
+    """
+
+    #rop.find_gadgets(show_progress=False)
+    gadget = rop.analyze_gadget(0x4c7b5a+1)
+    assert type(gadget) == PivotGadget
+    assert gadget.stack_change == 0
+    assert gadget.stack_change_after_pivot == 0x24
+    assert len(gadget.sp_controllers) == 1 and gadget.sp_controllers.pop() == 'r7'
 
 def run_all():
     functions = globals()

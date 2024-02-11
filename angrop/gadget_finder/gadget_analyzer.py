@@ -495,8 +495,8 @@ class GadgetAnalyzer:
         :param symbolic_state: the input symbolic state
         :param gadget: the gadget in which to store the sp change
         """
+        dependencies = self._get_reg_dependencies(final_state, "sp")
         if type(gadget) is RopGadget:
-            dependencies = self._get_reg_dependencies(final_state, "sp")
             sp_change = final_state.regs.sp - init_state.regs.sp
 
             # analyze the results
@@ -520,16 +520,25 @@ class GadgetAnalyzer:
 
         elif type(gadget) is PivotGadget:
             last_sp = None
+            init_sym_sp = None
             for act in final_state.history.actions:
                 if act.type == 'reg' and act.action == 'write' and act.storage == self.arch.stack_pointer:
                     if not act.data.ast.symbolic:
                         last_sp = act.data.ast
                     else:
+                        init_sym_sp = act.data.ast
                         break
             if last_sp is not None:
                 gadget.stack_change = (last_sp - init_state.regs.sp).concrete_value
             else:
                 gadget.stack_change = 0
+
+            assert init_sym_sp is not None
+            sols = final_state.solver.eval_upto(final_state.regs.sp - init_sym_sp, 2)
+            assert len(sols) == 1 # it is a PivotGadget, we must have pivotted exactly once
+            gadget.stack_change_after_pivot = sols[0]
+            gadget.sp_reg_controllers = set(self._get_reg_controllers(init_state, final_state, 'sp', dependencies))
+            gadget.sp_stack_controllers = {x for x in final_state.regs.sp.variables if x.startswith("symbolic_stack_")}
 
     def _build_mem_access(self, a, gadget, init_state, final_state):
         """
@@ -713,63 +722,6 @@ class GadgetAnalyzer:
                 gadget.mem_reads.append(mem_access)
             if a.action == "write":
                 gadget.mem_writes.append(mem_access)
-
-    def _check_pivot(self, addr, init_state, final_state):
-        """
-        Super basic pivot analysis. Pivots are not really used by angrop right now
-        :param init_state: input state for testing
-        :param final_state: the stepped path, symbolic_state is an ancestor of it.
-        :return: the pivot object
-        """
-        if final_state.history.depth > 1:
-            return None
-        pivot = None
-        reg_deps = rop_utils.get_ast_dependency(final_state.regs.sp)
-        if len(reg_deps) == 1:
-            pivot = PivotGadget(addr)
-            pivot.sp_from_reg = list(reg_deps)[0]
-        elif len(final_state.regs.sp.variables) == 1 and \
-                list(final_state.regs.sp.variables)[0].startswith("symbolic_stack"):
-            offset = None
-            for a in final_state.regs.sp.recursive_children_asts:
-                if a.op == "Extract" and a.depth == 2:
-                    offset = a.args[2].size() - 1 - a.args[0]
-            if offset is None or offset % 8 != 0:
-                return None
-            offset_bytes = offset//8
-            pivot = PivotGadget(addr)
-            pivot.sp_popped_offset = offset_bytes
-
-        if pivot is not None:
-            # verify no weird mem accesses
-            test_p = self.project.factory.simulation_manager(init_state.copy())
-            # step until we find the pivot action
-            for _ in range(self.project.factory.block(init_state.addr).instructions):
-                test_p.step(num_inst=1)
-                if len(test_p.active) != 1:
-                    return None
-                if test_p.one_active.regs.sp.symbolic:
-                    # found the pivot action
-                    break
-            # now iterate through the remaining instructions with a clean state
-            test_p.step(num_inst=1)
-            if len(test_p.active) != 1:
-                return None
-            succ1 = test_p.active[0]
-            ss = init_state.copy()
-            ss.regs.ip = succ1.addr
-            succ = self.project.factory.successors(ss)
-            if len(succ.flat_successors + succ.unconstrained_successors) == 0:
-                return None
-            succ2 = (succ.flat_successors + succ.unconstrained_successors)[0]
-
-            all_actions = succ1.history.actions.hardcopy + succ2.history.actions.hardcopy
-            for a in all_actions:
-                if a.type == "mem" and a.addr.ast.symbolic:
-                    return None
-            return pivot
-
-        return None
 
     def _starts_with_syscall(self, addr):
         """

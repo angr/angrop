@@ -95,17 +95,23 @@ class RopGadget:
     """
     def __init__(self, addr):
         self.addr = addr
+        self.block_length = None
+        self.stack_change = None
+
+        # register effect information
         self.changed_regs = set()
         self.popped_regs = set()
         self.concrete_regs = {}
         self.reg_dependencies = {}  # like rax might depend on rbx, rcx
         self.reg_controllers = {}  # like rax might be able to be controlled by rbx (for any value of rcx)
-        self.stack_change = None
+        self.reg_moves = []
+
+        # memory effect information
         self.mem_reads = []
         self.mem_writes = []
         self.mem_changes = []
-        self.reg_moves = []
-        self.block_length = None
+
+        # transition information, i.e. how to pass the control flow to the next gadget
         self.makes_syscall = False
         self.starts_with_syscall = False
         self.transit_type = None
@@ -247,27 +253,35 @@ class RopGadget:
 class PivotGadget(RopGadget):
     """
     stack pivot gadget, the definition of a PivotGadget is that
-    it modifies the stack pointer register
+    it can arbitrarily control the stack pointer register, and do the pivot exactly once
     TODO: so currently, it cannot directly construct a `pop rbp; leave ret;`
     chain to pivot stack
     """
     def __init__(self, addr):
         super().__init__(addr)
-        #self.addr = addr
-        self.sp_from_reg = None
-        self.sp_popped_offset = None
+        self.stack_change_after_pivot = None
+        # TODO: sp_controllers can be registers, payload on stack, and symbolic read data
+        # but we do not handle symbolic read data, yet
+        self.sp_reg_controllers = {}
+        self.sp_stack_controllers = {}
 
     def __str__(self):
-        s = "Pivot %#x\n" % self.addr
-        if self.sp_from_reg is not None:
-            s += "sp from reg: %s\n" % self.sp_from_reg
-        elif self.sp_popped_offset is not None:
-            s += "sp popped at %#x\n" % self.sp_popped_offset
+        s = f"PivotGadget {self.addr:#x}\n"
+        s += f"  sp_controllers: {self.sp_controllers}\n"
+        s += f"  stack change after pivot: {self.stack_change_after_pivot:#x}\n"
         return s
 
+    @property
+    def sp_controllers(self):
+        s = self.sp_reg_controllers.copy()
+        return s.union(self.sp_stack_controllers)
+
     def __repr__(self):
-        return "<PivotGadget %#x>" % self.addr
+        return f"<PivotGadget {self.addr:#x}>"
     
     def copy(self):
         new = super().copy()
+        new.stack_change_after_pivot = self.stack_change_after_pivot
+        new.sp_reg_controllers = set(self.sp_reg_controllers)
+        new.sp_stack_controllers = set(self.sp_stack_controllers)
         return new
