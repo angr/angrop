@@ -76,15 +76,20 @@ class ROP(Analysis):
                         break
                 else:
                     continue
-                g = self.analyze_gadget(addr)
+                g = self.gadget_finder.analyze_gadget(addr)
             if type(g) is RopGadget:
                 self.rop_gadgets.append(g)
             if type(g) is PivotGadget:
                 self.pivot_gadgets.append(g)
 
+        self.chain_builder.gadgets = self.rop_gadgets
+        self.chain_builder.pivot_gadgets = self.pivot_gadgets
+        self.chain_builder.update()
+
     def analyze_gadget(self, addr):
         g = self.gadget_finder.analyze_gadget(addr)
-        self._reload_chain_funcs()
+        self._all_gadgets.append(g)
+        self._screen_gadgets()
         return g
 
     def find_gadgets(self, processes=None, show_progress=True):
@@ -98,7 +103,6 @@ class ROP(Analysis):
             processes = multiprocessing.cpu_count()
         self._all_gadgets, self._duplicates = self.gadget_finder.find_gadgets(processes=processes, show_progress=show_progress)
         self._screen_gadgets()
-        self._reload_chain_funcs()
         return self.rop_gadgets
 
     def find_gadgets_single_threaded(self, show_progress=True):
@@ -109,7 +113,6 @@ class ROP(Analysis):
         """
         self._all_gadgets, self._duplicates = self.gadget_finder.find_gadgets_single_threaded(show_progress=show_progress)
         self._screen_gadgets()
-        self._reload_chain_funcs()
         return self.rop_gadgets
 
     def save_gadgets(self, path):
@@ -130,7 +133,6 @@ class ROP(Analysis):
             self._all_gadgets = cache_tuple[0]
             self._duplicates = cache_tuple[1]
         self._screen_gadgets()
-        self._reload_chain_funcs()
 
     def set_badbytes(self, badbytes):
         """
@@ -142,7 +144,8 @@ class ROP(Analysis):
             return
         badbytes = [x if type(x) == int else ord(x) for x in badbytes]
         self.badbytes = badbytes
-        self.chain_builder.set_badbytes(self.badbytes)
+        if self._chain_builder:
+            self._chain_builder.set_badbytes(self.badbytes)
         self._screen_gadgets()
 
     def set_roparg_filler(self, roparg_filler):
@@ -171,19 +174,18 @@ class ROP(Analysis):
     def chain_builder(self):
         if self._chain_builder is not None:
             return self._chain_builder
+
         if len(self._all_gadgets) == 0:
             l.warning("Could not find gadgets for %s", self.project)
             l.warning("check your badbytes and make sure find_gadgets() or load_gadgets() was called.")
         self._chain_builder = chain_builder.ChainBuilder(self.project, self.rop_gadgets, self.pivot_gadgets,
                                                          self.arch, self.badbytes,
                                                          self.roparg_filler)
-        return self._chain_builder
-
-    def _reload_chain_funcs(self):
-        for f_name, f in inspect.getmembers(self.chain_builder, predicate=inspect.ismethod):
+        for f_name, f in inspect.getmembers(self._chain_builder, predicate=inspect.ismethod):
             if f_name.startswith("_"):
                 continue
             setattr(self, f_name, f)
+        return self._chain_builder
 
     # inspired by ropper
     def _contain_badbytes(self, addr):

@@ -16,6 +16,10 @@ class RegMover(Builder):
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
+        self._reg_moving_gadgets = None
+        self.update()
+
+    def update(self):
         self._reg_moving_gadgets = self._filter_gadgets(self.chain_builder.gadgets)
 
     def verify(self, chain, preserve_regs, registers):

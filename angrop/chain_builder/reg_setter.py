@@ -17,6 +17,11 @@ class RegSetter(Builder):
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
+        self._reg_setting_gadgets = None
+        self.hard_chain_cache = None
+        self.update()
+
+    def update(self):
         self._reg_setting_gadgets = self._filter_gadgets(self.chain_builder.gadgets)
         self.hard_chain_cache = {}
 

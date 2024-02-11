@@ -545,7 +545,8 @@ class GadgetAnalyzer:
 
             assert init_sym_sp is not None
             sols = final_state.solver.eval_upto(final_state.regs.sp - init_sym_sp, 2)
-            assert len(sols) == 1 # it is a PivotGadget, we must have pivotted exactly once
+            if len(sols) != 1:
+                raise RopException("This gadget pivots more than once, which is currently not handled")
             gadget.stack_change_after_pivot = sols[0]
             gadget.sp_reg_controllers = set(self._get_reg_controllers(init_state, final_state, 'sp', dependencies))
             gadget.sp_stack_controllers = {x for x in final_state.regs.sp.variables if x.startswith("symbolic_stack_")}

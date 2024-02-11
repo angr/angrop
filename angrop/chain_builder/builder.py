@@ -1,4 +1,5 @@
 import struct
+from abc import abstractmethod
 from functools import cmp_to_key
 
 import claripy
@@ -200,3 +201,7 @@ class Builder:
             return self.roparg_filler
         else:
             return claripy.BVS("filler", self.project.arch.bits)
+
+    @abstractmethod
+    def update(self):
+        raise NotImplementedError("each Builder class should have an `update` method!")

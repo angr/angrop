@@ -77,6 +77,20 @@ def test_pivot_gadget():
     gadget = rop.analyze_gadget(0x4c7b5a+1)
     assert gadget is not None
 
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "i386_glibc_2.35"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+    """
+    439ad3  pop     esp
+    439ad4  lea     esp, [ebp-0xc]
+    439ad7  pop     ebx
+    439ad8  pop     esi
+    439ad9  pop     edi
+    439ada  pop     ebp
+    439adb  ret
+    """
+    gadget = rop.analyze_gadget(0x439ad3)
+    assert gadget is None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
