@@ -218,6 +218,10 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
         if not num_insts:
             raise RopException("No instructions!")
 
+        segment = project.loader.find_segment_containing(state.addr)
+        if not segment or not segment.is_executable:
+            raise RopException(f"{state} is not executable!")
+
         last_inst_addr = state.block().capstone.insns[-1].address
         for _ in range(num_insts):
             succ = project.factory.successors(state, num_inst=1)
