@@ -6,6 +6,7 @@ from .mem_writer import MemWriter
 from .mem_changer import MemChanger
 from .func_caller import FuncCaller
 from .sys_caller import SysCaller
+from .pivot import Pivot
 from .. import rop_utils
 
 l = logging.getLogger("angrop.chain_builder")
@@ -16,7 +17,7 @@ class ChainBuilder:
     This class provides functions to generate common ropchains based on existing gadgets.
     """
 
-    def __init__(self, project, gadgets, arch, badbytes, roparg_filler):
+    def __init__(self, project, rop_gadgets, pivot_gadgets, arch, badbytes, roparg_filler):
         """
         Initializes the chain builder.
 
@@ -27,10 +28,12 @@ class ChainBuilder:
         :param roparg_filler: An integer used when popping superfluous registers
         """
         self.project = project
-        self.gadgets = gadgets
         self.arch = arch
         self.badbytes = badbytes
         self.roparg_filler = roparg_filler
+
+        self.gadgets = rop_gadgets
+        self.pivot_gadgets = pivot_gadgets
 
         self._reg_setter = RegSetter(self)
         self._reg_mover = RegMover(self)
@@ -38,6 +41,7 @@ class ChainBuilder:
         self._mem_changer = MemChanger(self)
         self._func_caller = FuncCaller(self)
         self._sys_caller = SysCaller(self)
+        self._pivot = Pivot(self)
 
     def set_regs(self, *args, **kwargs):
         """
@@ -84,6 +88,10 @@ class ChainBuilder:
         """
         addr = rop_utils.cast_rop_value(addr, self.project)
         return self._mem_writer.write_to_mem(addr, data, fill_byte=fill_byte)
+
+    def pivot(self, thing):
+        thing = rop_utils.cast_rop_value(thing, self.project)
+        return self._pivot.pivot(thing)
 
     def func_call(self, address, args, **kwargs):
         """

@@ -268,6 +268,7 @@ class PivotGadget(RopGadget):
     def __str__(self):
         s = f"PivotGadget {self.addr:#x}\n"
         s += f"  sp_controllers: {self.sp_controllers}\n"
+        s += f"  stack change: {self.stack_change:#x}\n"
         s += f"  stack change after pivot: {self.stack_change_after_pivot:#x}\n"
         return s
 

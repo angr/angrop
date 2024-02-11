@@ -1,4 +1,5 @@
 import pickle
+import inspect
 import logging
 import multiprocessing
 
@@ -37,12 +38,12 @@ class ROP(Analysis):
         """
 
         # private list of RopGadget's
-        self._all_gadgets = None # all types of gadgets
+        self._all_gadgets = [] # all types of gadgets
         self._duplicates = None # all equivalent gadgets (with the same instructions)
 
         # public list of RopGadget's
-        self.rop_gadgets = None # gadgets used for ROP, like pop rax; ret
-        self.pivot_gadgets = None # gadgets used for stack pivoting, like mov rsp, rbp; ret
+        self.rop_gadgets = [] # gadgets used for ROP, like pop rax; ret
+        self.pivot_gadgets = [] # gadgets used for stack pivoting, like mov rsp, rbp; ret
 
         # RopChain settings
         self.badbytes = []
@@ -82,7 +83,9 @@ class ROP(Analysis):
                 self.pivot_gadgets.append(g)
 
     def analyze_gadget(self, addr):
-        return self.gadget_finder.analyze_gadget(addr)
+        g = self.gadget_finder.analyze_gadget(addr)
+        self._reload_chain_funcs()
+        return g
 
     def find_gadgets(self, processes=None, show_progress=True):
         """
@@ -95,6 +98,7 @@ class ROP(Analysis):
             processes = multiprocessing.cpu_count()
         self._all_gadgets, self._duplicates = self.gadget_finder.find_gadgets(processes=processes, show_progress=show_progress)
         self._screen_gadgets()
+        self._reload_chain_funcs()
         return self.rop_gadgets
 
     def find_gadgets_single_threaded(self, show_progress=True):
@@ -105,6 +109,7 @@ class ROP(Analysis):
         """
         self._all_gadgets, self._duplicates = self.gadget_finder.find_gadgets_single_threaded(show_progress=show_progress)
         self._screen_gadgets()
+        self._reload_chain_funcs()
         return self.rop_gadgets
 
     def save_gadgets(self, path):
@@ -125,6 +130,7 @@ class ROP(Analysis):
             self._all_gadgets = cache_tuple[0]
             self._duplicates = cache_tuple[1]
         self._screen_gadgets()
+        self._reload_chain_funcs()
 
     def set_badbytes(self, badbytes):
         """
@@ -168,10 +174,16 @@ class ROP(Analysis):
         if len(self._all_gadgets) == 0:
             l.warning("Could not find gadgets for %s", self.project)
             l.warning("check your badbytes and make sure find_gadgets() or load_gadgets() was called.")
-        self._chain_builder = chain_builder.ChainBuilder(self.project, self.rop_gadgets,
+        self._chain_builder = chain_builder.ChainBuilder(self.project, self.rop_gadgets, self.pivot_gadgets,
                                                          self.arch, self.badbytes,
                                                          self.roparg_filler)
         return self._chain_builder
+
+    def _reload_chain_funcs(self):
+        for f_name, f in inspect.getmembers(self.chain_builder, predicate=inspect.ismethod):
+            if f_name.startswith("_"):
+                continue
+            setattr(self, f_name, f)
 
     # inspired by ropper
     def _contain_badbytes(self, addr):

@@ -521,6 +521,7 @@ class GadgetAnalyzer:
         elif type(gadget) is PivotGadget:
             last_sp = None
             init_sym_sp = None
+            prev_act = None
             for act in final_state.history.actions:
                 if act.type == 'reg' and act.action == 'write' and act.storage == self.arch.stack_pointer:
                     if not act.data.ast.symbolic:
@@ -528,10 +529,19 @@ class GadgetAnalyzer:
                     else:
                         init_sym_sp = act.data.ast
                         break
+                prev_act = act
             if last_sp is not None:
                 gadget.stack_change = (last_sp - init_state.regs.sp).concrete_value
             else:
                 gadget.stack_change = 0
+
+            # if is popped from stack, we need to compensate for the popped sp value on the stack
+            # if it is a pop, then sp comes from stack and the previous action must be a mem read
+            # and the data is the new sp
+            variables = init_sym_sp.variables
+            if prev_act and variables and all(x.startswith('symbolic_stack_') for x in variables):
+                if prev_act.type == 'mem' and prev_act.action == 'read' and prev_act.data.ast is init_sym_sp:
+                    gadget.stack_change += self.project.arch.bytes
 
             assert init_sym_sp is not None
             sols = final_state.solver.eval_upto(final_state.regs.sp - init_sym_sp, 2)

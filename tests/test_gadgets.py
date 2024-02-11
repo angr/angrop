@@ -108,6 +108,19 @@ def test_arm_mem_change_gadget():
 def test_pivot_gadget():
     # pylint: disable=pointless-string-statement
 
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "i386_glibc_2.35"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    """
+    5719da  pop     esp
+    5719db  ret
+    """
+    gadget = rop.analyze_gadget(0x5719da)
+    assert gadget.stack_change == 0x4
+    assert gadget.stack_change_after_pivot == 0x4
+    assert len(gadget.sp_controllers) == 1
+    assert len(gadget.sp_reg_controllers) == 0
+
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "bronze_ropchain"), auto_load_libs=False)
     rop = proj.analyses.ROP()
 
