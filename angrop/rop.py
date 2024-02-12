@@ -117,13 +117,21 @@ class ROP(Analysis):
         self._screen_gadgets()
         return self.rop_gadgets
 
+    def _get_cache_tuple(self):
+        return (self._all_gadgets, self._duplicates)
+
+    def _load_cache_tuple(self, tup):
+        self._all_gadgets = tup[0]
+        self._duplicates = tup[1]
+        self._screen_gadgets()
+
     def save_gadgets(self, path):
         """
         Saves gadgets in a file.
         :param path: A path for a file where the gadgets are stored
         """
         with open(path, "wb") as f:
-            pickle.dump((self._all_gadgets, self._duplicates), f)
+            pickle.dump(self._get_cache_tuple(), f)
 
     def load_gadgets(self, path):
         """
@@ -132,9 +140,7 @@ class ROP(Analysis):
         """
         with open(path, "rb") as f:
             cache_tuple = pickle.load(f)
-            self._all_gadgets = cache_tuple[0]
-            self._duplicates = cache_tuple[1]
-        self._screen_gadgets()
+            self._load_cache_tuple(cache_tuple)
 
     def set_badbytes(self, badbytes):
         """
