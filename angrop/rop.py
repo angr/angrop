@@ -7,7 +7,7 @@ from angr import Analysis, register_analysis
 
 from . import chain_builder
 from .gadget_finder import GadgetFinder
-from .rop_gadget import RopGadget, PivotGadget
+from .rop_gadget import RopGadget, PivotGadget, SyscallGadget
 
 l = logging.getLogger('angrop.rop')
 
@@ -44,6 +44,7 @@ class ROP(Analysis):
         # public list of RopGadget's
         self.rop_gadgets = [] # gadgets used for ROP, like pop rax; ret
         self.pivot_gadgets = [] # gadgets used for stack pivoting, like mov rsp, rbp; ret
+        self.syscall_gadgets = [] # gadgets used for invoking system calls, such as syscall; ret or int 0x80; ret
 
         # RopChain settings
         self.badbytes = []
@@ -81,9 +82,12 @@ class ROP(Analysis):
                 self.rop_gadgets.append(g)
             if type(g) is PivotGadget:
                 self.pivot_gadgets.append(g)
+            if type(g) is SyscallGadget:
+                self.syscall_gadgets.append(g)
 
         self.chain_builder.gadgets = self.rop_gadgets
         self.chain_builder.pivot_gadgets = self.pivot_gadgets
+        self.chain_builder.syscall_gadgets = self.syscall_gadgets
         self.chain_builder.update()
 
     def analyze_gadget(self, addr):
@@ -180,7 +184,7 @@ class ROP(Analysis):
             l.warning("Could not find gadgets for %s", self.project)
             l.warning("check your badbytes and make sure find_gadgets() or load_gadgets() was called.")
         self._chain_builder = chain_builder.ChainBuilder(self.project, self.rop_gadgets, self.pivot_gadgets,
-                                                         self.arch, self.badbytes,
+                                                         self.syscall_gadgets, self.arch, self.badbytes,
                                                          self.roparg_filler)
         for f_name, f in inspect.getmembers(self._chain_builder, predicate=inspect.ismethod):
             if f_name.startswith("_"):

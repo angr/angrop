@@ -205,7 +205,8 @@ class GadgetAnalyzer:
                 state2 = rop_utils.step_to_unconstrained_successor(self.project, state=state)
             except Exception:
                 return init_state, final_state
-        return init_state, state2
+            return init_state, state2
+        return init_state, final_state
 
     def _identify_transit_type(self, final_state, ctrl_type):
         # FIXME: not always jump, could be call as well

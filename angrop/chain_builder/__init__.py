@@ -17,7 +17,7 @@ class ChainBuilder:
     This class provides functions to generate common ropchains based on existing gadgets.
     """
 
-    def __init__(self, project, rop_gadgets, pivot_gadgets, arch, badbytes, roparg_filler):
+    def __init__(self, project, rop_gadgets, pivot_gadgets, syscall_gadgets, arch, badbytes, roparg_filler):
         """
         Initializes the chain builder.
 
@@ -34,6 +34,7 @@ class ChainBuilder:
 
         self.gadgets = rop_gadgets
         self.pivot_gadgets = pivot_gadgets
+        self.syscall_gadgets = syscall_gadgets
 
         self._reg_setter = RegSetter(self)
         self._reg_mover = RegMover(self)
@@ -135,7 +136,7 @@ class ChainBuilder:
         self._mem_writer.update()
         self._mem_changer.update()
         #self._func_caller.update()
-        #self._sys_caller.update()
+        self._sys_caller.update()
         self._pivot.update()
 
     # should also be able to do execve by providing writable memory
