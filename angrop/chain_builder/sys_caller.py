@@ -76,11 +76,8 @@ class SysCaller(FuncCaller):
         raise RopException("Fail to invoke execve!")
 
     def execve(self, path=None, path_addr=None):
-        # look for good syscall gadgets
-        syscall_locs = self._get_syscall_locations()
-        syscall_locs = [x for x in syscall_locs if not self._word_contain_badbyte(x)]
-        if len(syscall_locs) == 0:
-            raise RopException("No syscall instruction available")
+        if not self.syscall_gadgets:
+            raise RopException("target does not contain syscall gadget!")
 
         # determine the execution path
         if path is None:

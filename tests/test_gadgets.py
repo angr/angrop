@@ -255,6 +255,13 @@ def test_syscall_gadget():
     assert gadget.stack_change == 0x0
     assert not gadget.can_return
 
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "roptest"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+    gadget = rop.analyze_gadget(0x4000c1)
+    assert type(gadget) == SyscallGadget
+    assert gadget.stack_change == 0
+    assert not gadget.can_return
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

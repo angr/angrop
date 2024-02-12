@@ -184,9 +184,9 @@ def test_rop_arm():
 
 def test_roptest_x86_64():
     p = angr.Project(os.path.join(public_bin_location, "x86_64/roptest"), auto_load_libs=False)
-    r = p.analyses.ROP()
+    r = p.analyses.ROP(only_check_near_rets=False)
     r.find_gadgets_single_threaded(show_progress=False)
-    c = r.execve(b"/bin/sh")
+    c = r.execve(path=b"/bin/sh")
 
     # verifying this is a giant pain, partially because the binary is so tiny, and there's no code beyond the syscall
     assert len(c._gadgets) == 8

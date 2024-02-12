@@ -219,7 +219,7 @@ class GadgetFinder:
                 if segment.is_executable:
                     l.debug("Analyzing segment with address range: 0x%x, 0x%x", segment.min_addr, segment.max_addr)
                     start = segment.min_addr + (alignment - segment.min_addr % alignment)
-                    for addr in range(start, segment.max_addr, alignment):
+                    for addr in range(start, start+segment.memsize, alignment):
                         yield addr+offset
 
     def _num_addresses_to_check(self):
@@ -233,8 +233,7 @@ class GadgetFinder:
             alignment = self.arch.alignment
             for segment in self.project.loader.main_object.segments:
                 if segment.is_executable:
-                    start = segment.min_addr + (alignment - segment.min_addr % alignment)
-                    num += (segment.max_addr - start) // alignment
+                    num += segment.memsize // alignment
             return num + len(self._syscall_locations)
 
     def _get_ret_locations(self):
@@ -305,8 +304,7 @@ class GadgetFinder:
         for segment in self.project.loader.main_object.segments:
             if not segment.is_executable:
                 continue
-            num_bytes = segment.max_addr - segment.min_addr
-            read_bytes = state.solver.eval(state.memory.load(segment.min_addr, num_bytes), cast_to=bytes)
+            read_bytes = state.solver.eval(state.memory.load(segment.min_addr, segment.memsize), cast_to=bytes)
             # find all occurrences of the ret_instructions
             addrs += [segment.min_addr + m.start() for m in re.finditer(fmt, read_bytes)]
         return sorted(addrs)

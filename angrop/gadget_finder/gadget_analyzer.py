@@ -707,7 +707,13 @@ class GadgetAnalyzer:
         :param final_state: the state that finishes the gadget execution
         """
         for act in final_state.history.actions:
-            if act.type != 'reg' or act.action != 'write' or act.storage != self.arch.stack_pointer:
+            if act.type != 'reg' or act.action != 'write':
+                continue
+            try:
+                storage = act.storage
+            except KeyError:
+                continue
+            if storage != self.arch.stack_pointer:
                 continue
             # this gadget has done symbolic pivoting if there is a symbolic write to the stack pointer
             if act.data.symbolic:
