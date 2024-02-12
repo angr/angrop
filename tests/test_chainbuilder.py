@@ -34,7 +34,7 @@ def test_i386_func_call():
         rop.save_gadgets(cache_path)
 
     chain = rop.func_call('write', [1, 0x80AC5E8, 17])
-    state = chain.exec()
+    state = chain.exec(max_steps=100)
     assert state.posix.dumps(1) == b'/usr/share/locale'
 
 def test_i386_syscall():

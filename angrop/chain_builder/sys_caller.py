@@ -123,6 +123,9 @@ class SysCaller(FuncCaller):
         # find small stack change syscall gadget that also fits the stack arguments we want
         # FIXME: does any arch/OS take syscall arguments on stack? (windows? sysenter?)
 
+        if not self.syscall_gadgets:
+            raise RopException("target does not contain syscall gadget!")
+
         for gadget in self.syscall_gadgets:
             if needs_return and not gadget.can_return:
                 continue
