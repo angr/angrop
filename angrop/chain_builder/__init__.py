@@ -41,8 +41,11 @@ class ChainBuilder:
         self._mem_writer = MemWriter(self)
         self._mem_changer = MemChanger(self)
         self._func_caller = FuncCaller(self)
-        self._sys_caller = SysCaller(self)
         self._pivot = Pivot(self)
+        if SysCaller.supported_os(self.project.loader.main_object.os):
+            self._sys_caller = SysCaller(self)
+        else:
+            self._sys_caller = None
 
     def set_regs(self, *args, **kwargs):
         """
@@ -114,6 +117,9 @@ class ChainBuilder:
         :param needs_return: whether to continue the ROP after invoking the syscall
         :return: a RopChain which makes the system with the requested register contents
         """
+        if not self._sys_caller:
+            l.exception("SysCaller does not support OS: %s", self.project.loader.main_object.os)
+            return None
         return self._sys_caller.do_syscall(syscall_num, args, needs_return=needs_return, **kwargs)
 
     def execve(self, path=None, path_addr=None):
@@ -122,6 +128,9 @@ class ChainBuilder:
         :param path: path of binary of execute, default to b"/bin/sh\x00"
         :param path_addr: where to store this path string
         """
+        if not self._sys_caller:
+            l.exception("SysCaller does not support OS: %s", self.project.loader.main_object.os)
+            return None
         return self._sys_caller.execve(path=path, path_addr=path_addr)
 
     def set_badbytes(self, badbytes):
@@ -136,7 +145,8 @@ class ChainBuilder:
         self._mem_writer.update()
         self._mem_changer.update()
         #self._func_caller.update()
-        self._sys_caller.update()
+        if self._sys_caller:
+            self._sys_caller.update()
         self._pivot.update()
 
     # should also be able to do execve by providing writable memory

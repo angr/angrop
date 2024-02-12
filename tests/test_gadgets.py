@@ -203,6 +203,21 @@ def test_pivot_gadget():
     assert gadget.stack_change_after_pivot == 0x24
     assert len(gadget.sp_controllers) == 1 and gadget.sp_controllers.pop() == 'r7'
 
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "manysum"), load_options={"auto_load_libs": False})
+    rop = proj.analyses.ROP()
+
+    """
+    1040c  mov     r0, r3
+    10410  sub     sp, fp, #0x0
+    10414  pop     {fp}
+    10418  bx      lr
+    """
+    gadget = rop.analyze_gadget(0x1040c)
+    assert type(gadget) == PivotGadget
+    assert gadget.stack_change == 0
+    assert gadget.stack_change_after_pivot == 0x4
+    assert len(gadget.sp_controllers) == 1 and gadget.sp_controllers.pop() == 'r11'
+
 def test_syscall_gadget():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "i386_glibc_2.35"), auto_load_libs=False)
     rop = proj.analyses.ROP()

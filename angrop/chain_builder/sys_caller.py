@@ -40,6 +40,10 @@ class SysCaller(FuncCaller):
         self.syscall_gadgets = None
         self.update()
 
+    @staticmethod
+    def supported_os(os):
+        return "unix" in os.lower()
+
     def update(self):
         self.syscall_gadgets = self._filter_gadgets(self.chain_builder.syscall_gadgets)
 

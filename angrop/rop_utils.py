@@ -237,10 +237,7 @@ def step_one_block(project, state, stop_at_syscall=False):
             if stop_at_syscall and is_in_kernel(project, state):
                 return None, state
         else:
-            try:
-                succ = project.factory.successors(state, num_inst=1)
-            except Exception as e:
-                print(e)
+            succ = project.factory.successors(state, num_inst=1)
             if not succ.flat_successors:
                 return succ, None
             if stop_at_syscall and is_in_kernel(project, succ.flat_successors[0]):

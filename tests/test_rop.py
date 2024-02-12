@@ -109,7 +109,7 @@ def test_rop_x86_64():
 
     # check gadgets
     tup = pickle.load(open(cache_path, "rb"))
-    compare_gadgets(rop.gadgets, tup[0])
+    compare_gadgets(rop._all_gadgets, tup[0])
 
     # test creating a rop chain
     chain = rop.set_regs(rbp=0x1212, rbx=0x1234567890123456)
@@ -137,7 +137,7 @@ def test_rop_i386_cgc():
 
     # check gadgets
     tup = pickle.load(open(os.path.join(test_data_location, "0b32aa01_01_gadgets"), "rb"))
-    compare_gadgets(rop.gadgets, tup[0])
+    compare_gadgets(rop._all_gadgets, tup[0])
 
     # test creating a rop chain
     chain = rop.set_regs(ebx=0x98765432, ecx=0x12345678)
@@ -164,7 +164,7 @@ def test_rop_arm():
 
     # check gadgets
     tup = pickle.load(open(os.path.join(test_data_location, "arm_manysum_test_gadgets"), "rb"))
-    compare_gadgets(rop.gadgets, tup[0])
+    compare_gadgets(rop._all_gadgets, tup[0])
 
     # test creating a rop chain
     chain = rop.set_regs(r11=0x99887766)

@@ -250,7 +250,7 @@ class GadgetAnalyzer:
         # create the gadget
         if ctrl_type == 'syscall' or self._does_syscall(final_state):
             gadget = SyscallGadget(addr=addr)
-        elif ctrl_type == 'pivot':
+        elif ctrl_type == 'pivot' or self._does_pivot(final_state):
             gadget = PivotGadget(addr=addr)
         else:
             gadget = RopGadget(addr=addr)
@@ -699,6 +699,19 @@ class GadgetAnalyzer:
             if self.project.simos.is_syscall_addr(addr):
                 return True
 
+        return False
+
+    def _does_pivot(self, final_state):
+        """
+        checks if the path does a stack pivoting at some point
+        :param final_state: the state that finishes the gadget execution
+        """
+        for act in final_state.history.actions:
+            if act.type != 'reg' or act.action != 'write' or act.storage != self.arch.stack_pointer:
+                continue
+            # this gadget has done symbolic pivoting if there is a symbolic write to the stack pointer
+            if act.data.symbolic:
+                return True
         return False
 
     def _analyze_mem_access(self, final_state, init_state, gadget):
