@@ -28,7 +28,7 @@ def test_arm_conditional():
     cond_gadget_addrs = [0x10368, 0x1036c, 0x10370, 0x10380, 0x10384, 0x1038c, 0x1039c,
                          0x103a0, 0x103b8, 0x103bc, 0x103c4, 0x104e8, 0x104ec]
 
-    assert all(x.addr not in cond_gadget_addrs for x in rop._gadgets)
+    assert all(x.addr not in cond_gadget_addrs for x in rop._all_gadgets)
 
 def test_jump_gadget():
     """
@@ -37,9 +37,8 @@ def test_jump_gadget():
     """
     rop = get_rop(os.path.join(BIN_DIR, "tests", "mipsel", "fauxware"))
 
-    jump_gadgets = [x for x in rop._gadgets if x.transit_type == "jmp_reg"]
+    jump_gadgets = [x for x in rop._all_gadgets if x.transit_type == "jmp_reg"]
     assert len(jump_gadgets) > 0
-
 
     jump_regs = [x.jump_reg for x in jump_gadgets]
     assert 't9' in jump_regs
@@ -50,7 +49,6 @@ def test_arm_mem_change_gadget():
 
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
-    rop._initialize_gadget_analyzer()
 
     """
     0x0004f08c <+28>:	ldr	r2, [r4, #48]	; 0x30
@@ -60,11 +58,11 @@ def test_arm_mem_change_gadget():
     0x0004f094 <+36>:	str	r5, [r4, #48]	; 0x30
     0x0004f096 <+38>:	pop	{r3, r4, r5, pc}
     """
-    gadget = rop._gadget_analyzer.analyze_gadget(0x44f08c+1) # thumb mode
+    gadget = rop.analyze_gadget(0x44f08c+1) # thumb mode
     assert gadget
     assert not gadget.mem_changes
 
-    gadget = rop._gadget_analyzer.analyze_gadget(0x459eea+1) # thumb mode
+    gadget = rop.analyze_gadget(0x459eea+1) # thumb mode
     assert gadget
     assert not gadget.mem_changes
 
@@ -74,7 +72,7 @@ def test_arm_mem_change_gadget():
     4b1e34  str     r4, [r6]
     4b1e36  pop     {r3, r4, r5, r6, r7, pc}
     """
-    gadget = rop._gadget_analyzer.analyze_gadget(0x4b1e30+1) # thumb mode
+    gadget = rop.analyze_gadget(0x4b1e30+1) # thumb mode
     assert gadget.mem_changes
 
     """
@@ -83,7 +81,7 @@ def test_arm_mem_change_gadget():
     4c1e7c  str     r1, [r4,#0x14]
     4c1e7e  pop     {r3, r4, r5, pc}
     """
-    gadget = rop._gadget_analyzer.analyze_gadget(0x4c1e78+1) # thumb mode
+    gadget = rop.analyze_gadget(0x4c1e78+1) # thumb mode
     assert gadget.mem_changes
 
     """
@@ -92,7 +90,7 @@ def test_arm_mem_change_gadget():
     4c1ea8  str     r2, [r3,#0x14]
     4c1eaa  bx      lr
     """
-    gadget = rop._gadget_analyzer.analyze_gadget(0x4c1ea4+1) # thumb mode
+    gadget = rop.analyze_gadget(0x4c1ea4+1) # thumb mode
     assert not gadget.mem_changes
 
     """
@@ -102,7 +100,7 @@ def test_arm_mem_change_gadget():
     4c1e94  str     r1, [r4,#0x14]
     4c1e96  pop     {r3, r4, r5, pc}
     """
-    gadget = rop._gadget_analyzer.analyze_gadget(0x4c1e8e+1) # thumb mode
+    gadget = rop.analyze_gadget(0x4c1e8e+1) # thumb mode
     assert gadget.mem_changes
 
 def test_pivot_gadget():

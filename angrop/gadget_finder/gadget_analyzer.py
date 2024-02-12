@@ -523,8 +523,8 @@ class GadgetAnalyzer:
         :param symbolic_state: the input symbolic state
         :param gadget: the gadget in which to store the sp change
         """
-        dependencies = self._get_reg_dependencies(final_state, "sp")
         if type(gadget) in (RopGadget, SyscallGadget):
+            dependencies = self._get_reg_dependencies(final_state, "sp")
             sp_change = final_state.regs.sp - init_state.regs.sp
 
             # analyze the results
@@ -547,6 +547,8 @@ class GadgetAnalyzer:
             gadget.stack_change = stack_changes[0]
 
         elif type(gadget) is PivotGadget:
+            final_state = rop_utils.step_to_unconstrained_successor(self.project, state=init_state, precise_action=True)
+            dependencies = self._get_reg_dependencies(final_state, "sp")
             last_sp = None
             init_sym_sp = None
             prev_act = None

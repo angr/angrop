@@ -1,7 +1,6 @@
 import pickle
 import inspect
 import logging
-import multiprocessing
 
 from angr import Analysis, register_analysis
 
@@ -97,15 +96,13 @@ class ROP(Analysis):
             self._screen_gadgets()
         return g
 
-    def find_gadgets(self, processes=None, show_progress=True):
+    def find_gadgets(self, processes=4, show_progress=True):
         """
         Finds all the gadgets in the binary by calling analyze_gadget on every address near a ret.
         Saves gadgets in self._gadgets
         Saves stack pivots in self.stack_pivots
         :param processes: number of processes to use
         """
-        if processes is None:
-            processes = multiprocessing.cpu_count()
         self._all_gadgets, self._duplicates = self.gadget_finder.find_gadgets(processes=processes, show_progress=show_progress)
         self._screen_gadgets()
         return self.rop_gadgets

@@ -1,6 +1,6 @@
 import re
 import logging
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool
 from collections import defaultdict
 
 import tqdm
@@ -13,7 +13,7 @@ from angr.analyses.bindiff import UnmatchedStatementsException
 from . import gadget_analyzer
 from ..arch import get_arch
 from ..errors import RopException
-from ..arch import ARM
+from ..arch import ARM, X86, AMD64
 
 l = logging.getLogger(__name__)
 
@@ -44,9 +44,13 @@ class GadgetFinder:
         # configurations
         self.project = project
         self.fast_mode = fast_mode
-        self.only_check_near_rets = only_check_near_rets
         self.arch = get_arch(self.project, kernel_mode=kernel_mode)
+        self.only_check_near_rets = only_check_near_rets
         self.kernel_mode = kernel_mode
+
+        if only_check_near_rets and not isinstance(self.arch, (X86, AMD64)):
+            l.warning("only_check_near_rets only makes sense for i386/amd64, setting it to False")
+            self.only_check_near_rets = False
 
         # override parameters
         if max_block_size:
@@ -115,9 +119,7 @@ class GadgetFinder:
         cache = self._cache
         return {k:v for k,v in cache.items() if len(v) >= 2}
 
-    def find_gadgets(self, processes=None, show_progress=True):
-        if processes is None:
-            processes = cpu_count()
+    def find_gadgets(self, processes=4, show_progress=True):
         gadgets = []
         self._cache = defaultdict(set)
 
