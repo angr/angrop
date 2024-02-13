@@ -219,8 +219,6 @@ class RopGadget:
                 s += "    " + "address (%d bits): %#x" % (mem_access.addr_size, mem_access.addr_constant)
             s += "    " + "data (%d bits) stored in regs:" % mem_access.data_size
             s += str(list(mem_access.data_dependencies)) + "\n"
-        if self.makes_syscall:
-            s += "Makes a syscall\n"
         return s
 
     def __repr__(self):
@@ -240,8 +238,6 @@ class RopGadget:
         out.mem_writes = list(self.mem_writes)
         out.reg_moves = list(self.reg_moves)
         out.block_length = self.block_length
-        out.makes_syscall = self.makes_syscall
-        out.starts_with_syscall = self.starts_with_syscall
         out.transit_type = self.transit_type
         out.jump_reg = self.jump_reg
         out.pc_reg = self.pc_reg
@@ -301,6 +297,7 @@ class SyscallGadget(RopGadget):
         s += f"  stack change: {self.stack_change:#x}\n"
         s += f"  transit type: {self.transit_type}\n"
         s += f"  can return: {self.can_return}\n"
+        s += f"  starts_with_syscall: {self.starts_with_syscall}\n"
         return s
 
     def __repr__(self):

@@ -43,7 +43,8 @@ def assert_gadgets_equal(known_gadget, test_gadget):
     assert known_gadget.reg_dependencies == test_gadget.reg_dependencies
     assert known_gadget.reg_controllers == test_gadget.reg_controllers
     assert known_gadget.stack_change == test_gadget.stack_change
-    assert known_gadget.makes_syscall == test_gadget.makes_syscall
+    if hasattr(known_gadget, "makes_syscall"):
+        assert known_gadget.makes_syscall == test_gadget.makes_syscall
 
     assert len(known_gadget.mem_reads) == len(test_gadget.mem_reads)
     for m1, m2 in zip(known_gadget.mem_reads, test_gadget.mem_reads):

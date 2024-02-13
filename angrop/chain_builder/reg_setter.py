@@ -109,8 +109,6 @@ class RegSetter(Builder):
         """
         gadgets = set({})
         for g in self._reg_setting_gadgets:
-            if g.makes_syscall:
-                continue
             if g.has_symbolic_access():
                 continue
             for reg in registers:
@@ -334,9 +332,6 @@ class RegSetter(Builder):
                 continue
 
             for g in gadgets:
-                # ignore gadgets which make a syscall when setting regs
-                if g.makes_syscall:
-                    continue
                 # ignore gadgets which don't have a positive stack change
                 if g.stack_change <= 0:
                     continue

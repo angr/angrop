@@ -250,6 +250,8 @@ class GadgetAnalyzer:
         # create the gadget
         if ctrl_type == 'syscall' or self._does_syscall(final_state):
             gadget = SyscallGadget(addr=addr)
+            gadget.makes_syscall = self._does_syscall(final_state)
+            gadget.starts_with_syscall = self._starts_with_syscall(addr)
         elif ctrl_type == 'pivot' or self._does_pivot(final_state):
             gadget = PivotGadget(addr=addr)
         else:
@@ -287,10 +289,6 @@ class GadgetAnalyzer:
             l.debug("stack change is negative!!")
             #FIXME: technically, it can be negative, e.g. call instructions
             return None
-
-        l.info("... checking for syscall availability")
-        gadget.makes_syscall = self._does_syscall(final_state)
-        gadget.starts_with_syscall = self._starts_with_syscall(addr)
 
         l.info("... checking for controlled regs")
         self._check_reg_changes(final_state, init_state, gadget)

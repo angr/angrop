@@ -16,6 +16,11 @@ def cmp(g1, g2):
     if not g1.can_return and g2.can_return:
         return 1
 
+    if g1.starts_with_syscall and not g2.starts_with_syscall:
+        return -1
+    if g2.starts_with_syscall and not g1.starts_with_syscall:
+        return 1
+
     if g1.stack_change < g2.stack_change:
         return -1
     if g1.stack_change > g2.stack_change:
@@ -33,10 +38,6 @@ class SysCaller(FuncCaller):
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
 
-        if "unix" not in self.project.loader.main_object.os.lower():
-            raise RopException("unknown unix platform")
-        self._execve_syscall = 0x3b if self.project.arch.bits == 64 else 0xb
-
         self.syscall_gadgets = None
         self.update()
 
@@ -52,6 +53,7 @@ class SysCaller(FuncCaller):
         return sorted(gadgets, key=functools.cmp_to_key(cmp))
 
     def _try_invoke_execve(self, path_addr):
+        execve_syscall = 0x3b if self.project.arch.bits == 64 else 0xb
         # next, try to invoke execve(path, ptr, ptr), where ptr points is either NULL or nullptr
         if 0 not in self.badbytes:
             ptr = 0
@@ -60,7 +62,7 @@ class SysCaller(FuncCaller):
             ptr = nullptr
 
         try:
-            return self.do_syscall(self._execve_syscall, [path_addr, ptr, ptr],
+            return self.do_syscall(execve_syscall, [path_addr, ptr, ptr],
                                  use_partial_controllers=False, needs_return=False)
         except RopException:
             pass
@@ -68,7 +70,7 @@ class SysCaller(FuncCaller):
         # Try to use partial controllers
         l.warning("Trying to use partial controllers for syscall")
         try:
-            return self.do_syscall(self._execve_syscall, [path_addr, 0, 0],
+            return self.do_syscall(execve_syscall, [path_addr, 0, 0],
                                      use_partial_controllers=True, needs_return=False)
         except RopException:
             pass
@@ -76,6 +78,8 @@ class SysCaller(FuncCaller):
         raise RopException("Fail to invoke execve!")
 
     def execve(self, path=None, path_addr=None):
+        if "unix" not in self.project.loader.main_object.os.lower():
+            raise RopException("unknown unix platform")
         if not self.syscall_gadgets:
             raise RopException("target does not contain syscall gadget!")
 

@@ -42,10 +42,9 @@ class ChainBuilder:
         self._mem_changer = MemChanger(self)
         self._func_caller = FuncCaller(self)
         self._pivot = Pivot(self)
-        if SysCaller.supported_os(self.project.loader.main_object.os):
-            self._sys_caller = SysCaller(self)
-        else:
-            self._sys_caller = None
+        self._sys_caller = SysCaller(self)
+        if not SysCaller.supported_os(self.project.loader.main_object.os):
+            l.warning("%s is not a fully supported OS, SysCaller may not work on this OS", self.project.loader.main_object.os)
 
     def set_regs(self, *args, **kwargs):
         """
