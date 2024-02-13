@@ -50,7 +50,9 @@ class ROP(Analysis):
         self.roparg_filler = None
 
         # gadget finder configurations
-        self.gadget_finder = GadgetFinder(self.project, fast_mode=fast_mode, only_check_near_rets=only_check_near_rets, max_block_size=max_block_size, max_sym_mem_access=max_sym_mem_access, is_thumb=is_thumb, kernel_mode=kernel_mode)
+        self.gadget_finder = GadgetFinder(self.project, fast_mode=fast_mode, only_check_near_rets=only_check_near_rets,
+                                          max_block_size=max_block_size, max_sym_mem_access=max_sym_mem_access,
+                                          is_thumb=is_thumb, kernel_mode=kernel_mode)
         self.arch = self.gadget_finder.arch
 
         # chain builder
@@ -69,12 +71,13 @@ class ROP(Analysis):
                 # the duplicates (other gadgets with the same instructions)
                 block = self.project.factory.block(g.addr)
                 h = self.gadget_finder.block_hash(block)
+                addr = None
                 if h not in self._duplicates:
                     continue
                 for addr in self._duplicates[h]:
                     if not self._contain_badbytes(addr):
                         break
-                else:
+                if not addr:
                     continue
                 g = self.gadget_finder.analyze_gadget(addr)
             if type(g) is RopGadget:
@@ -103,7 +106,8 @@ class ROP(Analysis):
         Saves stack pivots in self.stack_pivots
         :param processes: number of processes to use
         """
-        self._all_gadgets, self._duplicates = self.gadget_finder.find_gadgets(processes=processes, show_progress=show_progress)
+        self._all_gadgets, self._duplicates = self.gadget_finder.find_gadgets(processes=processes,
+                                                                              show_progress=show_progress)
         self._screen_gadgets()
         return self.rop_gadgets
 
@@ -113,7 +117,8 @@ class ROP(Analysis):
         Saves gadgets in self.gadgets
         Saves stack pivots in self.stack_pivots
         """
-        self._all_gadgets, self._duplicates = self.gadget_finder.find_gadgets_single_threaded(show_progress=show_progress)
+        self._all_gadgets, self._duplicates = self.gadget_finder.find_gadgets_single_threaded(
+                                                                 show_progress=show_progress)
         self._screen_gadgets()
         return self.rop_gadgets
 

@@ -231,7 +231,7 @@ def step_one_block(project, state, stop_at_syscall=False):
         last_inst_addr = block.capstone.insns[-2].address
     else:
         last_inst_addr = block.capstone.insns[-1].address
-    for i in range(num_insts): # considering that it may get into kernel mode
+    for _ in range(num_insts): # considering that it may get into kernel mode
         if state.addr != last_inst_addr:
             state = step_one_inst(project, state, stop_at_syscall=stop_at_syscall)
             if stop_at_syscall and is_in_kernel(project, state):
@@ -243,8 +243,7 @@ def step_one_block(project, state, stop_at_syscall=False):
             if stop_at_syscall and is_in_kernel(project, succ.flat_successors[0]):
                 return None, succ.flat_successors[0]
             return succ, None
-    else:
-        raise RopException("Fail to reach the last instruction!")
+    raise RopException("Fail to reach the last instruction!")
 
 def step_one_inst(project, state, stop_at_syscall=False):
     if is_in_kernel(project, state):
@@ -262,7 +261,8 @@ def step_one_inst(project, state, stop_at_syscall=False):
         raise RopException(f"fail to step state: {state}")
     return succ.flat_successors[0]
 
-def step_to_unconstrained_successor(project, state, max_steps=2, allow_simprocedures=False, stop_at_syscall=False, precise_action=False):
+def step_to_unconstrained_successor(project, state, max_steps=2, allow_simprocedures=False,
+                                    stop_at_syscall=False, precise_action=False):
     """
     steps up to two times to try to find an unconstrained successor
     :param state: the input state

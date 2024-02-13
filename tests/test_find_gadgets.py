@@ -3,7 +3,6 @@ import logging
 
 import angr
 import angrop  # pylint: disable=unused-import
-from angrop.rop_gadget import RopGadget, PivotGadget
 
 l = logging.getLogger(__name__)
 
@@ -58,6 +57,7 @@ def test_arm_thumb_mode():
     assert gadget.block_length == 6
 
 def test_pivot_gadget():
+    # pylint: disable=pointless-string-statement
     proj = angr.Project(os.path.join(tests_dir, "i386", "bronze_ropchain"), auto_load_libs=False)
     rop = proj.analyses.ROP()
 

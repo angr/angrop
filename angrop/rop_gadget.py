@@ -176,9 +176,9 @@ class RopGadget:
         for move in self.reg_moves:
             s += "Register move: [%s to %s, %d bits]\n" % (move.from_reg, move.to_reg, move.bits)
         s += "Register dependencies:\n"
-        for reg in self.reg_dependencies:
+        for reg, deps in self.reg_dependencies.items():
             controllers = self.reg_controllers.get(reg, [])
-            dependencies = [x for x in self.reg_dependencies[reg] if x not in controllers]
+            dependencies = [x for x in deps if x not in controllers]
             s += "    " + reg + ": [" + " ".join(controllers) + " (" + " ".join(dependencies) + ")]" + "\n"
         for mem_access in self.mem_changes:
             if mem_access.op == "__add__":
@@ -256,8 +256,8 @@ class PivotGadget(RopGadget):
         self.stack_change_after_pivot = None
         # TODO: sp_controllers can be registers, payload on stack, and symbolic read data
         # but we do not handle symbolic read data, yet
-        self.sp_reg_controllers = {}
-        self.sp_stack_controllers = {}
+        self.sp_reg_controllers = set()
+        self.sp_stack_controllers = set()
 
     def __str__(self):
         s = f"PivotGadget {self.addr:#x}\n"
@@ -273,7 +273,7 @@ class PivotGadget(RopGadget):
 
     def __repr__(self):
         return f"<PivotGadget {self.addr:#x}>"
-    
+
     def copy(self):
         new = super().copy()
         new.stack_change_after_pivot = self.stack_change_after_pivot

@@ -39,8 +39,11 @@ def run_worker(addr):
     return _global_gadget_analyzer.analyze_gadget(addr)
 
 class GadgetFinder:
-
-    def __init__(self, project, fast_mode=None, only_check_near_rets=True, max_block_size=None, max_sym_mem_access=None, is_thumb=False, kernel_mode=False):
+    """
+    a class to find ROP gadgets
+    """
+    def __init__(self, project, fast_mode=None, only_check_near_rets=True, max_block_size=None,
+                 max_sym_mem_access=None, is_thumb=False, kernel_mode=False):
         # configurations
         self.project = project
         self.fast_mode = fast_mode
@@ -187,9 +190,10 @@ class GadgetFinder:
 
             yield a
 
-    def block_hash(self, block):
+    def block_hash(self, block):# pylint:disable=no-self-use
         """
         a hash to uniquely identify a simple block
+        TODO: block.bytes is too primitive
         """
         return block.bytes
 

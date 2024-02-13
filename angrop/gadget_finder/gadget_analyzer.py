@@ -34,7 +34,8 @@ class GadgetAnalyzer:
         # initial state that others are based off, all analysis should copy the state first and work on
         # the copied state
         self._stack_bsize = stack_gsize * self.project.arch.bytes # number of controllable bytes on stack
-        self._state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set.union({self.arch.base_pointer}), stack_gsize=stack_gsize)
+        sym_reg_set = self.arch.reg_set.union({self.arch.base_pointer})
+        self._state = rop_utils.make_symbolic_state(self.project, sym_reg_set, stack_gsize=stack_gsize)
         self._concrete_sp = self._state.solver.eval(self._state.regs.sp)
 
     @rop_utils.timeout(3)
@@ -203,7 +204,7 @@ class GadgetAnalyzer:
                 succ = self.project.factory.successors(state)
                 state = succ.flat_successors[0]
                 state2 = rop_utils.step_to_unconstrained_successor(self.project, state=state)
-            except Exception:
+            except Exception: # pylint: disable=broad-exception-caught
                 return init_state, final_state
             return init_state, state2
         return init_state, final_state
@@ -224,7 +225,8 @@ class GadgetAnalyzer:
                     continue
                 if act.size != self.project.arch.bits:
                     continue
-                if (act.data.ast == final_state.ip).symbolic or not final_state.solver.eval(act.data.ast == final_state.ip):
+                if (act.data.ast == final_state.ip).symbolic or \
+                    not final_state.solver.eval(act.data.ast == final_state.ip):
                     continue
                 sols = final_state.solver.eval_upto(final_state.regs.sp-act.addr.ast, 2)
                 if len(sols) != 1:
@@ -507,7 +509,7 @@ class GadgetAnalyzer:
         concrete_stack_s = initial_state.copy()
         concrete_stack_s.add_constraints(
             initial_state.memory.load(initial_state.regs.sp, stack_bytes_length) == concrete_stack)
-        test_constraint = (ast != test_val)
+        test_constraint = ast != test_val
         # stack must have set the register and it must be able to set the register to all 1's or all 0's
         ans = not concrete_stack_s.solver.satisfiable(extra_constraints=(test_constraint,)) and \
                 rop_utils.fast_unconstrained_check(initial_state, ast)
@@ -611,7 +613,7 @@ class GadgetAnalyzer:
             elif len(test_data) == 1:
                 mem_access.data_constant = test_data[0]
             else:
-                raise Exception("No data values, something went wrong")
+                raise RopException("No data values, something went wrong")
         elif a.action == "read":
             # for reads we want to know if any register will have the data after
             succ_state = final_state
@@ -738,7 +740,7 @@ class GadgetAnalyzer:
                 continue
 
             # ignore read/write on stack after pivot
-            if a.addr.ast.symbolic and not (a.addr.ast.variables - sp_vars):
+            if a.addr.ast.symbolic and not a.addr.ast.variables - sp_vars:
                 continue
 
             # ignore read/write on stack

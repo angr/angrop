@@ -4,9 +4,7 @@ import functools
 import angr
 
 from .func_caller import FuncCaller
-from .. import common
 from ..errors import RopException
-from ..rop_gadget import RopGadget
 
 l = logging.getLogger(__name__)
 
@@ -137,7 +135,7 @@ class SysCaller(FuncCaller):
             try:
                 return self._func_call(gadget, cc, args, extra_regs=extra_regs,
                                needs_return=needs_return, **kwargs)
-            except Exception:
+            except Exception: # pylint: disable=broad-exception-caught
                 continue
 
         raise RopException(f"Fail to invoke syscall {syscall_num} with arguments: {args}!")

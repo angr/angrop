@@ -17,7 +17,7 @@ def cmp(g1, g2):
         return -1
     if g1.stack_change + g1.stack_change_after_pivot > g2.stack_change + g2.stack_change_after_pivot:
         return 1
-    
+
     if g1.block_length < g2.block_length:
         return -1
     if g1.block_length > g2.block_length:
@@ -25,7 +25,9 @@ def cmp(g1, g2):
     return 0
 
 class Pivot(Builder):
-
+    """
+    a chain_builder that builds stack pivoting rop chains
+    """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
         self._pivot_gadgets = None
@@ -69,7 +71,7 @@ class Pivot(Builder):
                 state = chain.exec()
                 if state.solver.eval(state.regs.sp == addr.data):
                     return chain
-            except Exception:
+            except Exception: # pylint: disable=broad-exception-caught
                 continue
 
         raise RopException(f"Fail to pivot the stack to {addr.data}!")
@@ -101,9 +103,10 @@ class Pivot(Builder):
                 if len(variables) == 1 and variables.pop().startswith(f'reg_{reg}'):
                     return chain
                 else:
-                    chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in chain._gadgets])
+                    insts = [str(self.project.factory.block(g.addr).capstone) for g in chain._gadgets]
+                    chain_str = '\n-----\n'.join(insts)
                     l.exception("Somehow angrop thinks\n%s\ncan be use for stack pivoting", chain_str)
-            except Exception as e:
+            except Exception: # pylint: disable=broad-exception-caught
                 continue
 
         raise RopException(f"Fail to pivot the stack to {reg}!")
@@ -115,7 +118,7 @@ class Pivot(Builder):
         if g1.changed_regs != g2.changed_regs:
             return False
         return True
-        
+
     def better_than(self, g1, g2):
         if not self.same_effect(g1, g2):
             return False

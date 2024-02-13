@@ -44,7 +44,8 @@ class ChainBuilder:
         self._pivot = Pivot(self)
         self._sys_caller = SysCaller(self)
         if not SysCaller.supported_os(self.project.loader.main_object.os):
-            l.warning("%s is not a fully supported OS, SysCaller may not work on this OS", self.project.loader.main_object.os)
+            l.warning("%s is not a fully supported OS, SysCaller may not work on this OS",
+                      self.project.loader.main_object.os)
 
     def set_regs(self, *args, **kwargs):
         """
