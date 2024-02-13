@@ -12,7 +12,10 @@ class ROPArch:
         self.reg_set = self._get_reg_set()
 
         a = project.arch
+        self.stack_pointer = a.register_names[a.sp_offset]
         self.base_pointer = a.register_names[a.bp_offset]
+        self.syscall_insts = None
+        self.ret_insts = None
 
     def _get_reg_set(self):
         """
@@ -34,6 +37,8 @@ class X86(ROPArch):
     def __init__(self, project, kernel_mode=False):
         super().__init__(project, kernel_mode=kernel_mode)
         self.max_block_size = 20 # X86 and AMD64 have alignment of 1, 8 bytes is certainly not good enough
+        self.syscall_insts = {b"\xcd\x80"} # int 0x80
+        self.ret_insts = {b"\xc2", b"\xc3", b"\xca", b"\xcb"}
 
     def block_make_sense(self, block):
         capstr = str(block.capstone).lower()
@@ -47,7 +52,9 @@ class X86(ROPArch):
         return True
 
 class AMD64(X86):
-    pass
+    def __init__(self, project, kernel_mode=False):
+        super().__init__(project, kernel_mode=kernel_mode)
+        self.syscall_insts = {b"\x0f\x05"} # syscall
 
 arm_conditional_postfix = ['eq', 'ne', 'cs', 'hs', 'cc', 'lo', 'mi', 'pl',
                            'vs', 'vc', 'hi', 'ls', 'ge', 'lt', 'gt', 'le', 'al']

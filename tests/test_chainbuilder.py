@@ -46,8 +46,9 @@ def test_i386_syscall():
         rop.load_gadgets(cache_path)
     else:
         rop.find_gadgets()
+        rop.save_gadgets(cache_path)
 
-    chain =rop.do_syscall(4, [1, 0x80AC5E8, 17])
+    chain = rop.do_syscall(4, [1, 0x80AC5E8, 17])
     state = chain.exec()
     assert state.posix.dumps(1) == b'/usr/share/locale'
 
@@ -181,6 +182,30 @@ def test_add_to_mem():
         rop.save_gadgets(cache_path)
 
     rop.add_to_mem(0x41414140, 0x42424242)
+
+def test_pivot():
+    cache_path = os.path.join(CACHE_DIR, "i386_glibc_2.35")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "i386_glibc_2.35"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    chain = rop.pivot(0x41414140)
+    state = chain.exec()
+    assert state.solver.eval(state.regs.sp == 0x41414140)
+
+    chain = rop.pivot(0x41414140)
+    state = chain.exec()
+    assert state.solver.eval(state.regs.sp == 0x41414140)
+
+    chain = rop.set_regs(eax=0x41414140)
+    chain += rop.pivot('eax')
+    state = chain.exec()
+    assert state.solver.eval(state.regs.sp == 0x41414140+4)
 
 def run_all():
     functions = globals()

@@ -1,14 +1,34 @@
 import logging
+import functools
 
 import angr
 
 from .func_caller import FuncCaller
-from .. import common
 from ..errors import RopException
-from ..rop_gadget import RopGadget
 
 l = logging.getLogger(__name__)
 
+def cmp(g1, g2):
+    if g1.can_return and not g2.can_return:
+        return -1
+    if not g1.can_return and g2.can_return:
+        return 1
+
+    if g1.starts_with_syscall and not g2.starts_with_syscall:
+        return -1
+    if g2.starts_with_syscall and not g1.starts_with_syscall:
+        return 1
+
+    if g1.stack_change < g2.stack_change:
+        return -1
+    if g1.stack_change > g2.stack_change:
+        return 1
+
+    if g1.block_length < g2.block_length:
+        return -1
+    if g1.block_length > g2.block_length:
+        return 1
+    return 0
 class SysCaller(FuncCaller):
     """
     handle linux system calls invocations, only support i386 and x86_64 atm
@@ -16,36 +36,22 @@ class SysCaller(FuncCaller):
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
 
-        self._syscall_instruction = None
-        if self.project.arch.linux_name == "x86_64":
-            self._syscall_instructions = {b"\x0f\x05"}
-        elif self.project.arch.linux_name == "i386":
-            self._syscall_instructions = {b"\xcd\x80"}
+        self.syscall_gadgets = None
+        self.update()
 
-        self._execve_syscall = None
-        if "unix" in self.project.loader.main_object.os.lower():
-            if self.project.arch.bits == 64:
-                self._execve_syscall = 59
-            elif self.project.arch.bits == 32:
-                self._execve_syscall = 11
-            else:
-                raise RopException("unknown unix platform")
+    @staticmethod
+    def supported_os(os):
+        return "unix" in os.lower()
 
-    def _get_syscall_locations(self):
-        """
-        :return: all the locations in the binary with a syscall instruction
-        """
-        addrs = []
-        for segment in self.project.loader.main_object.segments:
-            if segment.is_executable:
-                num_bytes = segment.max_addr + 1 - segment.min_addr
-                read_bytes = self.project.loader.memory.load(segment.min_addr, num_bytes)
-                for syscall_instruction in self._syscall_instructions:
-                    for loc in common.str_find_all(read_bytes, syscall_instruction):
-                        addrs.append(loc + segment.min_addr)
-        return sorted(addrs)
+    def update(self):
+        self.syscall_gadgets = self._filter_gadgets(self.chain_builder.syscall_gadgets)
+
+    @staticmethod
+    def _filter_gadgets(gadgets):
+        return sorted(gadgets, key=functools.cmp_to_key(cmp))
 
     def _try_invoke_execve(self, path_addr):
+        execve_syscall = 0x3b if self.project.arch.bits == 64 else 0xb
         # next, try to invoke execve(path, ptr, ptr), where ptr points is either NULL or nullptr
         if 0 not in self.badbytes:
             ptr = 0
@@ -54,7 +60,7 @@ class SysCaller(FuncCaller):
             ptr = nullptr
 
         try:
-            return self.do_syscall(self._execve_syscall, [path_addr, ptr, ptr],
+            return self.do_syscall(execve_syscall, [path_addr, ptr, ptr],
                                  use_partial_controllers=False, needs_return=False)
         except RopException:
             pass
@@ -62,7 +68,7 @@ class SysCaller(FuncCaller):
         # Try to use partial controllers
         l.warning("Trying to use partial controllers for syscall")
         try:
-            return self.do_syscall(self._execve_syscall, [path_addr, 0, 0],
+            return self.do_syscall(execve_syscall, [path_addr, 0, 0],
                                      use_partial_controllers=True, needs_return=False)
         except RopException:
             pass
@@ -70,11 +76,10 @@ class SysCaller(FuncCaller):
         raise RopException("Fail to invoke execve!")
 
     def execve(self, path=None, path_addr=None):
-        # look for good syscall gadgets
-        syscall_locs = self._get_syscall_locations()
-        syscall_locs = [x for x in syscall_locs if not self._word_contain_badbyte(x)]
-        if len(syscall_locs) == 0:
-            raise RopException("No syscall instruction available")
+        if "unix" not in self.project.loader.main_object.os.lower():
+            raise RopException("unknown unix platform")
+        if not self.syscall_gadgets:
+            raise RopException("target does not contain syscall gadget!")
 
         # determine the execution path
         if path is None:
@@ -113,7 +118,6 @@ class SysCaller(FuncCaller):
         :param needs_return: whether to continue the ROP after invoking the syscall
         :return: a RopChain which makes the system with the requested register contents
         """
-
         # set the system call number
         extra_regs = {}
         extra_regs[self.project.arch.register_names[self.project.arch.syscall_num_offset]] = syscall_num
@@ -121,25 +125,17 @@ class SysCaller(FuncCaller):
 
         # find small stack change syscall gadget that also fits the stack arguments we want
         # FIXME: does any arch/OS take syscall arguments on stack? (windows? sysenter?)
-        smallest = None
-        stack_arguments = args[len(cc.ARG_REGS):]
-        for gadget in [x for x in self.chain_builder.gadgets if x.starts_with_syscall]:
-            # adjust stack change for ret
-            stack_change = gadget.stack_change - self.project.arch.bytes
-            required_space = len(stack_arguments) * self.project.arch.bytes
-            if stack_change >= required_space:
-                if smallest is None or gadget.stack_change < smallest.stack_change:
-                    smallest = gadget
 
-        if smallest is None and not needs_return:
-            syscall_locs = self._get_syscall_locations()
-            if len(syscall_locs) > 0:
-                smallest = RopGadget(syscall_locs[0])
-                smallest.block_length = self.project.factory.block(syscall_locs[0]).size
-                smallest.stack_change = self.project.arch.bits
+        if not self.syscall_gadgets:
+            raise RopException("target does not contain syscall gadget!")
 
-        if smallest is None:
-            raise RopException("No suitable syscall gadgets found")
-
-        return self._func_call(smallest, cc, args, extra_regs=extra_regs,
+        for gadget in self.syscall_gadgets:
+            if needs_return and not gadget.can_return:
+                continue
+            try:
+                return self._func_call(gadget, cc, args, extra_regs=extra_regs,
                                needs_return=needs_return, **kwargs)
+            except Exception: # pylint: disable=broad-exception-caught
+                continue
+
+        raise RopException(f"Fail to invoke syscall {syscall_num} with arguments: {args}!")

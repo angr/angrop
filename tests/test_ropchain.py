@@ -21,7 +21,7 @@ def test_chain_exec():
         rop.save_gadgets(cache_path)
 
     # make sure the target gadget exist
-    gadgets = [x for x in rop.gadgets if x.addr == 0x402503]
+    gadgets = [x for x in rop._all_gadgets if x.addr == 0x402503]
     assert len(gadgets) == 1
     gadget = gadgets[0]
 

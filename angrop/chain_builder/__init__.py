@@ -6,6 +6,7 @@ from .mem_writer import MemWriter
 from .mem_changer import MemChanger
 from .func_caller import FuncCaller
 from .sys_caller import SysCaller
+from .pivot import Pivot
 from .. import rop_utils
 
 l = logging.getLogger("angrop.chain_builder")
@@ -16,7 +17,7 @@ class ChainBuilder:
     This class provides functions to generate common ropchains based on existing gadgets.
     """
 
-    def __init__(self, project, gadgets, arch, badbytes, roparg_filler):
+    def __init__(self, project, rop_gadgets, pivot_gadgets, syscall_gadgets, arch, badbytes, roparg_filler):
         """
         Initializes the chain builder.
 
@@ -27,17 +28,24 @@ class ChainBuilder:
         :param roparg_filler: An integer used when popping superfluous registers
         """
         self.project = project
-        self.gadgets = gadgets
         self.arch = arch
         self.badbytes = badbytes
         self.roparg_filler = roparg_filler
+
+        self.gadgets = rop_gadgets
+        self.pivot_gadgets = pivot_gadgets
+        self.syscall_gadgets = syscall_gadgets
 
         self._reg_setter = RegSetter(self)
         self._reg_mover = RegMover(self)
         self._mem_writer = MemWriter(self)
         self._mem_changer = MemChanger(self)
         self._func_caller = FuncCaller(self)
+        self._pivot = Pivot(self)
         self._sys_caller = SysCaller(self)
+        if not SysCaller.supported_os(self.project.loader.main_object.os):
+            l.warning("%s is not a fully supported OS, SysCaller may not work on this OS",
+                      self.project.loader.main_object.os)
 
     def set_regs(self, *args, **kwargs):
         """
@@ -85,6 +93,10 @@ class ChainBuilder:
         addr = rop_utils.cast_rop_value(addr, self.project)
         return self._mem_writer.write_to_mem(addr, data, fill_byte=fill_byte)
 
+    def pivot(self, thing):
+        thing = rop_utils.cast_rop_value(thing, self.project)
+        return self._pivot.pivot(thing)
+
     def func_call(self, address, args, **kwargs):
         """
         :param address: address or name of function to call
@@ -105,6 +117,9 @@ class ChainBuilder:
         :param needs_return: whether to continue the ROP after invoking the syscall
         :return: a RopChain which makes the system with the requested register contents
         """
+        if not self._sys_caller:
+            l.exception("SysCaller does not support OS: %s", self.project.loader.main_object.os)
+            return None
         return self._sys_caller.do_syscall(syscall_num, args, needs_return=needs_return, **kwargs)
 
     def execve(self, path=None, path_addr=None):
@@ -113,6 +128,9 @@ class ChainBuilder:
         :param path: path of binary of execute, default to b"/bin/sh\x00"
         :param path_addr: where to store this path string
         """
+        if not self._sys_caller:
+            l.exception("SysCaller does not support OS: %s", self.project.loader.main_object.os)
+            return None
         return self._sys_caller.execve(path=path, path_addr=path_addr)
 
     def set_badbytes(self, badbytes):
@@ -121,6 +139,15 @@ class ChainBuilder:
     def set_roparg_filler(self, roparg_filler):
         self.roparg_filler = roparg_filler
 
+    def update(self):
+        self._reg_setter.update()
+        self._reg_mover.update()
+        self._mem_writer.update()
+        self._mem_changer.update()
+        #self._func_caller.update()
+        if self._sys_caller:
+            self._sys_caller.update()
+        self._pivot.update()
+
     # should also be able to do execve by providing writable memory
-    # todo pivot stack
     # todo pass values to setregs as symbolic variables

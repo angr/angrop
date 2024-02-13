@@ -5,13 +5,17 @@ import angr
 import pyvex
 import claripy
 
-from . import rop_utils
-from .arch import get_arch
-from .rop_gadget import RopGadget, RopMemAccess, RopRegMove, StackPivot
-from .errors import RopException, RegNotFoundException
+from .. import rop_utils
+from ..arch import get_arch
+from ..rop_gadget import RopGadget, RopMemAccess, RopRegMove, PivotGadget, SyscallGadget
+from ..errors import RopException, RegNotFoundException
 
 l = logging.getLogger("angrop.gadget_analyzer")
 
+# the maximum amount of stack shifting after reading saved IP that is allowed after pivoting
+# like, mov rsp, rax; ret 0x1000 is not OK
+# mov rsp, rax; ret 0x20 is OK
+MAX_PIVOT_BYTES = 0x100
 
 
 class GadgetAnalyzer:
@@ -30,13 +34,9 @@ class GadgetAnalyzer:
         # initial state that others are based off, all analysis should copy the state first and work on
         # the copied state
         self._stack_bsize = stack_gsize * self.project.arch.bytes # number of controllable bytes on stack
-        self._state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set, stack_gsize=stack_gsize)
+        sym_reg_set = self.arch.reg_set.union({self.arch.base_pointer})
+        self._state = rop_utils.make_symbolic_state(self.project, sym_reg_set, stack_gsize=stack_gsize)
         self._concrete_sp = self._state.solver.eval(self._state.regs.sp)
-
-        # architecture stuff. we assume every architecture has registers that implements stackframes,
-        # but may have different names than bp/sp
-        self._bp_name = self.project.arch.register_names[self.project.arch.bp_offset]
-        self._sp_name = self.project.arch.register_names[self.project.arch.sp_offset]
 
     @rop_utils.timeout(3)
     def analyze_gadget(self, addr):
@@ -56,10 +56,10 @@ class GadgetAnalyzer:
             if not self._can_reach_unconstrained(addr):
                 l.debug("... cannot get to unconstrained successor according to static analysis")
                 return None
-            init_state, final_state = self._reach_unconstrained(addr)
-            # TODO: properly handle stack pivoting gadgets, since angrop does not handle them for now
-            # we do not analyze them as well, check_pivot function is for it
-            ctrl_type = self._check_for_controll_type(init_state, final_state)
+
+            init_state, final_state = self._reach_unconstrained_or_syscall(addr)
+
+            ctrl_type = self._check_for_control_type(init_state, final_state)
             if not ctrl_type:
                 # for example, jump outside of the controllable region
                 l.debug("... cannot maintain the control flow hijacking primitive after executing the gadget")
@@ -68,10 +68,13 @@ class GadgetAnalyzer:
             # Step 3: gadget effect analysis
             l.debug("... analyzing rop potential of block")
             gadget = self._create_gadget(addr, init_state, final_state, ctrl_type)
+            if not gadget:
+                return None
 
             # Step 4: filter out bad gadgets
-            # too many mem accesses
-            if not self._satisfies_mem_access_limits(final_state):
+            # too many mem accesses, it can only be done after gadget creation
+            # specifically, memory access analysis
+            if gadget.num_mem_access > self.arch.max_sym_mem_access:
                 l.debug("... too many symbolic memory accesses")
                 return None
 
@@ -153,6 +156,15 @@ class GadgetAnalyzer:
 
         return True
 
+    def is_in_kernel(self, state):
+        ip = state.ip
+        if not ip.symbolic:
+            obj = self.project.loader.find_object_containing(ip.concrete_value)
+            if obj.binary == 'cle##kernel':
+                return True
+            return False
+        return False
+
     def _can_reach_unconstrained(self, addr, max_steps=2):
         """
         Use static analysis to check whether the address can lead to unconstrained targets
@@ -179,20 +191,50 @@ class GadgetAnalyzer:
 
         return self._can_reach_unconstrained(target_block_addr, max_steps-1)
 
-    def _reach_unconstrained(self, addr):
+    def _reach_unconstrained_or_syscall(self, addr):
         init_state = self._state.copy()
         init_state.ip = addr
 
         # it will raise errors if angr fails to step the state
-        final_state = rop_utils.step_to_unconstrained_successor(self.project, state=init_state)
+        final_state = rop_utils.step_to_unconstrained_successor(self.project, state=init_state, stop_at_syscall=True)
 
+        if self.is_in_kernel(final_state):
+            state = final_state.copy()
+            try:
+                succ = self.project.factory.successors(state)
+                state = succ.flat_successors[0]
+                state2 = rop_utils.step_to_unconstrained_successor(self.project, state=state)
+            except Exception: # pylint: disable=broad-exception-caught
+                return init_state, final_state
+            return init_state, state2
         return init_state, final_state
 
-    @staticmethod
-    def _identify_transit_type(final_state, ctrl_type):
+    def _identify_transit_type(self, final_state, ctrl_type):
         # FIXME: not always jump, could be call as well
         if ctrl_type == 'register':
             return "jmp_reg"
+        if ctrl_type == 'syscall':
+            return ctrl_type
+
+        if ctrl_type == 'pivot':
+            variables = list(final_state.ip.variables)
+            if all(x.startswith("sreg_") for x in variables):
+                return "jmp_reg"
+            for act in final_state.history.actions:
+                if act.type != 'mem':
+                    continue
+                if act.size != self.project.arch.bits:
+                    continue
+                if (act.data.ast == final_state.ip).symbolic or \
+                    not final_state.solver.eval(act.data.ast == final_state.ip):
+                    continue
+                sols = final_state.solver.eval_upto(final_state.regs.sp-act.addr.ast, 2)
+                if len(sols) != 1:
+                    continue
+                if sols[0] != final_state.arch.bytes:
+                    continue
+                return "ret"
+            return "jmp_mem"
 
         assert ctrl_type == 'stack'
 
@@ -208,7 +250,15 @@ class GadgetAnalyzer:
         transit_type = self._identify_transit_type(final_state, ctrl_type)
 
         # create the gadget
-        gadget = RopGadget(addr=addr)
+        if ctrl_type == 'syscall' or self._does_syscall(final_state):
+            gadget = SyscallGadget(addr=addr)
+            gadget.makes_syscall = self._does_syscall(final_state)
+            gadget.starts_with_syscall = self._starts_with_syscall(addr)
+        elif ctrl_type == 'pivot' or self._does_pivot(final_state):
+            gadget = PivotGadget(addr=addr)
+        else:
+            gadget = RopGadget(addr=addr)
+
         # FIXME this doesnt handle multiple steps
         gadget.block_length = self.project.factory.block(addr).size
         gadget.transit_type = transit_type
@@ -233,7 +283,7 @@ class GadgetAnalyzer:
 
         # compute sp change
         l.debug("... computing sp change")
-        self._compute_sp_change(init_state, gadget)
+        self._compute_sp_change(init_state, final_state, gadget)
         if gadget.stack_change % (self.project.arch.bytes) != 0:
             l.debug("... uneven sp change")
             return None
@@ -241,15 +291,6 @@ class GadgetAnalyzer:
             l.debug("stack change is negative!!")
             #FIXME: technically, it can be negative, e.g. call instructions
             return None
-
-        # if the sp moves to the bp we have to handle it differently
-        if not gadget.bp_moves_to_sp and self._bp_name != self._sp_name:
-            rop_utils.make_reg_symbolic(init_state, self._bp_name)
-            final_state = rop_utils.step_to_unconstrained_successor(self.project, init_state)
-
-        l.info("... checking for syscall availability")
-        gadget.makes_syscall = self._does_syscall(final_state)
-        gadget.starts_with_syscall = self._starts_with_syscall(addr)
 
         l.info("... checking for controlled regs")
         self._check_reg_changes(final_state, init_state, gadget)
@@ -274,29 +315,6 @@ class GadgetAnalyzer:
                 return None
 
         return gadget
-
-    def _satisfies_mem_access_limits(self, state):
-        """
-        :param symbolic_path: the successor symbolic path
-        :return: True/False indicating whether or not to keep the gadget
-        """
-        # get all the memory accesses
-        symbolic_mem_accesses = []
-        for a in reversed(state.history.actions):
-            if a.type == 'mem' and a.addr.ast.symbolic:
-                symbolic_mem_accesses.append(a)
-        if len(symbolic_mem_accesses) <= self.arch.max_sym_mem_access:
-            return True
-
-        # allow mem changes (only add/subtract) to count as a single access
-        # FIXME: this logic looks terrible
-        if len(symbolic_mem_accesses) == 2 and self.arch.max_sym_mem_access == 1:
-            if symbolic_mem_accesses[0].action == "read" and symbolic_mem_accesses[1].action == "write" and \
-                    symbolic_mem_accesses[1].data.ast.op in ("__sub__", "__add__") and \
-                    symbolic_mem_accesses[1].data.ast.size() == self.project.arch.bits and \
-                    symbolic_mem_accesses[0].addr.ast is symbolic_mem_accesses[1].addr.ast:
-                return True
-        return False
 
     def _analyze_concrete_regs(self, state, gadget):
         """
@@ -324,7 +342,7 @@ class GadgetAnalyzer:
 
         exit_target = exit_action.target.ast
 
-        stack_change = gadget.stack_change if not gadget.bp_moves_to_sp else None
+        stack_change = gadget.stack_change if type(gadget) == RopGadget else None
 
         for reg in self._get_reg_writes(final_state):
             # we assume any register in reg_writes changed
@@ -392,16 +410,20 @@ class GadgetAnalyzer:
                         gadget.reg_moves.append(RopRegMove(from_reg, reg, half_bits))
 
     # TODO: need to handle reg calls
-    def _check_for_controll_type(self, init_state, final_state):
+    def _check_for_control_type(self, init_state, final_state):
         """
         :return: the data provenance of the controlled ip in the final state, either the stack or registers
         """
 
-        # the ip is controlled by stack
-        if self._check_if_stack_controls_ast(final_state.ip, init_state):
-            return "stack"
-
         ip = final_state.ip
+
+        # this gadget arrives a syscall
+        if self.is_in_kernel(final_state):
+            return 'syscall'
+
+        # the ip is controlled by stack
+        if self._check_if_stack_controls_ast(ip, init_state):
+            return "stack"
 
         # the ip is not controlled by regs
         if not ip.variables:
@@ -411,6 +433,35 @@ class GadgetAnalyzer:
         variables = list(ip.variables)
         if all(x.startswith("sreg_") for x in variables):
             return "register"
+
+        # this is a stack pivoting gadget
+        if all(x.startswith("symbolic_read_") for x in variables) and len(final_state.regs.sp.variables) == 1:
+            # we don't fully control sp
+            if not init_state.solver.satisfiable(extra_constraints=[final_state.regs.sp == 0x41414100]):
+                return None
+            # make sure the control after pivot is reasonable
+
+            # find where the ip is read from
+            saved_ip_addr = None
+            for act in final_state.history.actions:
+                if act.type == 'mem' and act.action == 'read':
+                    if act.size == self.project.arch.bits and not (act.data.ast == ip).symbolic:
+                        if init_state.solver.eval(act.data.ast == ip):
+                            saved_ip_addr = act.addr.ast
+                            break
+            if saved_ip_addr is None:
+                return None
+
+            # if the saved ip is too far away from the final sp, that's a bad gadget
+            sols = final_state.solver.eval_upto(final_state.regs.sp - saved_ip_addr, 2)
+            if len(sols) != 1: # the saved ip has a symbolic distance from the final sp, bad
+                return None
+            offset = sols[0]
+            if offset > MAX_PIVOT_BYTES: # filter out gadgets like mov rsp, rax; ret 0x1000
+                return None
+            if offset % self.project.arch.bytes != 0: # filter misaligned gadgets
+                return None
+            return "pivot"
 
         return None
 
@@ -458,51 +509,77 @@ class GadgetAnalyzer:
         concrete_stack_s = initial_state.copy()
         concrete_stack_s.add_constraints(
             initial_state.memory.load(initial_state.regs.sp, stack_bytes_length) == concrete_stack)
-        test_constraint = (ast != test_val)
+        test_constraint = ast != test_val
         # stack must have set the register and it must be able to set the register to all 1's or all 0's
         ans = not concrete_stack_s.solver.satisfiable(extra_constraints=(test_constraint,)) and \
                 rop_utils.fast_unconstrained_check(initial_state, ast)
 
         return ans
 
-    def _compute_sp_change(self, symbolic_state, gadget):
+    def _compute_sp_change(self, init_state, final_state, gadget):
         """
-        Computes the change in the stack pointer for a gadget, including whether or not it moves to the base pointer
+        Computes the change in the stack pointer for a gadget
+        for a PivotGadget, it is the sp change right before pivoting
         :param symbolic_state: the input symbolic state
         :param gadget: the gadget in which to store the sp change
         """
-        # store symbolic sp and bp and check for dependencies
-        init_state = symbolic_state.copy()
-        init_state.regs.bp = init_state.solver.BVS("sreg_" + self._bp_name + "-", self.project.arch.bits)
-        init_state.regs.sp = init_state.solver.BVS("sreg_" + self._sp_name+ "-", self.project.arch.bits)
-        final_state = rop_utils.step_to_unconstrained_successor(self.project, init_state)
-        dependencies = self._get_reg_dependencies(final_state, "sp")
-        sp_change = final_state.regs.sp - init_state.regs.sp
+        if type(gadget) in (RopGadget, SyscallGadget):
+            dependencies = self._get_reg_dependencies(final_state, "sp")
+            sp_change = final_state.regs.sp - init_state.regs.sp
 
-        # analyze the results
-        gadget.bp_moves_to_sp = False
-        if len(dependencies) > 1:
-            raise RopException("SP has multiple dependencies")
-        if len(dependencies) == 0 and sp_change.symbolic:
-            raise RopException("SP change is uncontrolled")
+            # analyze the results
+            if len(dependencies) > 1:
+                raise RopException("SP has multiple dependencies")
+            if len(dependencies) == 0 and sp_change.symbolic:
+                raise RopException("SP change is uncontrolled")
 
-        if len(dependencies) == 0 and not sp_change.symbolic:
-            stack_changes = [init_state.solver.eval(sp_change)]
-        elif list(dependencies)[0] == self._sp_name:
-            stack_changes = init_state.solver.eval_upto(sp_change, 2)
-        elif list(dependencies)[0] == self._bp_name:
-            # FIXME: I think this code is meant to handle leave; ret
-            # but I wonder whether lea rsp, [rbp+offset] is a thing
-            sp_change = final_state.regs.sp - init_state.regs.bp
-            stack_changes = init_state.solver.eval_upto(sp_change, 2)
-            gadget.bp_moves_to_sp = True
-        else:
-            raise RopException("SP does not depend on SP or BP")
+            assert self.arch.base_pointer not in dependencies
+            if len(dependencies) == 0 and not sp_change.symbolic:
+                stack_changes = [init_state.solver.eval(sp_change)]
+            elif list(dependencies)[0] == self.arch.stack_pointer:
+                stack_changes = init_state.solver.eval_upto(sp_change, 2)
+            else:
+                raise RopException("SP does not depend on SP or BP")
 
-        if len(stack_changes) != 1:
-            raise RopException("SP change is symbolic")
+            if len(stack_changes) != 1:
+                raise RopException("SP change is symbolic")
 
-        gadget.stack_change = stack_changes[0]
+            gadget.stack_change = stack_changes[0]
+
+        elif type(gadget) is PivotGadget:
+            final_state = rop_utils.step_to_unconstrained_successor(self.project, state=init_state, precise_action=True)
+            dependencies = self._get_reg_dependencies(final_state, "sp")
+            last_sp = None
+            init_sym_sp = None
+            prev_act = None
+            for act in final_state.history.actions:
+                if act.type == 'reg' and act.action == 'write' and act.storage == self.arch.stack_pointer:
+                    if not act.data.ast.symbolic:
+                        last_sp = act.data.ast
+                    else:
+                        init_sym_sp = act.data.ast
+                        break
+                prev_act = act
+            if last_sp is not None:
+                gadget.stack_change = (last_sp - init_state.regs.sp).concrete_value
+            else:
+                gadget.stack_change = 0
+
+            # if is popped from stack, we need to compensate for the popped sp value on the stack
+            # if it is a pop, then sp comes from stack and the previous action must be a mem read
+            # and the data is the new sp
+            variables = init_sym_sp.variables
+            if prev_act and variables and all(x.startswith('symbolic_stack_') for x in variables):
+                if prev_act.type == 'mem' and prev_act.action == 'read' and prev_act.data.ast is init_sym_sp:
+                    gadget.stack_change += self.project.arch.bytes
+
+            assert init_sym_sp is not None
+            sols = final_state.solver.eval_upto(final_state.regs.sp - init_sym_sp, 2)
+            if len(sols) != 1:
+                raise RopException("This gadget pivots more than once, which is currently not handled")
+            gadget.stack_change_after_pivot = sols[0]
+            gadget.sp_reg_controllers = set(self._get_reg_controllers(init_state, final_state, 'sp', dependencies))
+            gadget.sp_stack_controllers = {x for x in final_state.regs.sp.variables if x.startswith("symbolic_stack_")}
 
     def _build_mem_access(self, a, gadget, init_state, final_state):
         """
@@ -536,7 +613,7 @@ class GadgetAnalyzer:
             elif len(test_data) == 1:
                 mem_access.data_constant = test_data[0]
             else:
-                raise Exception("No data values, something went wrong")
+                raise RopException("No data values, something went wrong")
         elif a.action == "read":
             # for reads we want to know if any register will have the data after
             succ_state = final_state
@@ -624,6 +701,25 @@ class GadgetAnalyzer:
 
         return False
 
+    def _does_pivot(self, final_state):
+        """
+        checks if the path does a stack pivoting at some point
+        :param final_state: the state that finishes the gadget execution
+        """
+        for act in final_state.history.actions:
+            if act.type != 'reg' or act.action != 'write':
+                continue
+            try:
+                storage = act.storage
+            except KeyError:
+                continue
+            if storage != self.arch.stack_pointer:
+                continue
+            # this gadget has done symbolic pivoting if there is a symbolic write to the stack pointer
+            if act.data.symbolic:
+                return True
+        return False
+
     def _analyze_mem_access(self, final_state, init_state, gadget):
         """
         analyzes memory accesses and stores their info in the gadget
@@ -632,6 +728,7 @@ class GadgetAnalyzer:
         :param gadget: the gadget to store mem acccess in
         """
         all_mem_actions = []
+        sp_vars = final_state.regs.sp.variables
 
         # step 1: filter out irrelevant actions and irrelevant memory accesses
         for a in final_state.history.actions.hardcopy:
@@ -640,6 +737,10 @@ class GadgetAnalyzer:
 
             # we don't like floating point stuff
             if isinstance(a.data.ast, (claripy.fp.FPV, claripy.ast.FP)):
+                continue
+
+            # ignore read/write on stack after pivot
+            if a.addr.ast.symbolic and not a.addr.ast.variables - sp_vars:
                 continue
 
             # ignore read/write on stack
@@ -681,63 +782,6 @@ class GadgetAnalyzer:
                 gadget.mem_reads.append(mem_access)
             if a.action == "write":
                 gadget.mem_writes.append(mem_access)
-
-    def _check_pivot(self, symbolic_p, symbolic_state, addr):
-        """
-        Super basic pivot analysis. Pivots are not really used by angrop right now
-        :param symbolic_p: the stepped path, symbolic_state is an ancestor of it.
-        :param symbolic_state: input state for testing
-        :return: the pivot object
-        """
-        if symbolic_p.history.depth > 1:
-            return None
-        pivot = None
-        reg_deps = rop_utils.get_ast_dependency(symbolic_p.regs.sp)
-        if len(reg_deps) == 1:
-            pivot = StackPivot(addr)
-            pivot.sp_from_reg = list(reg_deps)[0]
-        elif len(symbolic_p.regs.sp.variables) == 1 and \
-                list(symbolic_p.regs.sp.variables)[0].startswith("symbolic_stack"):
-            offset = None
-            for a in symbolic_p.regs.sp.recursive_children_asts:
-                if a.op == "Extract" and a.depth == 2:
-                    offset = a.args[2].size() - 1 - a.args[0]
-            if offset is None or offset % 8 != 0:
-                return None
-            offset_bytes = offset//8
-            pivot = StackPivot(addr)
-            pivot.sp_popped_offset = offset_bytes
-
-        if pivot is not None:
-            # verify no weird mem accesses
-            test_p = self.project.factory.simulation_manager(symbolic_state.copy())
-            # step until we find the pivot action
-            for _ in range(self.project.factory.block(symbolic_state.addr).instructions):
-                test_p.step(num_inst=1)
-                if len(test_p.active) != 1:
-                    return None
-                if test_p.one_active.regs.sp.symbolic:
-                    # found the pivot action
-                    break
-            # now iterate through the remaining instructions with a clean state
-            test_p.step(num_inst=1)
-            if len(test_p.active) != 1:
-                return None
-            succ1 = test_p.active[0]
-            ss = symbolic_state.copy()
-            ss.regs.ip = succ1.addr
-            succ = self.project.factory.successors(ss)
-            if len(succ.flat_successors + succ.unconstrained_successors) == 0:
-                return None
-            succ2 = (succ.flat_successors + succ.unconstrained_successors)[0]
-
-            all_actions = succ1.history.actions.hardcopy + succ2.history.actions.hardcopy
-            for a in all_actions:
-                if a.type == "mem" and a.addr.ast.symbolic:
-                    return None
-            return pivot
-
-        return None
 
     def _starts_with_syscall(self, addr):
         """
@@ -804,7 +848,7 @@ class GadgetAnalyzer:
                     reg_name = rop_utils.get_reg_name(self.project.arch, a.offset)
                     if reg_name in self.arch.reg_set:
                         all_reg_reads.add(reg_name)
-                    elif reg_name != self._sp_name:
+                    elif reg_name != self.arch.stack_pointer:
                         l.info("reg read from register not in reg_set: %s", reg_name)
                 except RegNotFoundException as e:
                     l.debug(e)
@@ -823,7 +867,7 @@ class GadgetAnalyzer:
                     reg_name = rop_utils.get_reg_name(self.project.arch, a.offset)
                     if reg_name in self.arch.reg_set:
                         all_reg_writes.add(reg_name)
-                    elif reg_name != self._sp_name:
+                    elif reg_name != self.arch.stack_pointer:
                         l.info("reg write from register not in reg_set: %s", reg_name)
                 except RegNotFoundException as e:
                     l.debug(e)

@@ -16,6 +16,10 @@ class RegMover(Builder):
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
+        self._reg_moving_gadgets = None
+        self.update()
+
+    def update(self):
         self._reg_moving_gadgets = self._filter_gadgets(self.chain_builder.gadgets)
 
     def verify(self, chain, preserve_regs, registers):
@@ -142,11 +146,7 @@ class RegMover(Builder):
         """
         gadgets = set()
         for g in self._reg_moving_gadgets:
-            if g.makes_syscall:
-                continue
             if g.has_symbolic_access():
-                continue
-            if g.bp_moves_to_sp:
                 continue
             if moves.intersection(set(g.reg_moves)):
                 gadgets.add(g)

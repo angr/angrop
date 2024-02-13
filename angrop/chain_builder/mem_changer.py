@@ -15,6 +15,11 @@ class MemChanger(Builder):
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
+        self._mem_change_gadgets = None
+        self._mem_add_gadgets = None
+        self.update()
+
+    def update(self):
         self._mem_change_gadgets = self._get_all_mem_change_gadgets(self.chain_builder.gadgets)
         self._mem_add_gadgets = self._get_all_mem_add_gadgets()
 
@@ -40,8 +45,6 @@ class MemChanger(Builder):
         possible_gadgets = set()
         for g in gadgets:
             if len(g.mem_reads) + len(g.mem_writes) > 0 or len(g.mem_changes) != 1:
-                continue
-            if g.bp_moves_to_sp:
                 continue
             if g.stack_change <= 0:
                 continue

@@ -17,6 +17,11 @@ class RegSetter(Builder):
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
+        self._reg_setting_gadgets = None
+        self.hard_chain_cache = None
+        self.update()
+
+    def update(self):
         self._reg_setting_gadgets = self._filter_gadgets(self.chain_builder.gadgets)
         self.hard_chain_cache = {}
 
@@ -104,8 +109,6 @@ class RegSetter(Builder):
         """
         gadgets = set({})
         for g in self._reg_setting_gadgets:
-            if g.makes_syscall:
-                continue
             if g.has_symbolic_access():
                 continue
             for reg in registers:
@@ -329,14 +332,8 @@ class RegSetter(Builder):
                 continue
 
             for g in gadgets:
-                # ignore gadgets which make a syscall when setting regs
-                if g.makes_syscall:
-                    continue
                 # ignore gadgets which don't have a positive stack change
                 if g.stack_change <= 0:
-                    continue
-                # ignore base pointer moves for now
-                if g.bp_moves_to_sp:
                     continue
 
                 stack_change = data[regs][1]
@@ -469,9 +466,6 @@ class RegSetter(Builder):
             return False
         # make sure the register doesnt depend on itself
         if reg in gadget.reg_dependencies and reg in gadget.reg_dependencies[reg]:
-            return False
-        # make sure the gadget doesnt pop bp
-        if gadget.bp_moves_to_sp:
             return False
 
         # set the register

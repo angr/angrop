@@ -43,7 +43,8 @@ def assert_gadgets_equal(known_gadget, test_gadget):
     assert known_gadget.reg_dependencies == test_gadget.reg_dependencies
     assert known_gadget.reg_controllers == test_gadget.reg_controllers
     assert known_gadget.stack_change == test_gadget.stack_change
-    assert known_gadget.makes_syscall == test_gadget.makes_syscall
+    if hasattr(known_gadget, "makes_syscall"):
+        assert known_gadget.makes_syscall == test_gadget.makes_syscall
 
     assert len(known_gadget.mem_reads) == len(test_gadget.mem_reads)
     for m1, m2 in zip(known_gadget.mem_reads, test_gadget.mem_reads):
@@ -109,7 +110,7 @@ def test_rop_x86_64():
 
     # check gadgets
     tup = pickle.load(open(cache_path, "rb"))
-    compare_gadgets(rop.gadgets, tup[0])
+    compare_gadgets(rop._all_gadgets, tup[0])
 
     # test creating a rop chain
     chain = rop.set_regs(rbp=0x1212, rbx=0x1234567890123456)
@@ -137,7 +138,7 @@ def test_rop_i386_cgc():
 
     # check gadgets
     tup = pickle.load(open(os.path.join(test_data_location, "0b32aa01_01_gadgets"), "rb"))
-    compare_gadgets(rop.gadgets, tup[0])
+    compare_gadgets(rop._all_gadgets, tup[0])
 
     # test creating a rop chain
     chain = rop.set_regs(ebx=0x98765432, ecx=0x12345678)
@@ -164,7 +165,7 @@ def test_rop_arm():
 
     # check gadgets
     tup = pickle.load(open(os.path.join(test_data_location, "arm_manysum_test_gadgets"), "rb"))
-    compare_gadgets(rop.gadgets, tup[0])
+    compare_gadgets(rop._all_gadgets, tup[0])
 
     # test creating a rop chain
     chain = rop.set_regs(r11=0x99887766)
@@ -184,9 +185,9 @@ def test_rop_arm():
 
 def test_roptest_x86_64():
     p = angr.Project(os.path.join(public_bin_location, "x86_64/roptest"), auto_load_libs=False)
-    r = p.analyses.ROP()
+    r = p.analyses.ROP(only_check_near_rets=False)
     r.find_gadgets_single_threaded(show_progress=False)
-    c = r.execve(b"/bin/sh")
+    c = r.execve(path=b"/bin/sh")
 
     # verifying this is a giant pain, partially because the binary is so tiny, and there's no code beyond the syscall
     assert len(c._gadgets) == 8

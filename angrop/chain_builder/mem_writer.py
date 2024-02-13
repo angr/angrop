@@ -17,6 +17,10 @@ class MemWriter(Builder):
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
+        self._mem_write_gadgets = None
+        self.update()
+
+    def update(self):
         self._mem_write_gadgets = self._get_all_mem_write_gadgets(self.chain_builder.gadgets)
 
     def _set_regs(self, *args, **kwargs):
@@ -27,8 +31,6 @@ class MemWriter(Builder):
         possible_gadgets = set()
         for g in gadgets:
             if len(g.mem_reads) + len(g.mem_changes) > 0 or len(g.mem_writes) != 1:
-                continue
-            if g.bp_moves_to_sp:
                 continue
             if g.stack_change <= 0:
                 continue

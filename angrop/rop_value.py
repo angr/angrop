@@ -12,7 +12,7 @@ class RopValue:
         self.reg_name = None
         if type(value) is str:
             if value not in project.arch.default_symbolic_registers:
-                raise ValueError(f"unknown register: {value}!")
+                raise ValueError(f"{value} is not a general purpose register!")
             self.reg_name = value
             value = claripy.BVS(value, project.arch.bits)
 

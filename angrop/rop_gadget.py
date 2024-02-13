@@ -95,20 +95,23 @@ class RopGadget:
     """
     def __init__(self, addr):
         self.addr = addr
+        self.block_length = None
+        self.stack_change = None
+
+        # register effect information
         self.changed_regs = set()
         self.popped_regs = set()
         self.concrete_regs = {}
         self.reg_dependencies = {}  # like rax might depend on rbx, rcx
         self.reg_controllers = {}  # like rax might be able to be controlled by rbx (for any value of rcx)
-        self.stack_change = None
+        self.reg_moves = []
+
+        # memory effect information
         self.mem_reads = []
         self.mem_writes = []
         self.mem_changes = []
-        self.reg_moves = []
-        self.bp_moves_to_sp = None # whether the new sp depends on bp, e.g. 'leave; ret' overwrites sp with bp
-        self.block_length = None
-        self.makes_syscall = False
-        self.starts_with_syscall = False
+
+        # transition information, i.e. how to pass the control flow to the next gadget
         self.transit_type = None
         self.jump_reg = None
         self.pc_reg = None
@@ -128,8 +131,6 @@ class RopGadget:
         if self.popped_regs != other.popped_regs:
             return False
         if self.concrete_regs != other.concrete_regs:
-            return False
-        if self.bp_moves_to_sp != other.bp_moves_to_sp:
             return False
         if self.reg_dependencies != other.reg_dependencies:
             return False
@@ -169,18 +170,15 @@ class RopGadget:
 
     def __str__(self):
         s = "Gadget %#x\n" % self.addr
-        if self.bp_moves_to_sp:
-            s += "Stack change: bp + %#x\n" % self.stack_change
-        else:
-            s += "Stack change: %#x\n" % self.stack_change
+        s += "Stack change: %#x\n" % self.stack_change
         s += "Changed registers: " + str(self.changed_regs) + "\n"
         s += "Popped registers: " + str(self.popped_regs) + "\n"
         for move in self.reg_moves:
             s += "Register move: [%s to %s, %d bits]\n" % (move.from_reg, move.to_reg, move.bits)
         s += "Register dependencies:\n"
-        for reg in self.reg_dependencies:
+        for reg, deps in self.reg_dependencies.items():
             controllers = self.reg_controllers.get(reg, [])
-            dependencies = [x for x in self.reg_dependencies[reg] if x not in controllers]
+            dependencies = [x for x in deps if x not in controllers]
             s += "    " + reg + ": [" + " ".join(controllers) + " (" + " ".join(dependencies) + ")]" + "\n"
         for mem_access in self.mem_changes:
             if mem_access.op == "__add__":
@@ -221,8 +219,6 @@ class RopGadget:
                 s += "    " + "address (%d bits): %#x" % (mem_access.addr_size, mem_access.addr_constant)
             s += "    " + "data (%d bits) stored in regs:" % mem_access.data_size
             s += str(list(mem_access.data_dependencies)) + "\n"
-        if self.makes_syscall:
-            s += "Makes a syscall\n"
         return s
 
     def __repr__(self):
@@ -241,32 +237,78 @@ class RopGadget:
         out.mem_changes = list(self.mem_changes)
         out.mem_writes = list(self.mem_writes)
         out.reg_moves = list(self.reg_moves)
-        out.bp_moves_to_sp = self.bp_moves_to_sp
         out.block_length = self.block_length
-        out.makes_syscall = self.makes_syscall
-        out.starts_with_syscall = self.starts_with_syscall
         out.transit_type = self.transit_type
         out.jump_reg = self.jump_reg
         out.pc_reg = self.pc_reg
         return out
 
 
-class StackPivot:
+class PivotGadget(RopGadget):
     """
-    stack pivot gadget
+    stack pivot gadget, the definition of a PivotGadget is that
+    it can arbitrarily control the stack pointer register, and do the pivot exactly once
+    TODO: so currently, it cannot directly construct a `pop rbp; leave ret;`
+    chain to pivot stack
     """
     def __init__(self, addr):
-        self.addr = addr
-        self.sp_from_reg = None
-        self.sp_popped_offset = None
+        super().__init__(addr)
+        self.stack_change_after_pivot = None
+        # TODO: sp_controllers can be registers, payload on stack, and symbolic read data
+        # but we do not handle symbolic read data, yet
+        self.sp_reg_controllers = set()
+        self.sp_stack_controllers = set()
 
     def __str__(self):
-        s = "Pivot %#x\n" % self.addr
-        if self.sp_from_reg is not None:
-            s += "sp from reg: %s\n" % self.sp_from_reg
-        elif self.sp_popped_offset is not None:
-            s += "sp popped at %#x\n" % self.sp_popped_offset
+        s = f"PivotGadget {self.addr:#x}\n"
+        s += f"  sp_controllers: {self.sp_controllers}\n"
+        s += f"  stack change: {self.stack_change:#x}\n"
+        s += f"  stack change after pivot: {self.stack_change_after_pivot:#x}\n"
+        return s
+
+    @property
+    def sp_controllers(self):
+        s = self.sp_reg_controllers.copy()
+        return s.union(self.sp_stack_controllers)
+
+    def __repr__(self):
+        return f"<PivotGadget {self.addr:#x}>"
+
+    def copy(self):
+        new = super().copy()
+        new.stack_change_after_pivot = self.stack_change_after_pivot
+        new.sp_reg_controllers = set(self.sp_reg_controllers)
+        new.sp_stack_controllers = set(self.sp_stack_controllers)
+        return new
+
+class SyscallGadget(RopGadget):
+    """
+    we collect two types of syscall gadgets:
+    1. with return: syscall; ret
+    2. without return: syscall; xxxx
+    """
+    def __init__(self, addr):
+        super().__init__(addr)
+        self.makes_syscall = False
+        self.starts_with_syscall = False
+
+    def __str__(self):
+        s = f"SyscallGadget {self.addr:#x}\n"
+        s += f"  stack change: {self.stack_change:#x}\n"
+        s += f"  transit type: {self.transit_type}\n"
+        s += f"  can return: {self.can_return}\n"
+        s += f"  starts_with_syscall: {self.starts_with_syscall}\n"
         return s
 
     def __repr__(self):
-        return "<Pivot %#x>" % self.addr
+        return f"<SyscallGadget {self.addr:#x}>"
+
+    @property
+    def can_return(self):
+        return self.transit_type != 'syscall'
+
+    def copy(self):
+        new = super().copy()
+        new.makes_syscall = self.makes_syscall
+        new.starts_with_syscall = self.starts_with_syscall
+        return new
