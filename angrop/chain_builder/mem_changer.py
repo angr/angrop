@@ -115,13 +115,13 @@ class MemChanger(Builder):
         l.debug("Now building the mem add chain")
 
         # try to build the chain
-        try:
-            for g in gadgets:
+        for g in gadgets:
+            try:
                 chain = self._add_mem_with_gadget(g, addr, data_size, difference=value)
                 self.verify(chain, addr, value, data_size)
                 return chain
-        except RopException:
-            pass
+            except RopException:
+                pass
 
         raise RopException("Fail to perform add_to_mem!")
 
