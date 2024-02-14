@@ -207,6 +207,18 @@ def test_add_to_mem():
 
     rop.add_to_mem(0x41414140, 0x42424242)
 
+    cache_path = os.path.join(CACHE_DIR, "amd64_glibc_2.19")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    rop.add_to_mem(0x41414140, 0x42424242)
+
 def test_pivot():
     cache_path = os.path.join(CACHE_DIR, "i386_glibc_2.35")
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "i386_glibc_2.35"), auto_load_libs=False)

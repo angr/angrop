@@ -24,12 +24,15 @@ class MemChanger(Builder):
         self._mem_add_gadgets = self._get_all_mem_add_gadgets()
 
     def verify(self, chain, addr, value, _):
+        arch_bytes = self.project.arch.bytes
+        endness = self.project.arch.memory_endness
+
         # verify the chain actually works
         chain2 = chain.copy()
-        chain2._blank_state.memory.store(addr.data, 0x42424242, self.project.arch.bytes)
+        chain2._blank_state.memory.store(addr.data, 0x41424344, arch_bytes, endness=endness)
         state = chain2.exec()
-        sim_data = state.memory.load(addr.data, self.project.arch.bytes, endness=self.project.arch.memory_endness)
-        if not state.solver.eval(sim_data == 0x42424242 + value.data):
+        sim_data = state.memory.load(addr.data, arch_bytes, endness=endness)
+        if not state.solver.eval(sim_data == 0x41424344 + value.data):
             raise RopException("memory add fails - 1")
         # the next pc must come from the stack
         if len(state.regs.pc.variables) != 1:
