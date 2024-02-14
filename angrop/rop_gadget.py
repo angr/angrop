@@ -134,6 +134,8 @@ class RopGadget:
             return False
         if self.reg_dependencies != other.reg_dependencies:
             return False
+        if self.transit_type != other.transit_type:
+            return False
         return True
 
     def reg_set_better_than(self, other):

@@ -7,6 +7,7 @@ from .mem_changer import MemChanger
 from .func_caller import FuncCaller
 from .sys_caller import SysCaller
 from .pivot import Pivot
+from .shifter import Shifter
 from .. import rop_utils
 
 l = logging.getLogger("angrop.chain_builder")
@@ -46,6 +47,7 @@ class ChainBuilder:
         if not SysCaller.supported_os(self.project.loader.main_object.os):
             l.warning("%s is not a fully supported OS, SysCaller may not work on this OS",
                       self.project.loader.main_object.os)
+        self._shifter = Shifter(self)
 
     def set_regs(self, *args, **kwargs):
         """
@@ -133,6 +135,24 @@ class ChainBuilder:
             return None
         return self._sys_caller.execve(path=path, path_addr=path_addr)
 
+    def shift(self, length, preserve_regs=None):
+        """
+        build a rop chain to shift the stack to a specific value
+        :param length: the length of sp you want to shift
+        :param preserve_regs: set of registers to preserve, e.g. ('eax', 'ebx')
+        """
+        return self._shifter.shift(length, preserve_regs=preserve_regs)
+
+    def retsled(self, size, preserve_regs=None):
+        """
+        create a ret-sled ROP chain where if the control flow falls into any point of the chain,
+        the control flow will be captured and maintained.
+        for example, a series of ret gadgets in x86/x86_64
+        :param size: the size of the retsled chain
+        :param preserve_regs: set of registers to preserve, e.g. ('eax', 'ebx')
+        """
+        return self._shifter.retsled(size, preserve_regs=preserve_regs)
+
     def set_badbytes(self, badbytes):
         self.badbytes = badbytes
 
@@ -148,6 +168,7 @@ class ChainBuilder:
         if self._sys_caller:
             self._sys_caller.update()
         self._pivot.update()
+        self._shifter.update()
 
     # should also be able to do execve by providing writable memory
     # todo pass values to setregs as symbolic variables

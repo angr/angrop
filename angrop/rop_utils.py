@@ -7,12 +7,14 @@ import claripy
 from .errors import RegNotFoundException, RopException
 from .rop_value import RopValue
 
+def addr_to_asmstring(project, addr):
+    block = project.factory.block(addr)
+    return "; ".join(["%s %s" %(i.mnemonic, i.op_str) for i in block.capstone.insns])
 
 def gadget_to_asmstring(project, gadget):
     if not gadget.block_length:
         return ""
-    block = project.factory.block(gadget.addr)
-    return "; ".join(["%s %s" %(i.mnemonic, i.op_str) for i in block.capstone.insns])
+    return addr_to_asmstring(project, gadget.addr)
 
 def get_ast_dependency(ast):
     """

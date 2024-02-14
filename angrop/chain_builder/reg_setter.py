@@ -59,6 +59,18 @@ class RegSetter(Builder):
             return False
         return True
 
+    def _maybe_fix_jump_chain(self, chain, preserve_regs):
+        all_changed_regs = set()
+        for g in chain._gadgets[:-1]:
+            all_changed_regs.update(g.changed_regs)
+        jump_reg = chain._gadgets[-1].jump_reg
+        if jump_reg in all_changed_regs:
+            return chain
+        shifter = self.chain_builder._shifter.shift(self.project.arch.bytes)
+        next_ip = rop_utils.cast_rop_value(shifter._gadgets[0].addr, self.project)
+        new = self.run(preserve_regs=preserve_regs, **{jump_reg: next_ip})
+        return new + chain
+
     def run(self, modifiable_memory_range=None, use_partial_controllers=False,  preserve_regs=None, **registers):
         if len(registers) == 0:
             return RopChain(self.project, None, badbytes=self.badbytes)
@@ -94,6 +106,8 @@ class RegSetter(Builder):
                 chain = self._build_reg_setting_chain(gadgets, modifiable_memory_range,
                                                      registers, stack_change)
                 chain._concretize_chain_values()
+                if chain._gadgets[-1].transit_type == 'jmp_reg':
+                    chain = self._maybe_fix_jump_chain(chain, preserve_regs)
                 if self.verify(chain, preserve_regs, registers):
                     #self._chain_cache[reg_tuple].append(gadgets)
                     return chain
@@ -487,14 +501,3 @@ class RegSetter(Builder):
                     return False
             return True
         return False
-
-    def _get_single_ret(self):
-        # start with a ret instruction
-        ret_addr = None
-        for g in self._reg_setting_gadgets:
-            if len(g.changed_regs) == 0 and len(g.mem_writes) == 0 and \
-                    len(g.mem_reads) == 0 and len(g.mem_changes) == 0 and \
-                    g.stack_change == self.project.arch.bytes:
-                ret_addr = g.addr
-                break
-        return ret_addr

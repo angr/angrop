@@ -169,6 +169,10 @@ class Builder:
                        badbytes=self.badbytes)
 
         # iterate through the stack values that need to be in the chain
+        # HACK: handle jump register separately because of angrop's broken
+        # assumptions on x86's ret behavior
+        if gadgets[-1].transit_type == 'jmp_reg':
+            stack_change += arch_bytes
         for i in range(stack_change // bytes_per_pop):
             sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
                                                        endness=self.project.arch.memory_endness)
