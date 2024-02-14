@@ -63,6 +63,12 @@ chain = rop.func_call("read", [0, 0x804f000, 0x100])
 # adding values to memory
 chain = rop.add_to_mem(0x804f124, 0x41414141)
 
+# shifting stack pointer like add rsp, 0x8; ret (this gadget shifts rsp by 0x10)
+chain = rop.shift(0x10)
+
+# generating ret-sled chains like ret*0x10, but works for ARM/MIPS as well
+chain = rop.retsled(0x40)
+
 # bad bytes can be specified to generate chains with no bad bytes
 rop.set_badbytes([0x0, 0x0a])
 chain = rop.set_regs(eax=0)
