@@ -28,6 +28,8 @@ class FuncCaller(Builder):
             setting this to False will result in a shorter chain
         """
         assert type(args) in [list, tuple], "function arguments must be a list or tuple!"
+        if kwargs:
+            l.warning("passing deprecated arguments %s to angrop.chain_builder.FuncCaller", kwargs)
 
         preserve_regs = set(preserve_regs) if preserve_regs else set()
         arch_bytes = self.project.arch.bytes
@@ -68,7 +70,7 @@ class FuncCaller(Builder):
         # handle return address
         if not isinstance(cc.RETURN_ADDR, (SimStackArg, SimRegArg)):
             raise RopException(f"What is the calling convention {cc} I'm dealing with?")
-        if isinstance(cc.RETURN_ADDR, SimRegArg):
+        if isinstance(cc.RETURN_ADDR, SimRegArg) and cc.RETURN_ADDR.reg_name != 'ip_at_syscall':
             # now we know this function will return to a specific register
             # so we need to set the return address before invoking the function
             reg_name = cc.RETURN_ADDR.reg_name

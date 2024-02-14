@@ -146,9 +146,9 @@ class RopChain:
         for value, rebased in concrete_vals:
 
             instruction_code = ""
-            if print_instructions and rebased:
-                seg = self._p.loader.find_segment_containing(value)
-                if seg and seg.is_executable:
+            if print_instructions :
+                sec = self._p.loader.find_section_containing(value)
+                if sec and sec.is_executable:
                     asmstring = rop_utils.addr_to_asmstring(self._p, value)
                     if asmstring != "":
                         instruction_code = "\t# " + asmstring
