@@ -16,7 +16,8 @@ class FuncCaller(Builder):
     calling convention
     """
 
-    def _func_call(self, func_gadget, cc, args, extra_regs=None, preserve_regs=None, needs_return=True):
+    def _func_call(self, func_gadget, cc, args, extra_regs=None, preserve_regs=None,
+                   needs_return=True, **kwargs):
         """
         func_gadget: the address of the function to invoke
         cc: calling convention
