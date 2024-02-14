@@ -142,15 +142,14 @@ class RopChain:
             payload = ""
         payload += 'chain = b""\n'
 
-        gadget_dict = {g.addr:g for g in self._gadgets}
         concrete_vals = self._concretize_chain_values(constraints)
         for value, rebased in concrete_vals:
 
             instruction_code = ""
-            if print_instructions:
-                value_in_gadget = value
-                if value_in_gadget in gadget_dict:
-                    asmstring = rop_utils.gadget_to_asmstring(self._p, gadget_dict[value_in_gadget])
+            if print_instructions and rebased:
+                seg = self._p.loader.find_segment_containing(value)
+                if seg and seg.is_executable:
+                    asmstring = rop_utils.addr_to_asmstring(self._p, value)
                     if asmstring != "":
                         instruction_code = "\t# " + asmstring
 

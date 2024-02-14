@@ -114,8 +114,8 @@ class Shifter(Builder):
         """
         filter gadgets having the same effect
         """
-        # we don't like gadgets with any memory accesses
-        gadgets = [x for x in gadgets if x.num_mem_access == 0]
+        # we don't like gadgets with any memory accesses or jump gadgets
+        gadgets = [x for x in gadgets if x.num_mem_access == 0 and x.transit_type != 'jmp_reg']
 
         # now do the standard filtering
         gadgets = set(gadgets)

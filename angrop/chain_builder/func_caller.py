@@ -1,8 +1,10 @@
 import logging
 
 import angr
+from angr.calling_conventions import SimRegArg, SimStackArg
 
 from .builder import Builder
+from .. import rop_utils
 from ..errors import RopException
 from ..rop_gadget import RopGadget
 
@@ -14,13 +16,19 @@ class FuncCaller(Builder):
     calling convention
     """
 
-    def _func_call(self, func_gadget, cc, args, extra_regs=None, modifiable_memory_range=None, preserve_regs=None,
-                   use_partial_controllers=False, needs_return=True):
+    def _func_call(self, func_gadget, cc, args, extra_regs=None, preserve_regs=None, needs_return=True):
+        """
+        func_gadget: the address of the function to invoke
+        cc: calling convention
+        args: the arguments to the function
+        extra_regs: what extra registers to set besides the function arguments, useful for invoking system calls
+        preserve_res: what registers preserve
+        needs_return: whether we need to cleanup stack after the function invocation, setting this to False will result in a shorter chain
+        """
         assert type(args) in [list, tuple], "function arguments must be a list or tuple!"
+
+        preserve_regs = set(preserve_regs) if preserve_regs else set()
         arch_bytes = self.project.arch.bytes
-        registers = {} if extra_regs is None else extra_regs
-        if preserve_regs is None:
-            preserve_regs = []
 
         # distinguish register and stack arguments
         register_arguments = args
@@ -30,55 +38,42 @@ class FuncCaller(Builder):
             stack_arguments = args[len(cc.ARG_REGS):]
 
         # set register arguments
+        registers = {} if extra_regs is None else extra_regs
         for arg, reg in zip(register_arguments, cc.ARG_REGS):
             registers[reg] = arg
         for reg in preserve_regs:
             registers.pop(reg, None)
-        chain = self.chain_builder.set_regs(modifiable_memory_range=modifiable_memory_range,
-                              use_partial_controllers=use_partial_controllers,
-                              **registers)
+        chain = self.chain_builder.set_regs(**registers)
 
         # invoke the function
         chain.add_gadget(func_gadget)
         for _ in range(func_gadget.stack_change//arch_bytes-1):
             chain.add_value(self._get_fill_val())
 
-        # we are done here if there is no stack arguments
-        if not stack_arguments:
+        # we are done here if we don't need to return
+        if not needs_return:
             return chain
 
-        # handle stack arguments:
-        # 1. we need to pop the arguments after use
-        # 2. push the stack arguments
+        # now we need to cleanly finish the calling convention
+        # 1. handle stack arguments
+        # 2. handle function return address to maintain the control flow
+        if stack_arguments:
+            cleaner = self.chain_builder.shift((len(stack_arguments)+1)*arch_bytes) # +1 for itself
+            chain.add_gadget(cleaner._gadgets[0])
+            for arg in stack_arguments:
+                chain.add_value(arg)
 
-        # step 1: find a stack cleaner (a gadget that can pop all the stack args)
-        #         with the smallest stack change
-        stack_cleaner = None
-        if needs_return:
-            for g in self.chain_builder.gadgets:
-                # just pop plz
-                if g.mem_reads or g.mem_writes or g.mem_changes:
-                    continue
-                # at least can pop all the args
-                if g.stack_change < arch_bytes * (len(stack_arguments)+1):
-                    continue
-
-                if stack_cleaner is None or g.stack_change < stack_cleaner.stack_change:
-                    stack_cleaner = g
-
-            if stack_cleaner is None:
-                raise RopException(f"Fail to find a stack cleaner that can pop {len(stack_arguments)} words!")
-
-        # in case we can't find a stack_cleaner and we don't need to return
-        if stack_cleaner is None:
-            stack_cleaner = RopGadget(self._get_fill_val())
-            stack_cleaner.stack_change = arch_bytes * (len(stack_arguments)+1)
-
-        chain.add_gadget(stack_cleaner)
-        stack_arguments += [self._get_fill_val()]*(stack_cleaner.stack_change//arch_bytes - len(stack_arguments)-1)
-        for arg in stack_arguments:
-            chain.add_value(arg)
-
+        # handle return address
+        if not isinstance(cc.RETURN_ADDR, (SimStackArg, SimRegArg)):
+            raise RopException(f"What is the calling convention {cc} I'm dealing with?")
+        if isinstance(cc.RETURN_ADDR, SimRegArg):
+            # now we know this function will return to a specific register
+            # so we need to set the return address before invoking the function
+            reg_name = cc.RETURN_ADDR.reg_name
+            shifter = self.chain_builder._shifter.shift(self.project.arch.bytes)
+            next_ip = rop_utils.cast_rop_value(shifter._gadgets[0].addr, self.project)
+            pre_chain = self.chain_builder.set_regs(**{reg_name: next_ip})
+            chain = pre_chain + chain
         return chain
 
     def func_call(self, address, args, **kwargs):

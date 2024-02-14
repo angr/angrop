@@ -47,13 +47,15 @@ def test_arm_func_call():
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
 
-    chain = rop.func_call("realloc", [0xcafebabe, 0xa])
-    print(chain)
-    #import IPython; IPython.embed()
-    #chain = rop.set_regs(r4=0x4141412c, r5=0x42424242)
-    #state = chain.exec()
-    #assert state.regs.r4.concrete_value == 0x4141412c
-    #assert state.regs.r5.concrete_value == 0x42424242
+    proj.hook_symbol('write', angr.SIM_PROCEDURES['posix']['write']())
+    chain = rop.func_call("write", [1, 0x4E15F0, 9])
+    state = chain.exec()
+    assert state.posix.dumps(1) == b'malloc.c\x00'
+
+    proj.hook_symbol('puts', angr.SIM_PROCEDURES['libc']['puts']())
+    chain = rop.func_call("puts", [0x4E15F0])
+    state = chain.exec()
+    assert state.posix.dumps(1) == b'malloc.c\n'
 
 def test_i386_syscall():
     cache_path = os.path.join(CACHE_DIR, "bronze_ropchain")
