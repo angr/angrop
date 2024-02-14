@@ -23,7 +23,8 @@ class FuncCaller(Builder):
         args: the arguments to the function
         extra_regs: what extra registers to set besides the function arguments, useful for invoking system calls
         preserve_res: what registers preserve
-        needs_return: whether we need to cleanup stack after the function invocation, setting this to False will result in a shorter chain
+        needs_return: whether we need to cleanup stack after the function invocation,
+            setting this to False will result in a shorter chain
         """
         assert type(args) in [list, tuple], "function arguments must be a list or tuple!"
 

@@ -68,8 +68,9 @@ class Shifter(Builder):
             raise RopException("Currently, we do not support shifting misaligned sp change")
         if length not in self.shift_gadgets or \
             all(preserve_regs.intersection(x.changed_regs) for x in self.shift_gadgets[length]):
-            raise RopException("Encounter a shifting request that requires chaining multiple shifting gadgets" +
-                               "together which is not support atm. Plz create an issue on GitHub so we can add the support!")
+            raise RopException("Encounter a shifting request that requires chaining multiple shifting gadgets " +
+                               "together which is not support atm. Plz create an issue on GitHub " +
+                               "so we can add the support!")
         for g in self.shift_gadgets[length]:
             if preserve_regs.intersection(g.changed_regs):
                 continue
