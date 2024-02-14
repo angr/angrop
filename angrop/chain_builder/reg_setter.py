@@ -487,14 +487,3 @@ class RegSetter(Builder):
                     return False
             return True
         return False
-
-    def _get_single_ret(self):
-        # start with a ret instruction
-        ret_addr = None
-        for g in self._reg_setting_gadgets:
-            if len(g.changed_regs) == 0 and len(g.mem_writes) == 0 and \
-                    len(g.mem_reads) == 0 and len(g.mem_changes) == 0 and \
-                    g.stack_change == self.project.arch.bytes:
-                ret_addr = g.addr
-                break
-        return ret_addr

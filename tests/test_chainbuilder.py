@@ -18,9 +18,9 @@ def test_x86_64_func_call():
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
 
-    chain = rop.func_call('puts', [0x402704])
+    chain = rop.func_call('puts', [0x402704]) + rop.func_call('puts', [0x402704])
     state = chain.exec()
-    assert state.posix.dumps(1) == b'Enter username: \n'
+    assert state.posix.dumps(1) == b'Enter username: \nEnter username: \n'
 
 def test_i386_func_call():
     cache_path = os.path.join(CACHE_DIR, "bronze_ropchain")
@@ -33,9 +33,27 @@ def test_i386_func_call():
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
 
-    chain = rop.func_call('write', [1, 0x80AC5E8, 17])
+    chain = rop.func_call('write', [1, 0x80AC5E8, 17]) + rop.func_call('write', [1, 0x80AC5E8, 17])
     state = chain.exec(max_steps=100)
-    assert state.posix.dumps(1) == b'/usr/share/locale'
+    assert state.posix.dumps(1) == b'/usr/share/locale/usr/share/locale'
+
+def test_arm_func_call():
+    cache_path = os.path.join(CACHE_DIR, "armel_glibc_2.31")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    chain = rop.func_call("realloc", [0xcafebabe, 0xa])
+    print(chain)
+    #import IPython; IPython.embed()
+    #chain = rop.set_regs(r4=0x4141412c, r5=0x42424242)
+    #state = chain.exec()
+    #assert state.regs.r4.concrete_value == 0x4141412c
+    #assert state.regs.r5.concrete_value == 0x42424242
 
 def test_i386_syscall():
     cache_path = os.path.join(CACHE_DIR, "bronze_ropchain")
@@ -142,7 +160,7 @@ def test_set_regs():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets(processes=16)
+        rop.find_gadgets()
         rop.save_gadgets(cache_path)
 
     chain = rop.set_regs(r4=0x4141412c, r5=0x42424242)
@@ -198,14 +216,110 @@ def test_pivot():
     state = chain.exec()
     assert state.solver.eval(state.regs.sp == 0x41414140)
 
-    chain = rop.pivot(0x41414140)
-    state = chain.exec()
-    assert state.solver.eval(state.regs.sp == 0x41414140)
-
     chain = rop.set_regs(eax=0x41414140)
     chain += rop.pivot('eax')
     state = chain.exec()
     assert state.solver.eval(state.regs.sp == 0x41414140+4)
+
+def test_shifter():
+    # i386
+    cache_path = os.path.join(CACHE_DIR, "i386_glibc_2.35")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "i386_glibc_2.35"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    chain = rop.shift(0x54, preserve_regs=['ebx'])
+    init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
+    state = chain.exec()
+    assert state.regs.sp.concrete_value == init_sp + 0x54 + proj.arch.bytes
+
+    chain = rop.set_regs(ebx=0x41414141)
+    chain += rop.shift(0x54, preserve_regs=['ebx'])
+    state = chain.exec()
+    assert state.regs.ebx.concrete_value == 0x41414141
+
+    chain = rop.set_regs(eax=0x41414141)
+    chain += rop.shift(0x54, preserve_regs=['eax'])
+    state = chain.exec()
+    assert state.regs.eax.concrete_value == 0x41414141
+
+    # x86_64
+    cache_path = os.path.join(CACHE_DIR, "1after909")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "1after909"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    chain = rop.shift(0x40)
+    init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
+    state = chain.exec()
+    assert state.regs.sp.concrete_value == init_sp + 0x40 + proj.arch.bytes
+
+    # armel
+    cache_path = os.path.join(CACHE_DIR, "armel_glibc_2.31")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    chain = rop.shift(0x40)
+    init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
+    state = chain.exec()
+    assert state.regs.sp.concrete_value == init_sp + 0x40 + proj.arch.bytes
+
+def test_retsled():
+    # i386
+    cache_path = os.path.join(CACHE_DIR, "i386_glibc_2.35")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "i386_glibc_2.35"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    chain = rop.retsled(0x40)
+    assert len(chain.payload_str()) == 0x40
+
+    # x86_64
+    cache_path = os.path.join(CACHE_DIR, "1after909")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "1after909"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    chain = rop.retsled(0x40)
+    assert len(chain.payload_str()) == 0x40
+
+    # armel
+    cache_path = os.path.join(CACHE_DIR, "armel_glibc_2.31")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    chain = rop.retsled(0x40)
+    assert len(chain.payload_str()) == 0x40
 
 def run_all():
     functions = globals()
