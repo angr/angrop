@@ -102,6 +102,16 @@ def test_pivot_gadget():
     gadget = rop.analyze_gadget(0x402bc8)
     assert gadget is None
 
+    # this is not a valid gadget because sal shifts the memory
+    # and we don't fully control the shifted memory
+    """
+    50843e  sal     byte ptr [rbp-0x11], cl
+    508441  leave
+    508442  ret
+    """
+    gadget = rop.analyze_gadget(0x50843e)
+    assert gadget is None
+
 def test_syscall_gadget():
     proj = angr.Project(os.path.join(tests_dir, "i386", "bronze_ropchain"), auto_load_libs=False)
     rop = proj.analyses.ROP()

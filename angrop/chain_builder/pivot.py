@@ -115,18 +115,20 @@ class Pivot(Builder):
     def same_effect(g1, g2):
         if g1.sp_controllers != g2.sp_controllers:
             return False
-        if g1.changed_regs != g2.changed_regs:
+        if g1.stack_change != g2.stack_change:
+            return False
+        if g1.stack_change_after_pivot != g2.stack_change_after_pivot:
             return False
         return True
 
     def better_than(self, g1, g2):
         if not self.same_effect(g1, g2):
             return False
-        if g1.stack_change > g2.stack_change:
-            return False
-        if g1.stack_change_after_pivot > g2.stack_change_after_pivot:
-            return False
         if g1.num_mem_access > g2.num_mem_access:
+            return False
+        if not g1.changed_regs.issubset(g2.changed_regs):
+            return False
+        if g1.block_length > g2.block_length:
             return False
         return True
 
