@@ -701,22 +701,30 @@ class GadgetAnalyzer:
 
         return False
 
+    def _is_pivot_action(self, act):
+        """
+        check whether an sim_action is a stack pivoting action
+        """
+        if act.type != 'reg' or act.action != 'write':
+            return False
+        try:
+            storage = act.storage
+        except KeyError:
+            return False
+        if storage != self.arch.stack_pointer:
+            return False
+        # this gadget has done symbolic pivoting if there is a symbolic write to the stack pointer
+        if act.data.symbolic:
+            return True
+        return False
+
     def _does_pivot(self, final_state):
         """
         checks if the path does a stack pivoting at some point
         :param final_state: the state that finishes the gadget execution
         """
         for act in final_state.history.actions:
-            if act.type != 'reg' or act.action != 'write':
-                continue
-            try:
-                storage = act.storage
-            except KeyError:
-                continue
-            if storage != self.arch.stack_pointer:
-                continue
-            # this gadget has done symbolic pivoting if there is a symbolic write to the stack pointer
-            if act.data.symbolic:
+            if self._is_pivot_action(act):
                 return True
         return False
 
@@ -729,9 +737,14 @@ class GadgetAnalyzer:
         """
         all_mem_actions = []
         sp_vars = final_state.regs.sp.variables
+        pivot_done = False
 
         # step 1: filter out irrelevant actions and irrelevant memory accesses
         for a in final_state.history.actions.hardcopy:
+            if self._is_pivot_action(a):
+                pivot_done = True
+                continue
+
             if a.type != 'mem':
                 continue
 
@@ -740,7 +753,7 @@ class GadgetAnalyzer:
                 continue
 
             # ignore read/write on stack after pivot
-            if a.addr.ast.symbolic and not a.addr.ast.variables - sp_vars:
+            if pivot_done and a.addr.ast.symbolic and not a.addr.ast.variables - sp_vars:
                 continue
 
             # ignore read/write on stack
