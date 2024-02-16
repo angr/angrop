@@ -91,6 +91,17 @@ def test_pivot_gadget():
     gadget = rop.analyze_gadget(0x439ad3)
     assert gadget is None
 
+    proj = angr.Project(os.path.join(tests_dir, "x86_64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    """
+    402bc8  leave
+    402bc9  clc
+    402bca  repz ret
+    """
+    gadget = rop.analyze_gadget(0x402bc8)
+    assert gadget is None
+
 def test_syscall_gadget():
     proj = angr.Project(os.path.join(tests_dir, "i386", "bronze_ropchain"), auto_load_libs=False)
     rop = proj.analyses.ROP()
