@@ -124,7 +124,7 @@ class GadgetFinder:
 
     def find_gadgets(self, processes=4, show_progress=True):
         gadgets = []
-        self._cache = defaultdict(set)
+        self._cache = {}
 
         initargs = (self.gadget_analyzer,)
         with Pool(processes=processes, initializer=_set_global_gadget_analyzer, initargs=initargs) as pool:
@@ -137,7 +137,7 @@ class GadgetFinder:
 
     def find_gadgets_single_threaded(self, show_progress=True):
         gadgets = []
-        self._cache = defaultdict(set)
+        self._cache = {}
 
         assert self.gadget_analyzer is not None
 
@@ -186,8 +186,13 @@ class GadgetFinder:
                 continue
             if self._is_simple_gadget(a, bl):
                 h = self.block_hash(bl)
-                self._cache[h].add(a)
-
+                if h not in self._cache:
+                    self._cache[h] = {a}
+                else:
+                    # we only return the first unique gadget
+                    # so skip duplicates
+                    self._cache[h].add(a)
+                    continue
             yield a
 
     def block_hash(self, block):# pylint:disable=no-self-use
