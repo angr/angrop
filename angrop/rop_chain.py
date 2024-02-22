@@ -124,6 +124,15 @@ class RopChain:
         sp = test_state.regs.sp
         return test_state.memory.load(sp, self.payload_len)
 
+    def find_symbol(self, addr):
+        plt = self._p.loader.find_plt_stub_name(addr)
+        if plt:
+            return plt + '@plt'
+        symbol = self._p.loader.find_symbol(addr)
+        if symbol:
+            return symbol.name
+        return None
+
     def payload_code(self, constraints=None, print_instructions=True):
         """
         :param print_instructions: prints the instructions that the rop gadgets use
@@ -149,9 +158,13 @@ class RopChain:
             if print_instructions :
                 sec = self._p.loader.find_section_containing(value)
                 if sec and sec.is_executable:
-                    asmstring = rop_utils.addr_to_asmstring(self._p, value)
-                    if asmstring != "":
-                        instruction_code = "\t# " + asmstring
+                    symbol = self.find_symbol(value)
+                    if symbol:
+                        instruction_code = f"\t# {symbol}"
+                    else:
+                        asmstring = rop_utils.addr_to_asmstring(self._p, value)
+                        if asmstring != "":
+                            instruction_code = "\t# " + asmstring
 
             if rebased:
                 value -= self._p.loader.main_object.mapped_base
