@@ -2,10 +2,14 @@ from . import rop_utils
 from .errors import RopException
 from .rop_value import RopValue
 
+CHAIN_TIMEOUT_DEFAULT = 3
+
 class RopChain:
     """
     This class holds rop chains returned by the rop chain building methods such as rop.set_regs()
     """
+    cls_timeout = CHAIN_TIMEOUT_DEFAULT
+
     def __init__(self, project, rop, state=None, badbytes=None):
         """
         """
@@ -21,6 +25,8 @@ class RopChain:
         self._blank_state = self._p.factory.blank_state() if state is None else state
         self.badbytes = badbytes if badbytes else []
 
+        self._timeout = self.cls_timeout
+
     def __add__(self, other):
         # need to add the values from the other's stack and the constraints to the result state
         result = self.copy()
@@ -33,6 +39,14 @@ class RopChain:
         result._gadgets.extend(other._gadgets)
         result.payload_len = self.payload_len + other.payload_len
         return result
+
+    def set_timeout(self, timeout):
+        self._timeout = timeout
+
+    @classmethod
+    def set_cls_timeout(cls, timeout):
+        cls.cls_timeout = timeout
+        print(cls, cls.cls_timeout)
 
     def add_value(self, value):
         if type(value) is not RopValue:
@@ -58,8 +72,7 @@ class RopChain:
         """
         self._blank_state.add_constraints(cons)
 
-    @rop_utils.timeout(3)
-    def _concretize_chain_values(self, constraints=None):
+    def __concretize_chain_values(self, constraints=None):
         """
         with the flexibilty of chains to have symbolic values, this helper function
         makes the chain into a list of concrete ints before printing
@@ -94,7 +107,15 @@ class RopChain:
 
         return concrete_vals
 
-    def payload_str(self, constraints=None, base_addr=None):
+    def _concretize_chain_values(self, constraints=None, timeout=None):
+        """
+        concretize chain values with a timeout
+        """
+        if timeout is None:
+            timeout = self._timeout
+        return rop_utils.timeout(timeout)(self.__concretize_chain_values)(constraints=constraints)
+
+    def payload_str(self, constraints=None, base_addr=None, timeout=None):
         """
         :param base_addr: the base address of the binary
         :return: a string that does the rop payload
@@ -102,7 +123,7 @@ class RopChain:
         if base_addr is None:
             base_addr = self._p.loader.main_object.mapped_base
         test_state = self._blank_state.copy()
-        concrete_vals = self._concretize_chain_values(constraints)
+        concrete_vals = self._concretize_chain_values(constraints, timeout=timeout)
         for value, rebased in reversed(concrete_vals):
             if rebased:
                 test_state.stack_push(value - self._p.loader.main_object.mapped_base + base_addr)
@@ -133,7 +154,7 @@ class RopChain:
             return symbol.name
         return None
 
-    def payload_code(self, constraints=None, print_instructions=True):
+    def payload_code(self, constraints=None, print_instructions=True, timeout=None):
         """
         :param print_instructions: prints the instructions that the rop gadgets use
         :return: prints the code for the rop payload
@@ -151,7 +172,7 @@ class RopChain:
             payload = ""
         payload += 'chain = b""\n'
 
-        concrete_vals = self._concretize_chain_values(constraints)
+        concrete_vals = self._concretize_chain_values(constraints, timeout=timeout)
         for value, rebased in concrete_vals:
 
             instruction_code = ""
@@ -177,14 +198,14 @@ class RopChain:
     def print_payload_code(self, constraints=None, print_instructions=True):
         print(self.payload_code(constraints=constraints, print_instructions=print_instructions))
 
-    def exec(self, max_steps=None):
+    def exec(self, max_steps=None, timeout=None):
         """
         symbolically execute the ROP chain and return the final state
         """
         state = self._blank_state.copy()
         state.solver.reload_solver([]) # remove constraints
         state.regs.pc = self._values[0].concreted
-        concrete_vals = self._concretize_chain_values()
+        concrete_vals = self._concretize_chain_values(timeout=timeout)
         # the assumps that the first value in the chain is a code address
         # it sounds like a reasonable assumption to me. But I can be wrong.
         for value, _ in reversed(concrete_vals[1:]):
