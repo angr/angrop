@@ -293,6 +293,7 @@ class SyscallGadget(RopGadget):
         super().__init__(addr)
         self.makes_syscall = False
         self.starts_with_syscall = False
+        self.preamble = None
 
     def __str__(self):
         s = f"SyscallGadget {self.addr:#x}\n"
@@ -300,6 +301,7 @@ class SyscallGadget(RopGadget):
         s += f"  transit type: {self.transit_type}\n"
         s += f"  can return: {self.can_return}\n"
         s += f"  starts_with_syscall: {self.starts_with_syscall}\n"
+        s += f"  preamble: {self.preamble:#x}\n"
         return s
 
     def __repr__(self):
@@ -313,4 +315,5 @@ class SyscallGadget(RopGadget):
         new = super().copy()
         new.makes_syscall = self.makes_syscall
         new.starts_with_syscall = self.starts_with_syscall
+        new.preamble = self.preamble
         return new

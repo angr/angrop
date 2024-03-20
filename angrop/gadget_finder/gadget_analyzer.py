@@ -252,6 +252,13 @@ class GadgetAnalyzer:
         # create the gadget
         if ctrl_type == 'syscall' or self._does_syscall(final_state):
             gadget = SyscallGadget(addr=addr)
+            try:
+                before_syscall = self._windup_to_presyscall_state(final_state,init_state)
+                reg = before_syscall.registers.load(self.project.arch.syscall_num_offset, self.project.arch.bits // 8)
+                if reg.singlevalued:
+                    gadget.preamble = reg.concrete_value
+            except Exception:
+                pass
             gadget.makes_syscall = self._does_syscall(final_state)
             gadget.starts_with_syscall = self._starts_with_syscall(addr)
         elif ctrl_type == 'pivot' or self._does_pivot(final_state):
@@ -811,7 +818,7 @@ class GadgetAnalyzer:
         :param symbolic_state: input state for testing
         """
 
-        if self._does_syscall(symbolic_p):
+        if self._does_syscall(symbolic_p) or self.is_in_kernel(symbolic_p):
             # step up until the syscall and save the possible syscall numbers into the gadget
             prev = cur = symbolic_state
             while not self._does_syscall(cur):

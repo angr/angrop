@@ -132,8 +132,15 @@ class SysCaller(FuncCaller):
         for gadget in self.syscall_gadgets:
             if needs_return and not gadget.can_return:
                 continue
+            #skip gadgets that have wrong preamble
+            if gadget.preamble != None and gadget.preamble != syscall_num: 
+                continue
             try:
-                return self._func_call(gadget, cc, args, extra_regs=extra_regs,
+                if gadget.preamble == syscall_num:
+                    return self._func_call(gadget, cc, args,
+                               needs_return=needs_return, **kwargs)
+                else:
+                    return self._func_call(gadget, cc, args, extra_regs=extra_regs,
                                needs_return=needs_return, **kwargs)
             except Exception: # pylint: disable=broad-exception-caught
                 continue
