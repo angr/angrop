@@ -89,7 +89,7 @@ def test_x86_64_syscall():
 
     gadget = rop.analyze_gadget(0x536715)
     rop.chain_builder._sys_caller.syscall_gadgets = [gadget]
-    chain = rop.do_syscall(0xca, [0, 0x81], needs_return=False)
+    rop.do_syscall(0xca, [0, 0x81], needs_return=False)
 
 def test_preserve_regs():
     cache_path = os.path.join(CACHE_DIR, "1after909")

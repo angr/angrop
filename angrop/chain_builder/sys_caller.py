@@ -140,7 +140,8 @@ class SysCaller(FuncCaller):
             gadgets = [x for x in gadgets if x.can_return]
         gadgets = [x for x in gadgets if
                    all(y not in registers or x.concrete_regs[y] == registers[y] for y in x.concrete_regs)]
-        gadgets = sorted(gadgets, reverse=True, key=lambda x: len(set(x.concrete_regs.keys()).intersection(registers.keys())))
+        key_func = lambda x: len(set(x.concrete_regs.keys()).intersection(registers.keys()))
+        gadgets = sorted(gadgets, reverse=True, key=key_func)
 
         for gadget in gadgets:
             # separate registers to args and extra_regs
