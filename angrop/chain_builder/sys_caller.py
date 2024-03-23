@@ -14,6 +14,11 @@ def cmp(g1, g2):
     if not g1.can_return and g2.can_return:
         return 1
 
+    if g1.starts_with_syscall and not g2.starts_with_syscall:
+        return -1
+    if not g1.starts_with_syscall and g2.starts_with_syscall:
+        return 1
+
     if g1.num_mem_access < g2.num_mem_access:
         return -1
     if g1.num_mem_access > g2.num_mem_access:
@@ -138,8 +143,12 @@ class SysCaller(FuncCaller):
         gadgets = self.syscall_gadgets
         if needs_return:
             gadgets = [x for x in gadgets if x.can_return]
-        gadgets = [x for x in gadgets if
-                   all(y not in registers or x.concrete_regs[y] == registers[y] for y in x.concrete_regs)]
+        def concrete_val_ok(g):
+            for key, val in g.concrete_regs.items():
+                if key in registers and type(registers[key]) == int and registers[key] != val:
+                    return False
+            return True
+        gadgets = [x for x in gadgets if concrete_val_ok(x)]
         key_func = lambda x: len(set(x.concrete_regs.keys()).intersection(registers.keys()))
         gadgets = sorted(gadgets, reverse=True, key=key_func)
 
@@ -154,7 +163,8 @@ class SysCaller(FuncCaller):
             preserve_regs = set(registers.keys()) - set(to_set_regs.keys())
             if sysnum_reg in preserve_regs:
                 preserve_regs.remove(sysnum_reg)
-            self.project.factory.block(gadget.addr).pp()
+            more = kwargs.pop('preserve_regs', set())
+            preserve_regs.update(more)
 
             try:
                 return self._func_call(gadget, cc, args, extra_regs=extra_regs,

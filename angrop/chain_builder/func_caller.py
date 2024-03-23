@@ -32,6 +32,7 @@ class FuncCaller(Builder):
             l.warning("passing deprecated arguments %s to angrop.chain_builder.FuncCaller", kwargs)
 
         preserve_regs = set(preserve_regs) if preserve_regs else set()
+        print([preserve_regs])
         arch_bytes = self.project.arch.bytes
 
         # distinguish register and stack arguments
