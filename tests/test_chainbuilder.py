@@ -76,6 +76,21 @@ def test_i386_syscall():
     state = chain.exec()
     assert state.posix.dumps(1) == b'/usr/share/locale'
 
+def test_x86_64_syscall():
+    cache_path = os.path.join(CACHE_DIR, "amd64_glibc_2.19")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    gadget = rop.analyze_gadget(0x536715)
+    rop.chain_builder._sys_caller.syscall_gadgets = [gadget]
+    rop.do_syscall(0xca, [0, 0x81], needs_return=False)
+
 def test_preserve_regs():
     cache_path = os.path.join(CACHE_DIR, "1after909")
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "1after909"), auto_load_libs=False)

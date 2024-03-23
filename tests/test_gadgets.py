@@ -262,6 +262,27 @@ def test_syscall_gadget():
     assert gadget.stack_change == 0
     assert not gadget.can_return
 
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False)
+
+    gadget = rop.analyze_gadget(0x4c1330)
+    assert type(gadget) == SyscallGadget
+    assert gadget.stack_change == 0
+    assert not gadget.can_return
+    assert len(gadget.concrete_regs) == 1 and gadget.concrete_regs.pop('rax') == 0x3b
+
+    gadget = rop.analyze_gadget(0x4c1437)
+    assert type(gadget) == SyscallGadget
+    assert gadget.stack_change == 0
+    assert not gadget.can_return
+    assert len(gadget.concrete_regs) == 1 and gadget.concrete_regs.pop('rax') == 0x3b
+
+    gadget = rop.analyze_gadget(0x536715)
+    assert type(gadget) == SyscallGadget
+    assert gadget.stack_change == 0
+    assert not gadget.can_return
+    assert len(gadget.concrete_regs) == 1 and gadget.concrete_regs.pop('rsi') == 0x81
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
