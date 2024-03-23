@@ -14,9 +14,9 @@ def cmp(g1, g2):
     if not g1.can_return and g2.can_return:
         return 1
 
-    if g1.starts_with_syscall and not g2.starts_with_syscall:
+    if g1.num_mem_access < g2.num_mem_access:
         return -1
-    if g2.starts_with_syscall and not g1.starts_with_syscall:
+    if g1.num_mem_access > g2.num_mem_access:
         return 1
 
     if g1.stack_change < g2.stack_change:
@@ -29,6 +29,7 @@ def cmp(g1, g2):
     if g1.block_length > g2.block_length:
         return 1
     return 0
+
 class SysCaller(FuncCaller):
     """
     handle linux system calls invocations, only support i386 and x86_64 atm
@@ -106,8 +107,6 @@ class SysCaller(FuncCaller):
 
         return chain + chain2
 
-    # TODO handle mess ups by _find_reg_setting_gadgets and see if we can set a register in a syscall preamble
-    # or if a register value is explicitly set to just the right value
     def do_syscall(self, syscall_num, args, needs_return=True, **kwargs):
         """
         build a rop chain which performs the requested system call with the arguments set to 'registers' before
@@ -118,23 +117,47 @@ class SysCaller(FuncCaller):
         :param needs_return: whether to continue the ROP after invoking the syscall
         :return: a RopChain which makes the system with the requested register contents
         """
+        if not self.syscall_gadgets:
+            raise RopException("target does not contain syscall gadget!")
+
         # set the system call number
-        extra_regs = {}
-        extra_regs[self.project.arch.register_names[self.project.arch.syscall_num_offset]] = syscall_num
         cc = angr.SYSCALL_CC[self.project.arch.name]["default"](self.project.arch)
 
         # find small stack change syscall gadget that also fits the stack arguments we want
         # FIXME: does any arch/OS take syscall arguments on stack? (windows? sysenter?)
+        if len(args) > len(cc.ARG_REGS):
+            raise NotImplementedError("Currently, we can't handle on stack system call arguments!")
+        registers = {}
+        for arg, reg in zip(args, cc.ARG_REGS):
+            registers[reg] = arg
 
-        if not self.syscall_gadgets:
-            raise RopException("target does not contain syscall gadget!")
+        sysnum_reg = self.project.arch.register_names[self.project.arch.syscall_num_offset]
+        registers[sysnum_reg] = syscall_num
 
-        for gadget in self.syscall_gadgets:
-            if needs_return and not gadget.can_return:
-                continue
+        # do per-request gadget filtering
+        gadgets = self.syscall_gadgets
+        if needs_return:
+            gadgets = [x for x in gadgets if x.can_return]
+        gadgets = [x for x in gadgets if
+                   all(y not in registers or x.concrete_regs[y] == registers[y] for y in x.concrete_regs)]
+        gadgets = sorted(gadgets, reverse=True, key=lambda x: len(set(x.concrete_regs.keys()).intersection(registers.keys())))
+
+        for gadget in gadgets:
+            # separate registers to args and extra_regs
+            to_set_regs = {x:y for x,y in registers.items() if x not in gadget.concrete_regs}
+            if sysnum_reg in to_set_regs:
+                extra_regs = {sysnum_reg: syscall_num}
+                del to_set_regs[sysnum_reg]
+            else:
+                extra_regs = {}
+            preserve_regs = set(registers.keys()) - set(to_set_regs.keys())
+            if sysnum_reg in preserve_regs:
+                preserve_regs.remove(sysnum_reg)
+            self.project.factory.block(gadget.addr).pp()
+
             try:
                 return self._func_call(gadget, cc, args, extra_regs=extra_regs,
-                               needs_return=needs_return, **kwargs)
+                               needs_return=needs_return, preserve_regs=preserve_regs, **kwargs)
             except Exception: # pylint: disable=broad-exception-caught
                 continue
 

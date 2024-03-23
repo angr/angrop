@@ -303,7 +303,7 @@ class GadgetAnalyzer:
         self._check_reg_movers(init_state, final_state, reg_reads, gadget)
 
         # check concretized registers
-        self._analyze_concrete_regs(final_state, gadget)
+        self._analyze_concrete_regs(init_state, final_state, gadget)
 
         # check mem accesses
         l.debug("... analyzing mem accesses")
@@ -316,10 +316,14 @@ class GadgetAnalyzer:
 
         return gadget
 
-    def _analyze_concrete_regs(self, state, gadget):
+    def _analyze_concrete_regs(self, init_state, final_state, gadget):
         """
         collect registers that are concretized after symbolically executing the block (for example, xor rax, rax)
         """
+        if type(gadget) == SyscallGadget:
+            state = self._windup_to_presyscall_state(final_state, init_state)
+        else:
+            state = final_state
         for reg in self.arch.reg_set:
             val = state.registers.load(reg)
             if val.symbolic:
@@ -804,20 +808,20 @@ class GadgetAnalyzer:
 
         return self.project.factory.block(addr, num_inst=1).vex.jumpkind.startswith("Ijk_Sys")
 
-    def _windup_to_presyscall_state(self, symbolic_p, symbolic_state):
+    def _windup_to_presyscall_state(self, final_state, init_state):
         """
         Retrieve the state of a gadget just before the syscall is made
         :param symbolic_p: the stepped path, symbolic_state is an ancestor of it.
         :param symbolic_state: input state for testing
         """
 
-        if self._does_syscall(symbolic_p):
+        if self._does_syscall(final_state) or self.is_in_kernel(final_state):
             # step up until the syscall and save the possible syscall numbers into the gadget
-            prev = cur = symbolic_state
-            while not self._does_syscall(cur):
-                succ = self.project.factory.successors(cur)
+            prev = cur = init_state.copy()
+            while not self._does_syscall(cur) and not self.is_in_kernel(cur):
+                tmp = rop_utils.step_one_inst(self.project, cur.copy(), stop_at_syscall=True)
                 prev = cur
-                cur = succ.flat_successors[0]
+                cur = tmp
             return prev.copy()
 
         raise RopException("Gadget passed to _windup_to_presyscall_state does not make a syscall")
