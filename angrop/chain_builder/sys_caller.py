@@ -149,7 +149,8 @@ class SysCaller(FuncCaller):
                     return False
             return True
         gadgets = [x for x in gadgets if concrete_val_ok(x)]
-        key_func = lambda x: len(set(x.concrete_regs.keys()).intersection(registers.keys()))
+        def key_func(x):
+            return len(set(x.concrete_regs.keys()).intersection(registers.keys()))
         gadgets = sorted(gadgets, reverse=True, key=key_func)
 
         for gadget in gadgets:
