@@ -102,7 +102,7 @@ class RopValue:
     def concreted(self):
         assert not self._value.symbolic
         if self.rebase:
-            return self._code_base + self._value.concrete_value
+            return (self._code_base + self._value).concrete_value
         return self._value.concrete_value
 
     @property
