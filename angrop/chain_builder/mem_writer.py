@@ -7,6 +7,7 @@ from .builder import Builder
 from .. import rop_utils
 from ..errors import RopException
 from ..rop_chain import RopChain
+from ..rop_value import RopValue
 
 l = logging.getLogger("angrop.chain_builder.mem_writer")
 
@@ -242,7 +243,7 @@ class MemWriter(Builder):
                 var_names = set(c.variables)
                 var_names.remove(name)
                 if reg in var_names.pop():
-                    var = rop_utils.cast_rop_value(var, self.project)
+                    var = RopValue(var, self.project)
                     if addr_val._rebase:
                         var.rebase_ptr()
                     break
