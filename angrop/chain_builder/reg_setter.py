@@ -105,7 +105,7 @@ class RegSetter(Builder):
             try:
                 chain = self._build_reg_setting_chain(gadgets, modifiable_memory_range,
                                                      registers, stack_change)
-                chain._concretize_chain_values()
+                chain._concretize_chain_values(timeout=len(chain._values)*3)
                 if chain._gadgets[-1].transit_type == 'jmp_reg':
                     chain = self._maybe_fix_jump_chain(chain, preserve_regs)
                 if self.verify(chain, preserve_regs, registers):
