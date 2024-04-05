@@ -263,7 +263,7 @@ class MemWriter(Builder):
             raise RopException("memory write fails")
         # the next pc must come from the stack
         if len(state.regs.pc.variables) != 1:
-            return False
+            raise RopException("must have only one pc variable")
         if not set(state.regs.pc.variables).pop().startswith("symbolic_stack"):
-            return False
+            raise RopException("the next pc not from the stack")
         return chain
