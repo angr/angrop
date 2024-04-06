@@ -45,7 +45,7 @@ class RegSetter(Builder):
                     # get the full name of the register
                     offset = act.offset
                     offset -= act.offset % self.project.arch.bytes
-                    reg_name = self.project.arch.register_size_names[offset, self.project.arch.bytes]
+                    reg_name = self.project.arch.translate_register_name(offset)
                     if reg_name in preserve_regs:
                         l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation - 1.", chain_str)
                         return False
