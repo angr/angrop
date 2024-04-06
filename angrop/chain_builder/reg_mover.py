@@ -43,7 +43,9 @@ class RegMover(Builder):
                         return False
                 if act.type == 'reg' and act.action == 'write':
                     # get the full name of the register
-                    reg_name = self.project.arch.register_size_names[act.offset, self.project.arch.bytes]
+                    offset = act.offset
+                    offset -= act.offset % self.project.arch.bytes
+                    reg_name = self.project.arch.translate_register_name(offset)
                     if reg_name in preserve_regs:
                         l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
                         return False

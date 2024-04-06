@@ -29,7 +29,9 @@ class Shifter(Builder):
         for act in state.history.actions:
             if act.type != 'reg' or act.action != 'write':
                 continue
-            reg_name = self.project.arch.register_size_names[act.offset, self.project.arch.bytes]
+            offset = act.offset
+            offset -= act.offset % self.project.arch.bytes
+            reg_name = self.project.arch.translate_register_name(offset)
             if reg_name in preserve_regs:
                 chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in chain._gadgets])
                 l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
@@ -43,7 +45,9 @@ class Shifter(Builder):
         for act in state.history.actions:
             if act.type != 'reg' or act.action != 'write':
                 continue
-            reg_name = self.project.arch.register_size_names[act.offset, self.project.arch.bytes]
+            offset = act.offset
+            offset -= act.offset % self.project.arch.bytes
+            reg_name = self.project.arch.translate_register_name(offset)
             if reg_name == self.arch.stack_pointer:
                 continue
             if reg_name in preserve_regs:
