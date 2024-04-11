@@ -91,7 +91,9 @@ class RegSetter(Builder):
 
         # find the chain provided by the graph search algorithm
         best_chain, _, _ = self._find_reg_setting_gadgets(modifiable_memory_range,
-                                                          use_partial_controllers, **registers)
+                                                          use_partial_controllers,
+                                                          preserve_regs=preserve_regs,
+                                                          **registers)
         if best_chain:
             chains += [best_chain]
 
@@ -287,17 +289,18 @@ class RegSetter(Builder):
         return True
 
     # todo allow user to specify rop chain location so that we can use read_mem gadgets to load values
-    # todo allow specify initial regs or dont clobber regs
+    # todo allow specify initial regs
     # todo memcopy(from_addr, to_addr, len)
     # todo handle "leave" then try to do a mem write on chess from codegate-finals
     def _find_reg_setting_gadgets(self, modifiable_memory_range=None, use_partial_controllers=False,
-                                  max_stack_change=None, **registers):
+                                  max_stack_change=None, preserve_regs=None, **registers):
         """
         Finds a list of gadgets which set the desired registers
         This method currently only handles simple cases and will be improved later
         :param registers:
         :return:
         """
+        preserve_regs = set(preserve_regs) if preserve_regs else set()
         search_regs = set(registers)
 
         if modifiable_memory_range is not None and len(modifiable_memory_range) != 2:
@@ -348,6 +351,10 @@ class RegSetter(Builder):
             for g in gadgets:
                 # ignore gadgets which don't have a positive stack change
                 if g.stack_change <= 0:
+                    continue
+
+                # ignore gadgets that set any of our preserved registers
+                if not g.changed_regs.isdisjoint(preserve_regs):
                     continue
 
                 stack_change = data[regs][1]
