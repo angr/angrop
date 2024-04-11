@@ -104,7 +104,7 @@ For example look at how the following code translates into a gadget
 ```
 
 ```python
->>> print(rop.gadgets[0])
+>>> print(rop.rop_gadgets[0])
 Gadget 0x403be4
 Stack change: 0x20
 Changed registers: set(['rbx', 'rax', 'rbp'])
@@ -123,7 +123,7 @@ Dependencies are analyzed for registers and for memory actions.
 All of the information is stored as properties in the gadgets, so it is easy to iterate over them and find gadgets which fit your needs.
 
 ```python
->>> for g in rop.gadgets:
+>>> for g in rop.rop_gadgets:
     if "rax" in g.popped_regs and "rbx" not in g.changed_regs:
         print(g)
 Gadget 0x4032b3
