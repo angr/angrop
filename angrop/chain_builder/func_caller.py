@@ -86,7 +86,7 @@ class FuncCaller(Builder):
         :param args: a list/tuple of arguments to the function
         :param preserve_regs: list of registers which shouldn't be set
         :param needs_return: whether to continue the ROP after invoking the function
-        :return: a RopChain which inovkes the function with the arguments
+        :return: a RopChain which invokes the function with the arguments
         """
         # is it a symbol?
         if isinstance(address, str):
