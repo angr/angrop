@@ -105,7 +105,7 @@ class ChainBuilder:
         :param args: a list/tuple of arguments to the function
         :param preserve_regs: set of registers to preserve, e.g. ('eax', 'ebx')
         :param needs_return: whether to continue the ROP after invoking the function
-        :return: a RopChain which inovkes the function with the arguments
+        :return: a RopChain which invokes the function with the arguments
         """
         return self._func_caller.func_call(address, args, **kwargs)
 

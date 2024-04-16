@@ -23,7 +23,7 @@ class ROP(Analysis):
     """
 
     def __init__(self, only_check_near_rets=True, max_block_size=None, max_sym_mem_access=None,
-                 fast_mode=None, rebase=None, is_thumb=False, kernel_mode=False):
+                 fast_mode=None, rebase=None, is_thumb=False, kernel_mode=False, stack_gsize=80):
         """
         Initializes the rop gadget finder
         :param only_check_near_rets: If true we skip blocks that are not near rets
@@ -33,6 +33,8 @@ class ROP(Analysis):
                           if set to None makes a decision based on the size of the binary
         :param is_thumb:  execute ROP chain in thumb mode. Only makes difference on ARM architecture.
                           angrop does not switch mode within a rop chain
+        :param kernel_mode: find kernel mode gadgets
+        :param stack_gsize: change the maximum allowable stack change for gadgets
         :return:
         """
 
@@ -52,7 +54,7 @@ class ROP(Analysis):
         # gadget finder configurations
         self.gadget_finder = GadgetFinder(self.project, fast_mode=fast_mode, only_check_near_rets=only_check_near_rets,
                                           max_block_size=max_block_size, max_sym_mem_access=max_sym_mem_access,
-                                          is_thumb=is_thumb, kernel_mode=kernel_mode)
+                                          is_thumb=is_thumb, kernel_mode=kernel_mode, stack_gsize=stack_gsize)
         self.arch = self.gadget_finder.arch
 
         # chain builder
