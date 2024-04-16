@@ -6,7 +6,7 @@ import pyvex
 import claripy
 
 from .. import rop_utils
-from ..arch import get_arch
+from ..arch import get_arch, X86
 from ..rop_gadget import RopGadget, RopMemAccess, RopRegMove, PivotGadget, SyscallGadget
 from ..errors import RopException, RegNotFoundException
 
@@ -35,7 +35,12 @@ class GadgetAnalyzer:
         # the copied state
         self._stack_bsize = stack_gsize * self.project.arch.bytes # number of controllable bytes on stack
         sym_reg_set = self.arch.reg_set.union({self.arch.base_pointer})
-        self._state = rop_utils.make_symbolic_state(self.project, sym_reg_set, stack_gsize=stack_gsize)
+        if isinstance(self.arch, X86):
+            extra_reg_set = self.arch.segment_regs
+        else:
+            extra_reg_set = None
+        self._state = rop_utils.make_symbolic_state(self.project, sym_reg_set,
+                                                    extra_reg_set=extra_reg_set, stack_gsize=stack_gsize)
         self._concrete_sp = self._state.solver.eval(self._state.regs.sp)
 
     @rop_utils.timeout(3)
@@ -58,6 +63,9 @@ class GadgetAnalyzer:
                 return None
 
             init_state, final_state = self._reach_unconstrained_or_syscall(addr)
+
+            if self._change_arch_state(init_state, final_state):
+                return None
 
             ctrl_type = self._check_for_control_type(init_state, final_state)
             if not ctrl_type:
@@ -92,6 +100,16 @@ class GadgetAnalyzer:
 
         l.debug("... Appending gadget!")
         return gadget
+
+    def _change_arch_state(self, init_state, final_state):
+        if isinstance(self.arch, X86):
+            for reg in self.arch.segment_regs:
+                init_reg= init_state.registers.load(reg)
+                final_reg = final_state.registers.load(reg)
+                # check whether there is any possibility that they can be different
+                if final_state.solver.satisfiable([init_reg != final_reg]):
+                    return True
+        return False
 
     def _block_make_sense(self, addr):
         """
