@@ -57,6 +57,7 @@ class AMD64(X86):
     def __init__(self, project, kernel_mode=False):
         super().__init__(project, kernel_mode=kernel_mode)
         self.syscall_insts = {b"\x0f\x05"} # syscall
+        self.segment_regs = {"cs_seg", "ds_seg", "es_seg", "fs_seg", "gs_seg", "ss_seg"}
 
 arm_conditional_postfix = ['eq', 'ne', 'cs', 'hs', 'cc', 'lo', 'mi', 'pl',
                            'vs', 'vc', 'hi', 'ls', 'ge', 'lt', 'gt', 'le', 'al']
