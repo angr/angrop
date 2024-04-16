@@ -39,6 +39,7 @@ class X86(ROPArch):
         self.max_block_size = 20 # X86 and AMD64 have alignment of 1, 8 bytes is certainly not good enough
         self.syscall_insts = {b"\xcd\x80"} # int 0x80
         self.ret_insts = {b"\xc2", b"\xc3", b"\xca", b"\xcb"}
+        self.segment_regs = {"cs", "ds", "es", "fs", "gs", "ss"}
 
     def block_make_sense(self, block):
         capstr = str(block.capstone).lower()
@@ -56,6 +57,7 @@ class AMD64(X86):
     def __init__(self, project, kernel_mode=False):
         super().__init__(project, kernel_mode=kernel_mode)
         self.syscall_insts = {b"\x0f\x05"} # syscall
+        self.segment_regs = {"cs_seg", "ds_seg", "es_seg", "fs_seg", "gs_seg", "ss_seg"}
 
 arm_conditional_postfix = ['eq', 'ne', 'cs', 'hs', 'cc', 'lo', 'mi', 'pl',
                            'vs', 'vc', 'hi', 'ls', 'ge', 'lt', 'gt', 'le', 'al']
