@@ -182,7 +182,8 @@ def make_symbolic_state(project, reg_set, extra_reg_set=None, stack_gsize=80):
     converts an input state into a state with symbolic registers
     :return: the symbolic state
     """
-    if extra_reg_set is None: extra_reg_set = set()
+    if extra_reg_set is None:
+        extra_reg_set = set()
     input_state = make_initial_state(project, stack_gsize)
     symbolic_state = input_state.copy()
     # overwrite all registers
