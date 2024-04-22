@@ -324,7 +324,7 @@ class GadgetFinder:
         is the gadget a simple gadget like
         pop rax; ret
         """
-        if block.vex.jumpkind not in {'Ijk_Boring', 'Ijk_Call', 'Ijk_Ret'}:
+        if block.vex.jumpkind not in {'Ijk_Boring', 'Ijk_Call', 'Ijk_Ret', 'Ijk_Sys_syscall'}:
             return False
         if block.vex.constant_jump_targets:
             return False
