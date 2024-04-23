@@ -67,6 +67,7 @@ class ROP(Analysis):
         # screen gadgets based on badbytes and gadget types
         self.rop_gadgets = []
         self.pivot_gadgets = []
+        self.syscall_gadgets = []
         for g in self._all_gadgets:
             if self._contain_badbytes(g.addr):
                 # in case the gadget contains bad byte, try to take an equivalent one from
