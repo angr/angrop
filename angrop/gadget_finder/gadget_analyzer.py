@@ -244,6 +244,7 @@ class GadgetAnalyzer:
             return ctrl_type
 
         if ctrl_type == 'pivot':
+            # FIXME: this logic feels wrong
             variables = list(final_state.ip.variables)
             if all(x.startswith("sreg_") for x in variables):
                 return "jmp_reg"
@@ -261,7 +262,7 @@ class GadgetAnalyzer:
                 if sols[0] != final_state.arch.bytes:
                     continue
                 return "ret"
-            return "jmp_mem"
+            return "pop_pc"
 
         assert ctrl_type == 'stack'
 
@@ -271,7 +272,7 @@ class GadgetAnalyzer:
         if v is final_state.ip:
             return "ret"
 
-        return "jmp_mem"
+        return "pop_pc"
 
     def _create_gadget(self, addr, init_state, final_state, ctrl_type):
         transit_type = self._identify_transit_type(final_state, ctrl_type)
@@ -318,6 +319,19 @@ class GadgetAnalyzer:
             l.debug("stack change is negative!!")
             #FIXME: technically, it can be negative, e.g. call instructions
             return None
+
+        # record pc_offset
+        if transit_type in ['pop_pc', 'ret']:
+            init_sp = init_state.regs.sp.concrete_value
+            final_sp = final_state.regs.sp.concrete_value
+            assert init_sp + gadget.stack_change == final_sp
+            memory_endness = final_state.arch.memory_endness
+            arch_bytes = self.project.arch.bytes
+            for sp in range(init_sp, final_sp, arch_bytes):
+                v = final_state.memory.load(sp, size=arch_bytes, endness=memory_endness)
+                if v is final_state.regs.pc:
+                    gadget.pc_offset = sp - init_sp
+            assert gadget.pc_offset is not None
 
         l.info("... checking for controlled regs")
         self._check_reg_changes(final_state, init_state, gadget)
