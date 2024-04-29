@@ -41,7 +41,7 @@ class X86(ROPArch):
         self.ret_insts = {b"\xc2", b"\xc3", b"\xca", b"\xcb"}
         self.segment_regs = {"cs", "ds", "es", "fs", "gs", "ss"}
 
-    def block_make_sense(self, block):
+    def _x86_block_make_sense(self, block):
         capstr = str(block.capstone).lower()
         # currently, angrop does not handle "repz ret" correctly, we filter it
         if any(x in capstr for x in ('cli', 'rex', 'repz ret')):
@@ -53,11 +53,22 @@ class X86(ROPArch):
             return False
         return True
 
+    def block_make_sense(self, block):
+        if not self._x86_block_make_sense(block):
+            return False
+        for x in block.capstone.insns:
+            if x.mnemonic == 'syscall':
+                return False
+        return True
+
 class AMD64(X86):
     def __init__(self, project, kernel_mode=False):
         super().__init__(project, kernel_mode=kernel_mode)
         self.syscall_insts = {b"\x0f\x05"} # syscall
         self.segment_regs = {"cs_seg", "ds_seg", "es_seg", "fs_seg", "gs_seg", "ss_seg"}
+
+    def block_make_sense(self, block):
+        return self._x86_block_make_sense(block)
 
 arm_conditional_postfix = ['eq', 'ne', 'cs', 'hs', 'cc', 'lo', 'mi', 'pl',
                            'vs', 'vc', 'hi', 'ls', 'ge', 'lt', 'gt', 'le', 'al']
