@@ -153,6 +153,30 @@ def test_shift_gadget():
     assert all(not gadget_exists(rop, x) for x in [0x438a91, 0x516fb2])
     assert all(gadget_exists(rop, x) for x in [0x454e75, 0x5622d5, 0x490058])
 
+def test_i386_syscall():
+    proj = angr.Project(os.path.join(tests_dir, "i386", "angrop_syscall_test"), auto_load_libs=False)
+
+    rop = proj.analyses.ROP()
+    """
+    804918c  int     0x80
+    """
+    """
+    8049195  mov     esp, 0x804c038
+    804919a  ret
+    """
+
+    assert all(gadget_exists(rop, x) for x in [0x804918c, 0x8049195])
+
+    """
+    8049189  syscall
+    """
+
+    """
+    804918f  mov     esp, 0x804c020
+    8049194  ret
+    """
+    assert all(not gadget_exists(rop, x) for x in [0x8049189, 0x804918f])
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

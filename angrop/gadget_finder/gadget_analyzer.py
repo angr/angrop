@@ -64,7 +64,7 @@ class GadgetAnalyzer:
 
             init_state, final_state = self._reach_unconstrained_or_syscall(addr)
 
-            if self._change_arch_state(init_state, final_state):
+            if not self._valid_state(init_state, final_state):
                 return None
 
             ctrl_type = self._check_for_control_type(init_state, final_state)
@@ -100,6 +100,15 @@ class GadgetAnalyzer:
 
         l.debug("... Appending gadget!")
         return gadget
+
+    def _valid_state(self, init_state, final_state):
+        if self._change_arch_state(init_state, final_state):
+            return False
+        for addr in final_state.history.bbl_addrs:
+            b = final_state.project.factory.block(addr)
+            if not self.arch.block_make_sense(b):
+                return False
+        return True
 
     def _change_arch_state(self, init_state, final_state):
         if isinstance(self.arch, X86):
