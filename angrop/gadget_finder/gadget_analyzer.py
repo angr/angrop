@@ -12,11 +12,6 @@ from ..errors import RopException, RegNotFoundException
 
 l = logging.getLogger("angrop.gadget_analyzer")
 
-# the maximum amount of stack shifting after reading saved IP that is allowed after pivoting
-# like, mov rsp, rax; ret 0x1000 is not OK
-# mov rsp, rax; ret 0x20 is OK
-MAX_PIVOT_BYTES = 0x100
-
 
 class GadgetAnalyzer:
     """
@@ -494,7 +489,7 @@ class GadgetAnalyzer:
             if len(sols) != 1: # the saved ip has a symbolic distance from the final sp, bad
                 return None
             offset = sols[0]
-            if offset > MAX_PIVOT_BYTES: # filter out gadgets like mov rsp, rax; ret 0x1000
+            if offset > self._stack_bsize: # filter out gadgets like mov rsp, rax; ret 0x1000
                 return None
             if offset % self.project.arch.bytes != 0: # filter misaligned gadgets
                 return None
