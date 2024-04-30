@@ -92,8 +92,7 @@ class RopChain:
         in these case, the value will be presented as symbolic "next_pc" in _values.
         it will be concretized when adding new gadgets or doing chain concatenation
         """
-        for idx in range(len(self._values)):
-            x = self._values[idx]
+        for idx, x in enumerate(self._values):
             if x.symbolic and any(y.startswith("next_pc_") for y in x.ast.variables):
                 return idx
         return None
