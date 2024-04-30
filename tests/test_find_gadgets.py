@@ -118,6 +118,7 @@ def test_syscall_gadget():
     assert all(gadget_exists(rop, x) for x in [0x0806f860, 0x0806f85e, 0x080939e3, 0x0806f2f1])
 
 def test_shift_gadget():
+    # pylint: disable=pointless-string-statement
     """
     438a91  pop     es
     438a92  add     esp, 0x9c
@@ -154,6 +155,7 @@ def test_shift_gadget():
     assert all(gadget_exists(rop, x) for x in [0x454e75, 0x5622d5, 0x490058])
 
 def test_i386_syscall():
+    # pylint: disable=pointless-string-statement
     proj = angr.Project(os.path.join(tests_dir, "i386", "angrop_syscall_test"), auto_load_libs=False)
 
     rop = proj.analyses.ROP()
@@ -176,6 +178,16 @@ def test_i386_syscall():
     8049194  ret
     """
     assert all(not gadget_exists(rop, x) for x in [0x8049189, 0x804918f])
+
+def test_gadget_timeout():
+    # pylint: disable=pointless-string-statement
+    proj = angr.Project(os.path.join(tests_dir, "x86_64", "datadep_test"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+    """
+    0x4005d5 ret    0xc148
+    """
+    gadget = rop.analyze_gadget(0x4005d5)
+    assert gadget
 
 def run_all():
     functions = globals()

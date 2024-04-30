@@ -34,10 +34,18 @@ class RopChain:
         o_stack = o_state.memory.load(o_state.regs.sp, other.payload_len)
         result._blank_state.memory.store(result._blank_state.regs.sp + self.payload_len, o_stack)
         result._blank_state.add_constraints(*o_state.solver.constraints)
+        if not other._values:
+            return result
         # add the other values and gadgets
-        result._values.extend(other._values)
         result._gadgets.extend(other._gadgets)
+        idx = self.next_pc_idx()
         result.payload_len = self.payload_len + other.payload_len
+        if idx is None:
+            result._values.extend(other._values)
+        else:
+            result._values[idx] = other._values[0]
+            result._values.extend(other._values[1:])
+            result.payload_len -= self._p.arch.bytes
         return result
 
     def set_timeout(self, timeout):
@@ -64,13 +72,30 @@ class RopChain:
         value = RopValue(value, self._p)
         if self._pie:
             value._rebase = True
-        self.add_value(value)
+
+        idx = self.next_pc_idx()
+        if idx is None:
+            self.add_value(value)
+        else:
+            self._values[idx] = value
 
     def add_constraint(self, cons):
         """
         helpful if the chain contains variables
         """
         self._blank_state.add_constraints(cons)
+
+    def next_pc_idx(self):
+        """
+        in some gadgets, we have this situation:
+        pop pc,r1, which means pc is not the last popped value like ret (retn is another example)
+        in these case, the value will be presented as symbolic "next_pc" in _values.
+        it will be concretized when adding new gadgets or doing chain concatenation
+        """
+        for idx, x in enumerate(self._values):
+            if x.symbolic and any(y.startswith("next_pc_") for y in x.ast.variables):
+                return idx
+        return None
 
     def __concretize_chain_values(self, constraints=None):
         """
@@ -107,13 +132,20 @@ class RopChain:
 
         return concrete_vals
 
-    def _concretize_chain_values(self, constraints=None, timeout=None):
+    def _concretize_chain_values(self, constraints=None, timeout=None, preserve_next_pc=False):
         """
         concretize chain values with a timeout
         """
         if timeout is None:
             timeout = self._timeout
-        return rop_utils.timeout(timeout)(self.__concretize_chain_values)(constraints=constraints)
+        values = rop_utils.timeout(timeout)(self.__concretize_chain_values)(constraints=constraints)
+        if not preserve_next_pc:
+            return values
+        idx = self.next_pc_idx()
+        if idx is None:
+            return values
+        values[idx] = (self._values[idx].ast, None)
+        return values
 
     def payload_str(self, constraints=None, base_addr=None, timeout=None):
         """
@@ -205,8 +237,8 @@ class RopChain:
         state = self._blank_state.copy()
         state.solver.reload_solver([]) # remove constraints
         state.regs.pc = self._values[0].concreted
-        concrete_vals = self._concretize_chain_values(timeout=timeout)
-        # the assumps that the first value in the chain is a code address
+        concrete_vals = self._concretize_chain_values(timeout=timeout, preserve_next_pc=True)
+        # the assumption is that the first value in the chain is a code address
         # it sounds like a reasonable assumption to me. But I can be wrong.
         for value, _ in reversed(concrete_vals[1:]):
             state.stack_push(value)

@@ -266,18 +266,18 @@ def test_shifter():
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
 
-    chain = rop.shift(0x54, preserve_regs=['ebx'])
+    chain = rop.shift(0x50, preserve_regs=['ebx'])
     init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
     state = chain.exec()
-    assert state.regs.sp.concrete_value == init_sp + 0x54 + proj.arch.bytes
+    assert state.regs.sp.concrete_value == init_sp + 0x50 + proj.arch.bytes
 
     chain = rop.set_regs(ebx=0x41414141)
-    chain += rop.shift(0x54, preserve_regs=['ebx'])
+    chain += rop.shift(0x50, preserve_regs=['ebx'])
     state = chain.exec()
     assert state.regs.ebx.concrete_value == 0x41414141
 
     chain = rop.set_regs(eax=0x41414141)
-    chain += rop.shift(0x54, preserve_regs=['eax'])
+    chain += rop.shift(0x50, preserve_regs=['eax'])
     state = chain.exec()
     assert state.regs.eax.concrete_value == 0x41414141
 
@@ -353,6 +353,26 @@ def test_retsled():
 
     chain = rop.retsled(0x40)
     assert len(chain.payload_str()) == 0x40
+
+def test_pop_pc_syscall_chain():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "angrop_retn_test"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain1 = rop.do_syscall(3, [0])
+    chain2 = rop.do_syscall(0x27, [0])
+    final_chain = chain1 + chain2
+    state = final_chain.exec()
+    assert state.regs.rax.concrete_value == 1337
+    assert 0 not in state.posix.fd
+
+    chain = rop.do_syscall(3, [0])
+    gadget = rop.analyze_gadget(0x0000000000401138) # pop rdi; ret
+    chain.add_gadget(gadget)
+    chain.add_value(0x41414141)
+    state = chain.exec()
+    assert state.regs.rdi.concrete_value == 0x41414141
+    assert 0 not in state.posix.fd
 
 def run_all():
     functions = globals()

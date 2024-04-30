@@ -283,6 +283,20 @@ def test_syscall_gadget():
     assert not gadget.can_return
     assert len(gadget.concrete_regs) == 1 and gadget.concrete_regs.pop('rsi') == 0x81
 
+def test_pop_pc_gadget():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "mipsel", "darpa_ping"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+    gadget = rop.analyze_gadget(0x404e98)
+    assert gadget.transit_type == 'pop_pc'
+    assert gadget.pc_offset == 0x28
+
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "angrop_retn_test"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    gadget = rop.analyze_gadget(0x40113a)
+    assert gadget.transit_type == 'pop_pc'
+    assert gadget.pc_offset == 0
+    assert gadget.stack_change == 0x18
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

@@ -176,7 +176,6 @@ class Builder:
         for i in range(stack_change // bytes_per_pop):
             sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
                                                        endness=self.project.arch.memory_endness)
-
             val = test_symbolic_state.solver.eval(sym_word)
             if len(gadgets) > 0 and val == gadgets[0].addr:
                 chain.add_gadget(gadgets[0])

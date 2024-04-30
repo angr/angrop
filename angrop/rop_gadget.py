@@ -64,7 +64,6 @@ class RopMemAccess:
             return False
         return True
 
-
 class RopRegMove:
     """
     Holds information about Register moves
@@ -111,10 +110,17 @@ class RopGadget:
         self.mem_writes = []
         self.mem_changes = []
 
+        # TODO: pc shouldn't be treated differently from other registers
+        # it is just a register. With the register setting framework, we will be able to
+        # utilize gadgets like `call qword ptr [rax+rbx]` because we have the dependency information.
         # transition information, i.e. how to pass the control flow to the next gadget
         self.transit_type = None
+        # TODO: what's the difference between jump_reg and pc_reg?
         self.jump_reg = None
         self.pc_reg = None
+        # pc_offset is exclusively used when transit_type is "pop_pc",
+        # when pc_offset==stack_change-arch_bytes, transit_type is basically ret
+        self.pc_offset = None
 
     @property
     def num_mem_access(self):

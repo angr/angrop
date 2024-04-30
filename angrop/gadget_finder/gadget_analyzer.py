@@ -244,6 +244,7 @@ class GadgetAnalyzer:
             return ctrl_type
 
         if ctrl_type == 'pivot':
+            # FIXME: this logic feels wrong
             variables = list(final_state.ip.variables)
             if all(x.startswith("sreg_") for x in variables):
                 return "jmp_reg"
@@ -261,7 +262,7 @@ class GadgetAnalyzer:
                 if sols[0] != final_state.arch.bytes:
                     continue
                 return "ret"
-            return "jmp_mem"
+            return "pop_pc"
 
         assert ctrl_type == 'stack'
 
@@ -271,7 +272,7 @@ class GadgetAnalyzer:
         if v is final_state.ip:
             return "ret"
 
-        return "jmp_mem"
+        return "pop_pc"
 
     def _create_gadget(self, addr, init_state, final_state, ctrl_type):
         transit_type = self._identify_transit_type(final_state, ctrl_type)
@@ -318,6 +319,11 @@ class GadgetAnalyzer:
             l.debug("stack change is negative!!")
             #FIXME: technically, it can be negative, e.g. call instructions
             return None
+
+        # record pc_offset
+        if type(gadget) is not PivotGadget and transit_type in ['pop_pc', 'ret']:
+            idx = list(final_state.ip.variables)[0].split('_')[2]
+            gadget.pc_offset = int(idx) * self.project.arch.bytes
 
         l.info("... checking for controlled regs")
         self._check_reg_changes(final_state, init_state, gadget)
