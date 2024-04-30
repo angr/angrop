@@ -321,7 +321,7 @@ class GadgetAnalyzer:
             return None
 
         # record pc_offset
-        if transit_type in ['pop_pc', 'ret']:
+        if type(gadget) is not PivotGadget and transit_type in ['pop_pc', 'ret']:
             init_sp = init_state.regs.sp.concrete_value
             final_sp = final_state.regs.sp.concrete_value
             assert init_sp + gadget.stack_change == final_sp

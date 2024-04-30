@@ -1,6 +1,7 @@
 import logging
 
 import angr
+import claripy
 from angr.calling_conventions import SimRegArg, SimStackArg
 
 from .builder import Builder
@@ -51,8 +52,11 @@ class FuncCaller(Builder):
 
         # invoke the function
         chain.add_gadget(func_gadget)
-        for _ in range(func_gadget.stack_change//arch_bytes-1):
-            chain.add_value(self._get_fill_val())
+        for delta in range(func_gadget.stack_change//arch_bytes):
+            if func_gadget.pc_offset is None or delta != func_gadget.pc_offset:
+                chain.add_value(self._get_fill_val())
+            else:
+                chain.add_value(claripy.BVS("next_pc", self.project.arch.bits))
 
         # we are done here if we don't need to return
         if not needs_return:
