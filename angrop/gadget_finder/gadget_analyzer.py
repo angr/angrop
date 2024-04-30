@@ -322,16 +322,8 @@ class GadgetAnalyzer:
 
         # record pc_offset
         if type(gadget) is not PivotGadget and transit_type in ['pop_pc', 'ret']:
-            init_sp = init_state.regs.sp.concrete_value
-            final_sp = final_state.regs.sp.concrete_value
-            assert init_sp + gadget.stack_change == final_sp
-            memory_endness = final_state.arch.memory_endness
-            arch_bytes = self.project.arch.bytes
-            for sp in range(init_sp, final_sp, arch_bytes):
-                v = final_state.memory.load(sp, size=arch_bytes, endness=memory_endness)
-                if v is final_state.regs.pc:
-                    gadget.pc_offset = sp - init_sp
-            assert gadget.pc_offset is not None
+            idx = list(final_state.ip.variables)[0].split('_')[2]
+            gadget.pc_offset = int(idx) * self.project.arch.bytes
 
         l.info("... checking for controlled regs")
         self._check_reg_changes(final_state, init_state, gadget)

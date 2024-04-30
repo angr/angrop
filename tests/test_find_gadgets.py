@@ -177,6 +177,15 @@ def test_i386_syscall():
     """
     assert all(not gadget_exists(rop, x) for x in [0x8049189, 0x804918f])
 
+def test_gadget_timeout():
+    proj = angr.Project(os.path.join(tests_dir, "x86_64", "datadep_test"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+    """
+    0x4005d5 ret    0xc148
+    """
+    gadget = rop.analyze_gadget(0x4005d5)
+    assert gadget
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
