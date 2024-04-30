@@ -109,4 +109,5 @@ class FuncCaller(Builder):
         )(self.project.arch)
         func_gadget = RopGadget(address)
         func_gadget.stack_change = self.project.arch.bytes
+        func_gadget.pc_offset = 0
         return self._func_call(func_gadget, cc, args, **kwargs)
