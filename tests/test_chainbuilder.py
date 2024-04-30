@@ -266,18 +266,18 @@ def test_shifter():
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
 
-    chain = rop.shift(0x54, preserve_regs=['ebx'])
+    chain = rop.shift(0x50, preserve_regs=['ebx'])
     init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
     state = chain.exec()
-    assert state.regs.sp.concrete_value == init_sp + 0x54 + proj.arch.bytes
+    assert state.regs.sp.concrete_value == init_sp + 0x50 + proj.arch.bytes
 
     chain = rop.set_regs(ebx=0x41414141)
-    chain += rop.shift(0x54, preserve_regs=['ebx'])
+    chain += rop.shift(0x50, preserve_regs=['ebx'])
     state = chain.exec()
     assert state.regs.ebx.concrete_value == 0x41414141
 
     chain = rop.set_regs(eax=0x41414141)
-    chain += rop.shift(0x54, preserve_regs=['eax'])
+    chain += rop.shift(0x50, preserve_regs=['eax'])
     state = chain.exec()
     assert state.regs.eax.concrete_value == 0x41414141
 
