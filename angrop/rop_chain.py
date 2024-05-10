@@ -137,7 +137,12 @@ class RopChain:
         concretize chain values with a timeout
         """
         if self.next_pc_idx() is not None:
-            return (self + self._rop.chain_builder.shift(self._p.arch.bytes))._concretize_chain_values(constraints=constraints, timeout=timeout, preserve_next_pc=preserve_next_pc)
+            # make sure we don't leave a dangling `next_pc` value in the chain
+            # which may corrupt chain concatenation at byte-level
+            full_chain = self + self._rop.chain_builder.shift(self._p.arch.bytes)
+            return full_chain._concretize_chain_values( constraints=constraints,
+                                                        timeout=timeout,
+                                                        preserve_next_pc=preserve_next_pc)
         if timeout is None:
             timeout = self._timeout
         values = rop_utils.timeout(timeout)(self.__concretize_chain_values)(constraints=constraints)
