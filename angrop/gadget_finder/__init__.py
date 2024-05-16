@@ -69,6 +69,7 @@ class GadgetFinder:
         self._syscall_locations = None
         self._cache = None # cache seen blocks, dict(block_hash => sets of addresses)
         self._gadget_analyzer = None
+        self._executable_ranges = None
 
         # silence annoying loggers
         logging.getLogger('angr.engines.vex.ccall').setLevel(logging.CRITICAL)
@@ -87,7 +88,10 @@ class GadgetFinder:
 
     def _initialize_gadget_analyzer(self):
 
-        self._syscall_locations = self._get_syscall_locations_by_string()
+        if self.kernel_mode:
+            self._syscall_locations = []
+        else:
+            self._syscall_locations = self._get_syscall_locations_by_string()
 
         # find locations to analyze
         if self.only_check_near_rets and not self._ret_locations:
@@ -203,6 +207,38 @@ class GadgetFinder:
         """
         return block.bytes
 
+    def _get_executable_ranges(self):
+        """
+        returns the ranges which are executable
+        """
+        if self._executable_ranges is not None:
+            return self._executable_ranges
+
+        # For kernel_mode we use .text if we can find it
+        if self.kernel_mode:
+            for section in self.project.loader.main_object.sections:
+                if section.name == ".text":
+                    self._executable_ranges = [section]
+                    return self._executable_ranges
+
+        # use segments otherwise
+        executable_segments = []
+        for segment in self.project.loader.main_object.segments:
+            if segment.is_executable:
+                executable_segments.append(segment)
+        self._executable_ranges = executable_segments
+        return self._executable_ranges
+
+    def _addr_in_executable_memory(self, addr):
+        """
+        :return: is the address in executable memory
+        """
+        executable_ranges = self._get_executable_ranges()
+        for r in executable_ranges:
+            if r.contains_addr(addr):
+                return True
+        return False
+
     def _addresses_to_check(self):
         """
         :return: all the addresses to check
@@ -218,19 +254,17 @@ class GadgetFinder:
                 current_addr = max(current_addr, st)
                 end_addr = st + block_size + alignment
                 for i in range(current_addr, end_addr, alignment):
-                    segment = self.project.loader.main_object.find_segment_containing(i)
-                    if segment is not None and segment.is_executable:
+                    if self._addr_in_executable_memory(i):
                         yield i+offset
                 current_addr = max(current_addr, end_addr)
         else:
             for addr in self._syscall_locations:
                 yield addr+offset
-            for segment in self.project.loader.main_object.segments:
-                if segment.is_executable:
-                    l.debug("Analyzing segment with address range: 0x%x, 0x%x", segment.min_addr, segment.max_addr)
-                    start = segment.min_addr + (alignment - segment.min_addr % alignment)
-                    for addr in range(start, start+segment.memsize, alignment):
-                        yield addr+offset
+            for segment in self._get_executable_ranges():
+                l.debug("Analyzing segment with address range: 0x%x, 0x%x", segment.min_addr, segment.max_addr)
+                start = segment.min_addr + (alignment - segment.min_addr % alignment)
+                for addr in range(start, start+segment.memsize, alignment):
+                    yield addr+offset
 
     def _num_addresses_to_check(self):
         if self.only_check_near_rets:
@@ -241,9 +275,8 @@ class GadgetFinder:
         else:
             num = 0
             alignment = self.arch.alignment
-            for segment in self.project.loader.main_object.segments:
-                if segment.is_executable:
-                    num += segment.memsize // alignment
+            for segment in self._get_executable_ranges():
+                num += segment.memsize // alignment
             return num + len(self._syscall_locations)
 
     def _get_ret_locations(self):
@@ -258,10 +291,7 @@ class GadgetFinder:
 
         addrs = []
         seen = set()
-        for segment in self.project.loader.main_object.segments:
-            if not segment.is_executable:
-                continue
-
+        for segment in self._get_executable_ranges():
             alignment = self.arch.alignment
             min_addr = segment.min_addr + (alignment - segment.min_addr % alignment)
 
@@ -311,9 +341,7 @@ class GadgetFinder:
 
         addrs = []
         state = self.project.factory.entry_state()
-        for segment in self.project.loader.main_object.segments:
-            if not segment.is_executable:
-                continue
+        for segment in self._get_executable_ranges():
             read_bytes = state.solver.eval(state.memory.load(segment.min_addr, segment.memsize), cast_to=bytes)
             # find all occurrences of the ret_instructions
             addrs += [segment.min_addr + m.start() for m in re.finditer(fmt, read_bytes)]
@@ -331,4 +359,3 @@ class GadgetFinder:
         if self._block_has_ip_relative(addr, block):
             return False
         return True
-    
