@@ -356,10 +356,7 @@ class GadgetAnalyzer:
             val = state.registers.load(reg)
             if val.symbolic:
                 continue
-            concrete_vals = state.solver.eval_upto(val, 2)
-            if len(concrete_vals) != 1:
-                continue
-            gadget.concrete_regs[reg] = concrete_vals[0]
+            gadget.concrete_regs[reg] = state.solver.eval(val)
 
     def _check_reg_changes(self, final_state, init_state, gadget):
         """
@@ -637,15 +634,12 @@ class GadgetAnalyzer:
 
         if a.action == "write":
             # for writes we want what the data depends on
-            test_data = init_state.solver.eval_upto(a.data.ast, 2)
-            if len(test_data) > 1:
+            if a.data.ast.symbolic:
                 mem_access.data_dependencies = rop_utils.get_ast_dependency(a.data.ast)
                 mem_access.data_controllers = rop_utils.get_ast_controllers(init_state, a.data.ast,
                                                                             mem_access.data_dependencies)
-            elif len(test_data) == 1:
-                mem_access.data_constant = test_data[0]
             else:
-                raise RopException("No data values, something went wrong")
+                mem_access.data_constant = init_state.solver.eval(a.data.ast)
         elif a.action == "read":
             # for reads we want to know if any register will have the data after
             succ_state = final_state
