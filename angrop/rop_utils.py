@@ -154,16 +154,37 @@ def _asts_must_be_equal(state, ast1, ast2):
     return True
 
 
-def make_initial_state(project, stack_gsize):
+def fast_uninitialized_filler(name, addr, size, state):
+    return state.solver.BVS("uninitialized" + hex(addr), size, explicit_name=True)
+
+
+def make_initial_state(project, stack_gsize, fast_mode=False):
     """
     :return: an initial state with a symbolic stack and good options for rop
     """
+    # create a new plugin for memory
+    # the purpose of this plugin is to optimize away some slowness with the default uninitialized memory
+    class SpecialMem(angr.storage.memory_mixins.SpecialFillerMixin, angr.storage.DefaultMemory):
+        """
+        class to use angr's SpecialFillerMixin to replace uninitialized memory
+        """
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+
+    angr.SimState.register_default("sym_memory", SpecialMem)
+
+    remove_set = angr.options.resilience | angr.options.simplification
+    if fast_mode:
+        remove_set.add(angr.options.SUPPORT_FLOATING_POINT)
+    add_set = {angr.options.AVOID_MULTIVALUED_READS, angr.options.AVOID_MULTIVALUED_WRITES,
+               angr.options.NO_SYMBOLIC_JUMP_RESOLUTION, angr.options.CGC_NO_SYMBOLIC_RECEIVE_LENGTH,
+               angr.options.NO_SYMBOLIC_SYSCALL_RESOLUTION, angr.options.TRACK_ACTION_HISTORY,
+               angr.options.ADD_AUTO_REFS, angr.options.SPECIAL_MEMORY_FILL}
+
     initial_state = project.factory.blank_state(
-        add_options={angr.options.AVOID_MULTIVALUED_READS, angr.options.AVOID_MULTIVALUED_WRITES,
-                     angr.options.NO_SYMBOLIC_JUMP_RESOLUTION, angr.options.CGC_NO_SYMBOLIC_RECEIVE_LENGTH,
-                     angr.options.NO_SYMBOLIC_SYSCALL_RESOLUTION, angr.options.TRACK_ACTION_HISTORY,
-                     angr.options.ADD_AUTO_REFS},
-        remove_options=angr.options.resilience | angr.options.simplification)
+        special_memory_filler=fast_uninitialized_filler,
+        add_options=add_set, remove_options=remove_set)
+
     initial_state.options.discard(angr.options.CGC_ZERO_FILL_UNCONSTRAINED_MEMORY)
     initial_state.options.update({angr.options.TRACK_REGISTER_ACTIONS, angr.options.TRACK_MEMORY_ACTIONS,
                                   angr.options.TRACK_JMP_ACTIONS, angr.options.TRACK_CONSTRAINT_ACTIONS})
@@ -174,21 +195,33 @@ def make_initial_state(project, stack_gsize):
     if initial_state.arch.bp_offset != initial_state.arch.sp_offset:
         initial_state.regs.bp = initial_state.regs.sp + 20*initial_state.arch.bytes
     initial_state.solver._solver.timeout = 500  # only solve for half a second at most
+
+    angr.SimState.register_default("sym_memory", angr.storage.DefaultMemory)
+
     return initial_state
 
 
-def make_symbolic_state(project, reg_set, extra_reg_set=None, stack_gsize=80):
+def make_symbolic_state(project, reg_set, extra_reg_set=None, stack_gsize=80, fast_mode=False):
     """
     converts an input state into a state with symbolic registers
     :return: the symbolic state
     """
     if extra_reg_set is None:
         extra_reg_set = set()
-    input_state = make_initial_state(project, stack_gsize)
+    input_state = make_initial_state(project, stack_gsize, fast_mode)
     symbolic_state = input_state.copy()
     # overwrite all registers
-    for reg in reg_set.union(extra_reg_set) :
+    for reg in reg_set:
         symbolic_state.registers.store(reg, symbolic_state.solver.BVS("sreg_" + reg + "-", project.arch.bits))
+    # extra regs have a different name so they aren't processed
+    for reg in extra_reg_set:
+        symbolic_state.registers.store(reg, symbolic_state.solver.BVS("esreg_" + reg + "-", project.arch.bits))
+
+    # vex registers should be symbolic set once
+    for reg in ("cc_ndep", "cc_dep1", "cc_dep2"):
+        if reg in symbolic_state.arch.registers:
+            symbolic_state.registers.store(reg, symbolic_state.solver.BVS("badreg_" + reg + "-", project.arch.bits))
+
     # restore sp
     symbolic_state.regs.sp = input_state.regs.sp
     return symbolic_state
