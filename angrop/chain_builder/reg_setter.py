@@ -2,6 +2,7 @@ import heapq
 import logging
 from collections import defaultdict
 
+import claripy
 from angr.errors import SimUnsatError
 
 from .builder import Builder
@@ -494,7 +495,7 @@ class RegSetter(Builder):
         state.registers.store(reg, 0)
         state.regs.ip = gadget.addr
         # store A's past the end of the stack
-        state.memory.store(state.regs.sp + gadget.stack_change, state.solver.BVV(b"A"*0x100))
+        state.memory.store(state.regs.sp + gadget.stack_change, claripy.BVV(b"A"*0x100))
 
         succ = rop_utils.step_to_unconstrained_successor(project=self.project, state=state)
         # successor

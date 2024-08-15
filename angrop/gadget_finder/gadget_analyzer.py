@@ -534,7 +534,7 @@ class GadgetAnalyzer:
         stack_bytes_length = self._stack_bsize # number of controllable bytes
         if gadget_stack_change is not None:
             stack_bytes_length = min(max(gadget_stack_change, 0), stack_bytes_length)
-        concrete_stack = initial_state.solver.BVV(b"B" * stack_bytes_length)
+        concrete_stack = claripy.BVV(b"B" * stack_bytes_length)
         concrete_stack_s = initial_state.copy()
         concrete_stack_s.add_constraints(
             initial_state.memory.load(initial_state.regs.sp, stack_bytes_length) == concrete_stack)
