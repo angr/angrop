@@ -1,6 +1,7 @@
 import logging
 from functools import cmp_to_key
 
+import claripy
 import angr
 
 from .builder import Builder
@@ -140,9 +141,9 @@ class MemChanger(Builder):
         test_state = self.make_sim_state(gadget.addr)
 
         if difference is not None:
-            test_state.memory.store(addr.concreted, test_state.solver.BVV(~(difference.concreted), data_size)) # pylint:disable=invalid-unary-operand-type
+            test_state.memory.store(addr.concreted, claripy.BVV(~(difference.concreted), data_size)) # pylint:disable=invalid-unary-operand-type
         if final_val is not None:
-            test_state.memory.store(addr.concreted, test_state.solver.BVV(~final_val, data_size)) # pylint:disable=invalid-unary-operand-type
+            test_state.memory.store(addr.concreted, claripy.BVV(~final_val, data_size)) # pylint:disable=invalid-unary-operand-type
 
         # step the gadget
         pre_gadget_state = test_state
@@ -171,11 +172,11 @@ class MemChanger(Builder):
         # constrain the data
         if final_val is not None:
             test_state.add_constraints(state.memory.load(addr.concreted, data_size//8, endness=arch_endness) ==
-                                       test_state.solver.BVV(final_val, data_size))
+                                       claripy.BVV(final_val, data_size))
         if difference is not None:
             test_state.add_constraints(state.memory.load(addr.concreted, data_size//8, endness=arch_endness) -
                                        test_state.memory.load(addr.concreted, data_size//8, endness=arch_endness) ==
-                                       test_state.solver.BVV(difference.concreted, data_size))
+                                       claripy.BVV(difference.concreted, data_size))
 
         # get the actual register values
         all_deps = list(mem_change.addr_dependencies) + list(mem_change.data_dependencies)

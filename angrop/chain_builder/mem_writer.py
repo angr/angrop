@@ -225,7 +225,7 @@ class MemWriter(Builder):
         state = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
 
         # constrain the data
-        test_state.add_constraints(state.memory.load(addr_val.data, len(data)) == test_state.solver.BVV(data))
+        test_state.add_constraints(state.memory.load(addr_val.data, len(data)) == claripy.BVV(data))
 
         # get the actual register values
         all_deps = list(mem_write.addr_dependencies) + list(mem_write.data_dependencies)
