@@ -111,7 +111,7 @@ def fast_unconstrained_check(state, ast):
         return unconstrained_check(state, ast)
 
     passes_prefilter = True
-    for a in ast.recursive_children_asts:
+    for a in ast.children_asts():
         if a.op not in good_ops:
             passes_prefilter = False
     if ast.op not in good_ops:
