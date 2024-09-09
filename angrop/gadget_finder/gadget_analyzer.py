@@ -35,7 +35,8 @@ class GadgetAnalyzer:
         else:
             extra_reg_set = None
         self._state = rop_utils.make_symbolic_state(self.project, sym_reg_set,
-                                                    extra_reg_set=extra_reg_set, stack_gsize=stack_gsize)
+                                                    extra_reg_set=extra_reg_set, stack_gsize=stack_gsize,
+                                                    fast_mode=self._fast_mode)
         self._concrete_sp = self._state.solver.eval(self._state.regs.sp)
 
     @rop_utils.timeout(3)
