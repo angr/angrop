@@ -776,7 +776,7 @@ class GadgetAnalyzer:
                 continue
 
             # we don't like floating point stuff
-            if isinstance(a.data.ast, (claripy.fp.FPV, claripy.ast.FP)):
+            if isinstance(a.data.ast, (claripy.ast.FP)):
                 continue
 
             # ignore read/write on stack after pivot
