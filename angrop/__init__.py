@@ -1,4 +1,4 @@
-__version__ = "9.2.11"
+__version__ = "9.2.12.dev0"
 
 from . import rop
 
