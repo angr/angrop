@@ -220,7 +220,7 @@ class MemWriter(Builder):
 
         # constrain the addr
         test_state.add_constraints(the_action.addr.ast == addr_bvs, addr_bvs == addr_val.data)
-        pre_gadget_state.add_constraints(the_action.addr.ast == addr_bvs, addr_bvs = addr_val.data)
+        pre_gadget_state.add_constraints(the_action.addr.ast == addr_bvs, addr_bvs == addr_val.data)
         pre_gadget_state.options.discard(angr.options.AVOID_MULTIVALUED_WRITES)
         state = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
 
