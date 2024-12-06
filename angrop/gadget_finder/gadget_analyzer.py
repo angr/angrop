@@ -39,7 +39,7 @@ class GadgetAnalyzer:
                                                     fast_mode=self._fast_mode)
         self._concrete_sp = self._state.solver.eval(self._state.regs.sp)
 
-    @rop_utils.timeout(3)
+    #@rop_utils.timeout(3)
     def analyze_gadget(self, addr):
         """
         :param addr: address to analyze for a gadget
@@ -233,6 +233,8 @@ class GadgetAnalyzer:
         return init_state, final_state
 
     def _identify_transit_type(self, final_state, ctrl_type):
+        if ctrl_type == 'ret2csu':
+            return "ret2csu"
         # FIXME: not always jump, could be call as well
         if ctrl_type == 'register':
             return "jmp_reg"
@@ -286,6 +288,26 @@ class GadgetAnalyzer:
         # FIXME this doesnt handle multiple steps
         gadget.block_length = self.project.factory.block(addr).size
         gadget.transit_type = transit_type
+
+        # for ret2csu gadgets, get control registers for memory access
+        if transit_type == "ret2csu":
+            # Find memory read that produced final IP
+            for action in final_state.history.actions:
+                if action.type == "mem" and action.action == "read":
+                    if action.data.ast is final_state.ip:
+                        # Get registers controlling memory address
+                        addr_ast = action.addr.ast
+                        gadget.call_target_reg = None
+                        gadget.call_index_reg = None
+
+                        # Parse registers from AST
+                        if len(addr_ast.args) == 2:  # base + index*8 pattern
+                            base_reg = list(addr_ast.args[0].variables)[0].split('_')[1]
+                            idx_reg = list(addr_ast.args[1].args[0].variables)[0].split('_')[1]
+                            gadget.call_target_reg = base_reg
+                            gadget.call_index_reg = idx_reg
+
+                        break
 
         # for jmp_reg gadget, record the jump target register
         if transit_type == "jmp_reg":
@@ -439,6 +461,34 @@ class GadgetAnalyzer:
                     if ast_1 is ast_2:
                         gadget.reg_moves.append(RopRegMove(from_reg, reg, half_bits))
 
+    def _check_ret2csu_pattern(self, init_state, final_state):
+        """
+        Check if this gadget has ret2csu control pattern:
+        - Has an indirect call/jump through memory
+        - Memory address is controlled by a register
+        """
+        ip = final_state.ip
+
+        # Must be indirect - check variables pattern
+        if not ip.variables or len(ip.variables) != 1:
+            return False
+        var = list(ip.variables)[0]
+
+        # Check if it came from a memory read
+        if not var.startswith("symbolic_read_"):
+            return False
+
+        # Find the memory read action that produced IP
+        for action in final_state.history.actions:
+            if action.type == "mem" and action.action == "read":
+                if action.data.ast is ip:
+                    # Check if read address is register-controlled
+                    addr_vars = list(action.addr.ast.variables)
+                    if addr_vars and all(var.startswith("sreg_") for var in addr_vars):
+                        return True
+
+        return False
+
     # TODO: need to handle reg calls
     def _check_for_control_type(self, init_state, final_state):
         """
@@ -463,6 +513,9 @@ class GadgetAnalyzer:
         variables = list(ip.variables)
         if all(x.startswith("sreg_") for x in variables):
             return "register"
+
+        if self._check_ret2csu_pattern(init_state, final_state):
+            return "ret2csu"
 
         # this is a stack pivoting gadget
         if all(x.startswith("symbolic_read_") for x in variables) and len(final_state.regs.sp.variables) == 1:
