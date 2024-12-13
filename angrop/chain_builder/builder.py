@@ -101,7 +101,7 @@ class Builder:
                     return addr
         return None
 
-    @rop_utils.timeout(2)
+    #@rop_utils.timeout(2)
     def _build_reg_setting_chain(self, gadgets, modifiable_memory_range, register_dict, stack_change):
         """
         This function figures out the actual values needed in the chain
@@ -113,6 +113,25 @@ class Builder:
 
         # emulate a 'pop pc' of the first gadget
         test_symbolic_state = self.make_sim_state(gadgets[0].addr)
+
+        """
+        For gadgets with mem_control transit type, we need to:
+        1. Add mem_target_regs to register dependencies
+        2. Add mem_load_reg to register dependencies if applicable
+        3. Handle the memory load constraints
+        """
+
+        # For memory control gadgets, add their memory control registers to dependencies
+        for g in gadgets:
+            if g.transit_type in ('jmp_reg_from_mem', 'call_reg_from_mem'):
+                # Add memory addressing registers to register_dict if not already there
+                for reg in g.mem_target_regs:
+                    if reg not in register_dict:
+                        register_dict[reg] = test_symbolic_state.registers.load(reg)
+
+                # For MIPS, add the register that gets loaded value
+                if g.mem_load_reg and g.mem_load_reg not in register_dict:
+                    register_dict[g.mem_load_reg] = test_symbolic_state.registers.load(g.mem_load_reg)
 
         addrs = [g.addr for g in gadgets]
         addrs.append(test_symbolic_state.solver.BVS("next_addr", self.project.arch.bits))

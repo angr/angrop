@@ -122,6 +122,11 @@ class RopGadget:
         # when pc_offset==stack_change-arch_bytes, transit_type is basically ret
         self.pc_offset = None
 
+        # For memory-based jumps/calls
+        self.mem_target_formula = None  # AST of memory target (e.g. r12+rbx*8)
+        self.mem_target_regs = None    # registers used in memory address
+        self.mem_load_reg = None       # register loaded from memory
+
     @property
     def num_mem_access(self):
         return len(self.mem_reads) + len(self.mem_writes) + len(self.mem_changes)

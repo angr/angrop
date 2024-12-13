@@ -126,8 +126,20 @@ class RegSetter(Builder):
         """
         gadgets = set({})
         for g in self._reg_setting_gadgets:
-            if g.has_symbolic_access():
+            # Skip gadgets with symbolic access UNLESS they are our validated ret2csu gadgets
+            if g.has_symbolic_access() and g.transit_type not in ('jmp_reg_from_mem', 'call_reg_from_mem'):
                 continue
+
+            # If it is one of our validated gadgets, verify the only symbolic access is the control transfer
+            if g.transit_type in ('jmp_reg_from_mem', 'call_reg_from_mem'):
+                # Count how many memory accesses have symbolic addresses
+                sym_accesses = sum(1 for m in g.mem_reads + g.mem_writes + g.mem_changes
+                                   if m.is_symbolic_access())
+
+                # Only allow gadgets where the control transfer is the only symbolic access
+                if sym_accesses > 1:
+                    continue
+
             for reg in registers:
                 if reg in g.popped_regs:
                     gadgets.add(g)
@@ -289,6 +301,7 @@ class RegSetter(Builder):
 
         return True
 
+
     # todo allow user to specify rop chain location so that we can use read_mem gadgets to load values
     # todo allow specify initial regs
     # todo memcopy(from_addr, to_addr, len)
@@ -329,8 +342,37 @@ class RegSetter(Builder):
 
         # each key is tuple of sorted registers
         # use tuple (prev, total_stack_change, gadget, partial_controls)
-        data = {}
+        best_reg_tuple, best_stack_change, data = self._graph_search_gadgets(gadgets,
+                                                                             max_stack_change,
+                                                                             modifiable_memory_range,
+                                                                             partial_controllers,
+                                                                             preserve_regs,
+                                                                             search_regs,
+                                                                             False)
+        if best_reg_tuple is None:
+            # last resort - attempt using ret2csu style gadgets. This requires mem_read access and adding 0 stack change gadgets to the graph search.
+            gadgets = set(self._reg_setting_gadgets)
+            gadgets = [g for g in gadgets if
+                       len(g.mem_changes) == 0 and
+                       len(g.mem_writes) == 0 and
+                       (len(g.mem_reads) == 0 or
+                        len(g.mem_reads) == 1 and g.transit_type in ('jmp_reg_from_mem', 'call_reg_from_mem'))]
+            best_reg_tuple, best_stack_change, data = self._graph_search_gadgets(gadgets, max_stack_change,
+                                                                                 modifiable_memory_range,
+                                                                                 partial_controllers, preserve_regs,
+                                                                                 search_regs,
+                                                                                 True)
+            if best_reg_tuple is None:
+                return None, None, data
 
+        gadgets = self._tuple_to_gadgets(data, best_reg_tuple)
+        return gadgets, best_stack_change, data
+
+    # We add permissive_search in the 2nd run after the first search resulted in no useful gadgets. This allows gadgets
+    # that conain memory reads. it also allows gadgets that have stack_change <= 0.
+    def _graph_search_gadgets(self, gadgets, max_stack_change, modifiable_memory_range, partial_controllers,
+                              preserve_regs, search_regs, permissive_search):
+        data = {}
         to_process = []
         to_process.append((0, ()))
         visited = set()
@@ -350,8 +392,8 @@ class RegSetter(Builder):
                 continue
 
             for g in gadgets:
-                # ignore gadgets which don't have a positive stack change
-                if g.stack_change <= 0:
+                # ignore gadgets which don't have a positive stack change unless this is a last resort and we're going for ret2csu style.
+                if g.stack_change <= 0 and not permissive_search:
                     continue
 
                 # ignore gadgets that set any of our preserved registers
@@ -369,7 +411,7 @@ class RegSetter(Builder):
                     continue
 
                 end_regs, partial_regs = self._get_updated_controlled_regs(g, regs, data[regs], partial_controllers,
-                                                                           modifiable_memory_range)
+                                                                           modifiable_memory_range, permissive_search)
 
                 # ignore the gadget if does not provide us new controlled registers
                 end_reg_tuple = tuple(sorted(end_regs))
@@ -378,7 +420,7 @@ class RegSetter(Builder):
                     continue
 
                 # if we havent seen that tuple before, or payload is shorter or less partially controlled regs.
-                if end_reg_tuple in data: # we have seen the tuple before
+                if end_reg_tuple in data:  # we have seen the tuple before
                     end_data = data.get(end_reg_tuple, None)
                     # payload is longer or contains more partially controlled regs
                     if not (new_stack_change < end_data[1] and npartial <= len(end_data[3])):
@@ -399,13 +441,8 @@ class RegSetter(Builder):
                 if search_regs.issubset(end_regs) and new_stack_change < best_stack_change:
                     best_stack_change = new_stack_change
                     best_reg_tuple = end_reg_tuple
-
         # if the best_reg_tuple is None then we failed to set the desired registers :(
-        if best_reg_tuple is None:
-            return None, None, data
-
-        gadgets = self._tuple_to_gadgets(data, best_reg_tuple)
-        return gadgets, best_stack_change, data
+        return best_reg_tuple, best_stack_change, data
 
     def _get_sufficient_partial_controllers(self, registers):
         sufficient_partial_controllers = defaultdict(set)
@@ -417,7 +454,7 @@ class RegSetter(Builder):
         return sufficient_partial_controllers
 
     @staticmethod
-    def _get_updated_controlled_regs(gadget, regs, data_tuple, partial_controllers, modifiable_memory_range=None):
+    def _get_updated_controlled_regs(gadget, regs, data_tuple, partial_controllers, modifiable_memory_range=None, permissive_search=False):
         g = gadget
         start_regs = set(regs)
         partial_regs = data_tuple[3]
@@ -425,7 +462,7 @@ class RegSetter(Builder):
         end_regs = set(start_regs)
 
         # skip ones that change memory if no modifiable_memory_addr
-        if modifiable_memory_range is None and \
+        if modifiable_memory_range is None and not permissive_search and \
                 (len(g.mem_reads) > 0 or len(g.mem_writes) > 0 or len(g.mem_changes) > 0):
             return set(), set()
         elif modifiable_memory_range is not None:

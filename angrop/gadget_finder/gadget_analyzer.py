@@ -233,13 +233,39 @@ class GadgetAnalyzer:
         return init_state, final_state
 
     def _identify_transit_type(self, final_state, ctrl_type):
-        if ctrl_type == 'ret2csu':
-            return "ret2csu"
         # FIXME: not always jump, could be call as well
         if ctrl_type == 'register':
             return "jmp_reg"
         if ctrl_type == 'syscall':
             return ctrl_type
+
+        # Handle mem_control case first
+        if ctrl_type == 'mem_control':
+            # Get the block containing the control transfer
+            block = self.project.factory.block(final_state.history.bbl_addrs[-1])
+
+            # For x86/x64
+            if self.project.arch.name in ('X86', 'AMD64'):
+                # control transfer for x86/64
+                last_insn = block.capstone.insns[-1]
+                if last_insn.mnemonic == 'call':
+                    return 'call_reg_from_mem'
+                if last_insn.mnemonic == 'jmp':
+                    return 'jmp_reg_from_mem'
+
+            # For MIPS
+            elif self.project.arch.name.startswith('MIPS'):
+                # control transfer for MIPS (Delay slot)
+                last_insn = block.capstone.insns[-2]
+                if last_insn.mnemonic == 'jalr':
+                    return 'call_reg_from_mem'
+                if last_insn.mnemonic == 'jr':
+                    return 'jmp_reg_from_mem'
+
+            return None
+
+            # If we couldn't determine the type, return None
+            return None
 
         if ctrl_type == 'pivot':
             # FIXME: this logic feels wrong
@@ -289,26 +315,51 @@ class GadgetAnalyzer:
         gadget.block_length = self.project.factory.block(addr).size
         gadget.transit_type = transit_type
 
+        # For jumps through memory
+        if transit_type in ('jmp_reg_from_mem', 'call_reg_from_mem'):
+            # This is not None in case we do not have intermediate register. (call [rax+rdx])
+            # if we do have intermediate register (mov rax, [rdx]; jmp rax )
+            # in this case the mem_load_reg = rax
+            #                  mem_target_regs = {rdx}
+            # in the case of call [rax+rdx] - we do not have intermediate regs so mem_load X is None
+            gadget.mem_load_reg = None
+
+            block = self.project.factory.block(final_state.history.bbl_addrs[-1])
+            last_idx = -2 if self.project.arch.name.startswith('MIPS') else -1
+
+            for act in final_state.history.actions:
+                # Find memory read that becomes IP
+                if act.type == 'mem' and act.action == 'read' and act.data.ast is final_state.ip:
+                    # Memory target formula and regs
+                    gadget.mem_target_formula = act.addr.ast
+                    gadget.mem_target_regs = rop_utils.get_ast_dependency(act.addr.ast)
+
+                # Find register that gets loaded value
+                elif act.type == 'reg' and act.action == 'write' and act.data.ast is final_state.ip:
+                    gadget.mem_load_reg = rop_utils.get_reg_name(self.project.arch, act.offset)
+                    if self.project.arch.name.startswith('MIPS'):
+                        gadget.jump_reg = gadget.mem_load_reg
+
         # for ret2csu gadgets, get control registers for memory access
-        if transit_type == "ret2csu":
-            # Find memory read that produced final IP
-            for action in final_state.history.actions:
-                if action.type == "mem" and action.action == "read":
-                    if action.data.ast is final_state.ip:
-                        # Get registers controlling memory address
-                        addr_ast = action.addr.ast
-                        gadget.call_target_reg = None
-                        gadget.call_index_reg = None
-
-                        # Parse registers from AST
-                        if len(addr_ast.args) == 2:  # base + index*8 pattern
-                            base_reg = list(addr_ast.args[0].variables)[0].split('_')[1]
-                            idx_reg = list(addr_ast.args[1].args[0].variables)[0].split('_')[1]
-                            gadget.call_target_reg = base_reg
-                            gadget.call_index_reg = idx_reg
-
-                        break
-
+        # if transit_type == "ret2csu":
+        #     # Find memory read that produced final IP
+        #     for action in final_state.history.actions:
+        #         if action.type == "mem" and action.action == "read":
+        #             if action.data.ast is final_state.ip:
+        #                 # Get registers controlling memory address
+        #                 addr_ast = action.addr.ast
+        #                 gadget.call_target_reg = None
+        #                 gadget.call_index_reg = None
+        #
+        #                 # Parse registers from AST
+        #                 if len(addr_ast.args) == 2:  # base + index*8 pattern
+        #                     base_reg = list(addr_ast.args[0].variables)[0].split('_')[1]
+        #                     idx_reg = list(addr_ast.args[1].args[0].variables)[0].split('_')[1]
+        #                     gadget.call_target_reg = base_reg
+        #                     gadget.call_index_reg = idx_reg
+        #
+        #                 break
+        #
         # for jmp_reg gadget, record the jump target register
         if transit_type == "jmp_reg":
             state = self._state.copy()
@@ -470,7 +521,7 @@ class GadgetAnalyzer:
         ip = final_state.ip
 
         # Must be indirect - check variables pattern
-        if not ip.variables or len(ip.variables) != 1:
+        if not ip.variables or len(ip.variables) < 1:
             return False
         var = list(ip.variables)[0]
 
@@ -501,6 +552,24 @@ class GadgetAnalyzer:
         if self.is_in_kernel(final_state):
             return 'syscall'
 
+        ip_from_mem = False
+        mem_addr_dependencies = set()
+
+        # Analyze history to find memory reads that determine IP
+        for act in final_state.history.actions:
+            if act.type == 'mem' and act.action == 'read':
+                # Check if this read determines the IP
+                if act.data.ast is ip:
+                    ip_from_mem = True
+                    # Get all register dependencies of the memory address
+                    mem_addr_dependencies = rop_utils.get_ast_dependency(act.addr.ast)
+                    break
+
+        # IP comes from memory AND memory address fully controlled by registers
+        if ip_from_mem and mem_addr_dependencies and \
+                all(x in self.arch.reg_set for x in mem_addr_dependencies):
+            return "mem_control"
+
         # the ip is controlled by stack
         if self._check_if_stack_controls_ast(ip, init_state):
             return "stack"
@@ -514,9 +583,8 @@ class GadgetAnalyzer:
         if all(x.startswith("sreg_") for x in variables):
             return "register"
 
-        if self._check_ret2csu_pattern(init_state, final_state):
-            return "ret2csu"
-
+        # if self._check_ret2csu_pattern(init_state, final_state):
+        #     return "ret2csu"
         # this is a stack pivoting gadget
         if all(x.startswith("symbolic_read_") for x in variables) and len(final_state.regs.sp.variables) == 1:
             # we don't fully control sp
@@ -677,8 +745,8 @@ class GadgetAnalyzer:
         # case 2: the symbolic address comes from registers
         elif all(x.startswith("sreg_") for x in a.addr.ast.variables):
             mem_access.addr_dependencies = rop_utils.get_ast_dependency(a.addr.ast)
-            mem_access.addr_controllers = rop_utils.get_ast_controllers(init_state, a.addr.ast,
-                                                                        mem_access.addr_dependencies)
+            mem_access.addr_controllers = set(rop_utils.get_ast_controllers(init_state, a.addr.ast,
+                                                                        mem_access.addr_dependencies))
         # case 3: the symbolic address comes from controlled stack
         elif all(x.startswith("symbolic_stack") for x in a.addr.ast.variables):
             mem_access.addr_stack_controllers = set(a.addr.ast.variables)
