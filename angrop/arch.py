@@ -94,7 +94,11 @@ class ARM(ROPArch):
             if insn.insn.mnemonic[-2:] in arm_conditional_postfix:
                 return False
         return True
-        
+
+class AARCH64(ROPArch):
+    def __init__(self, project, kernel_mode=False):
+        super().__init__(project, kernel_mode=kernel_mode)
+
 class MIPS(ROPArch):
     def __init__(self, project, kernel_mode=False):
         super().__init__(project, kernel_mode=kernel_mode)
@@ -109,6 +113,8 @@ def get_arch(project, kernel_mode=False):
         return AMD64(project, kernel_mode=mode)
     elif name.startswith('ARM'):
         return ARM(project, kernel_mode=mode)
+    elif name == 'AARCH64':
+        return AARCH64(project, kernel_mode=mode)
     elif name.startswith('MIPS'):
         return MIPS(project, kernel_mode=mode)
     else:
