@@ -189,6 +189,19 @@ def test_gadget_timeout():
     gadget = rop.analyze_gadget(0x4005d5)
     assert gadget
 
+def local_multiprocess_analyze_gadget_list():
+    # pylint: disable=pointless-string-statement
+    proj = angr.Project(os.path.join(tests_dir, "x86_64", "datadep_test"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+    """
+    0x4006d8, 0x400864  good gadgets
+    0x4005d8            bad instruction
+    """
+    gadgets = rop.analyze_gadget_list([0x4006d8, 0x4005d8, 0x400864])
+    assert len(gadgets[1]) == 2
+    assert gadgets[0].addr == 0x4006d8
+    assert gadgets[1].addr == 0x400864
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
@@ -196,6 +209,7 @@ def run_all():
         if hasattr(all_functions[f], '__call__'):
             all_functions[f]()
     local_multiprocess_find_gadgets()
+    local_multiprocess_analyze_gadget_list()
 
 if __name__ == "__main__":
     logging.getLogger("angrop.rop").setLevel(logging.DEBUG)
