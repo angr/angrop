@@ -56,9 +56,8 @@ class RegSetter(Builder):
         # the next pc must come from the stack
         if len(state.regs.pc.variables) != 1:
             return False
-        if not set(state.regs.pc.variables).pop().startswith("symbolic_stack"):
-            return False
-        return True
+        pc_var = set(state.regs.pc.variables).pop()
+        return pc_var.startswith("symbolic_stack") or pc_var.startswith("next_pc")
 
     def _maybe_fix_jump_chain(self, chain, preserve_regs):
         all_changed_regs = set()
