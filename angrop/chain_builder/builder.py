@@ -189,6 +189,9 @@ class Builder:
                     if not sym_word.variables.intersection(c.variables):
                         continue
                     var_name = set(c.variables - sym_word.variables).pop()
+                    if var_name.startswith('next_addr_'):
+                        var = rop_utils.cast_rop_value(test_symbolic_state.solver.BVS('next_pc', self.project.arch.bits), self.project)
+                        break
                     if var_name not in var_dict:
                         continue
                     var = var_dict[var_name]
