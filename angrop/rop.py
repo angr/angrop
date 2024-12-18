@@ -102,10 +102,26 @@ class ROP(Analysis):
             self._screen_gadgets()
         return g
 
+    def analyze_gadget_list(self, addr_list, processes=4, show_progress=True):
+        """
+        Analyzes a list of addresses to identify ROP gadgets.
+        Saves rop gadgets in self.rop_gadgets
+        Saves syscall gadgets in self.syscall_gadgets
+        Saves stack pivots in self.stack_pivots
+        :param processes: number of processes to use
+        :param show_progress: whether or not to show progress bar
+        """
+
+        self._all_gadgets = self.gadget_finder.analyze_gadget_list(
+            addr_list, processes=processes, show_progress=show_progress)
+        self._screen_gadgets()
+        return self.rop_gadgets
+
     def find_gadgets(self, processes=4, show_progress=True):
         """
         Finds all the gadgets in the binary by calling analyze_gadget on every address near a ret.
-        Saves gadgets in self._gadgets
+        Saves rop gadgets in self.rop_gadgets
+        Saves syscall gadgets in self.syscall_gadgets
         Saves stack pivots in self.stack_pivots
         :param processes: number of processes to use
         """
@@ -117,7 +133,8 @@ class ROP(Analysis):
     def find_gadgets_single_threaded(self, show_progress=True):
         """
         Finds all the gadgets in the binary by calling analyze_gadget on every address near a ret
-        Saves gadgets in self.gadgets
+        Saves rop gadgets in self.rop_gadgets
+        Saves syscall gadgets in self.syscall_gadgets
         Saves stack pivots in self.stack_pivots
         """
         self._all_gadgets, self._duplicates = self.gadget_finder.find_gadgets_single_threaded(
