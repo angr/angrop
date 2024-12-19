@@ -127,11 +127,13 @@ class Builder:
                 # Add memory addressing registers to register_dict if not already there
                 for reg in g.mem_target_regs:
                     if reg not in register_dict:
-                        register_dict[reg] = test_symbolic_state.registers.load(reg)
+                        rop_val = rop_utils.cast_rop_value(test_symbolic_state.registers.load(reg), self.project)
+                        register_dict[reg] = rop_val
 
                 # For MIPS, add the register that gets loaded value
                 if g.mem_load_reg and g.mem_load_reg not in register_dict:
-                    register_dict[g.mem_load_reg] = test_symbolic_state.registers.load(g.mem_load_reg)
+                    rop_val = rop_utils.cast_rop_value(test_symbolic_state.registers.load(g.mem_load_reg), self.project)
+                    register_dict[g.mem_load_reg] = rop_val
 
         addrs = [g.addr for g in gadgets]
         addrs.append(test_symbolic_state.solver.BVS("next_addr", self.project.arch.bits))
@@ -190,7 +192,9 @@ class Builder:
         # iterate through the stack values that need to be in the chain
         # HACK: handle jump register separately because of angrop's broken
         # assumptions on x86's ret behavior
-        if gadgets[-1].transit_type == 'jmp_reg':
+        if gadgets[-1].transit_type == 'jmp_reg' or \
+                (gadgets[-1].transit_type in ('jmp_reg_from_mem', 'call_reg_from_mem') and \
+                 gadgets[-1].stack_change == 0):
             stack_change += arch_bytes
         for i in range(stack_change // bytes_per_pop):
             sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,

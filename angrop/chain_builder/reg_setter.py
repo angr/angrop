@@ -50,14 +50,30 @@ class RegSetter(Builder):
                     if reg_name in preserve_regs:
                         l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation - 1.", chain_str)
                         return False
-            if bv.symbolic or state.solver.eval(bv != val.data):
+            if bv.symbolic:
+                # For mem calls, we expect the target reg to be symbolic as it's loaded from memory
+                gadget = chain._gadgets[-1]
+                if gadget.transit_type in ('call_reg_from_mem', 'jmp_reg_from_mem') and \
+                        reg == gadget.jump_reg:
+                    continue
                 l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation - 2.", chain_str)
                 return False
-        # the next pc must come from the stack
-        if len(state.regs.pc.variables) != 1:
-            return False
-        if not set(state.regs.pc.variables).pop().startswith("symbolic_stack"):
-            return False
+
+            if state.solver.eval(bv) != state.solver.eval(val.data):
+                l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation - 2.", chain_str)
+                return False
+
+        # the next pc must come from the stack or memory for call_reg_from_mem
+        if chain._gadgets[-1].transit_type in ('call_reg_from_mem', 'jmp_reg_from_mem'):
+            # For memory calls, pc will be uninitialized from memory read
+            if not any('uninitialized' in v for v in state.regs.pc.variables):
+                return False
+        else:
+            # Normal case - pc should come from stack
+            if len(state.regs.pc.variables) != 1:
+                return False
+            if not set(state.regs.pc.variables).pop().startswith("symbolic_stack"):
+                return False
         return True
 
     def _maybe_fix_jump_chain(self, chain, preserve_regs):

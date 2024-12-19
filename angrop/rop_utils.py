@@ -18,6 +18,84 @@ def gadget_to_asmstring(project, gadget):
         return ""
     return addr_to_asmstring(project, gadget.addr)
 
+
+def print_gadget(gadget):
+    """
+    Print all available information about a ROP gadget
+    """
+    print(f"Gadget at {gadget.addr:#x}")
+    print(f"Block length: {gadget.block_length}")
+    print(f"Stack change: {gadget.stack_change:#x}")
+
+    # Transit info
+    print(f"\nTransit type: {gadget.transit_type}")
+    if gadget.jump_reg:
+        print(f"Jump register: {gadget.jump_reg}")
+    if gadget.pc_reg:
+        print(f"PC register: {gadget.pc_reg}")
+    if gadget.pc_offset is not None:
+        print(f"PC offset: {gadget.pc_offset:#x}")
+
+    # Register effects
+    print("\nRegister effects:")
+    print(f"Changed registers: {gadget.changed_regs}")
+    print(f"Popped registers: {gadget.popped_regs}")
+
+    # Register concrete values
+    if gadget.concrete_regs:
+        print("\nConcrete register values:")
+        for reg, val in gadget.concrete_regs.items():
+            print(f"  {reg}: {val:#x}")
+
+    # Register dependencies and controllers
+    if gadget.reg_dependencies:
+        print("\nRegister dependencies:")
+        for reg, deps in gadget.reg_dependencies.items():
+            controllers = gadget.reg_controllers.get(reg, [])
+            print(f"  {reg}: controls={controllers} depends={deps}")
+
+    # Register moves
+    if gadget.reg_moves:
+        print("\nRegister moves:")
+        for move in gadget.reg_moves:
+            print(f"  {move.from_reg} -> {move.to_reg} ({move.bits} bits)")
+
+    # Memory operations
+    if gadget.mem_reads:
+        print("\nMemory reads:")
+        for mem in gadget.mem_reads:
+            print_mem_access(mem, "read")
+
+    if gadget.mem_writes:
+        print("\nMemory writes:")
+        for mem in gadget.mem_writes:
+            print_mem_access(mem, "write")
+
+    if gadget.mem_changes:
+        print("\nMemory changes:")
+        for mem in gadget.mem_changes:
+            print_mem_access(mem, "change")
+            print(f"  Operation: {mem.op}")
+
+
+def print_mem_access(access, type_str):
+    """Print details about a memory access"""
+    if access.addr_constant is not None:
+        print(f"  Address: {access.addr_constant:#x}")
+    else:
+        print(f"  Address dependencies: {access.addr_dependencies}")
+        print(f"  Address controllers: {access.addr_controllers}")
+
+    if access.data_constant is not None:
+        print(f"  Data: {access.data_constant:#x}")
+    else:
+        print(f"  Data dependencies: {access.data_dependencies}")
+        print(f"  Data controllers: {access.data_controllers}")
+
+    print(f"  Address size: {access.addr_size} bits")
+    print(f"  Data size: {access.data_size} bits")
+
+
 def get_ast_dependency(ast):
     """
     ast must be created from a symbolic state where registers values are named "sreg_REG-"

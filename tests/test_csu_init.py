@@ -124,7 +124,8 @@ def test_mipstake():
     else:
         rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
-    rop.func_call("puts", [1,2])
+    chain = rop.func_call("puts", [1,2], needs_return=False)
+    print(chain)
 
 
 

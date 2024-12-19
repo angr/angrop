@@ -583,8 +583,6 @@ class GadgetAnalyzer:
         if all(x.startswith("sreg_") for x in variables):
             return "register"
 
-        # if self._check_ret2csu_pattern(init_state, final_state):
-        #     return "ret2csu"
         # this is a stack pivoting gadget
         if all(x.startswith("symbolic_read_") for x in variables) and len(final_state.regs.sp.variables) == 1:
             # we don't fully control sp
