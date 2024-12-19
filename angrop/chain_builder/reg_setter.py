@@ -1,6 +1,7 @@
 import heapq
 import logging
 from collections import defaultdict
+from typing import Iterable, Iterator
 
 import claripy
 from angr.errors import SimUnsatError
@@ -8,6 +9,7 @@ from angr.errors import SimUnsatError
 from .builder import Builder
 from .. import rop_utils
 from ..rop_chain import RopChain
+from ..rop_gadget import RopGadget
 from ..errors import RopException
 
 l = logging.getLogger("angrop.chain_builder.reg_setter")
@@ -508,3 +510,67 @@ class RegSetter(Builder):
                     return False
             return True
         return False
+
+    def _backwards_recursive_search(
+        self,
+        gadgets: Iterable[RopGadget],
+        registers: set[str],
+        current_chain: list[RopGadget] = [],
+        preserve_regs: set[str] = set(),
+        modifiable_memory_range: tuple[int, int] | None = None
+    ) -> Iterator[list[RopGadget]]:
+        """Recursively build ROP chains starting from the end using the RiscyROP algorithm."""
+        # Base case.
+        if not registers:
+            yield current_chain[::-1]
+            return
+
+        for gadget in gadgets:
+            if not gadget.changed_regs.isdisjoint(preserve_regs):
+                continue
+            remaining_regs = self._get_remaining_regs(gadget, registers)
+            if remaining_regs is None:
+                continue
+            current_chain.append(gadget)
+            yield from self._backwards_recursive_search(gadgets, remaining_regs, current_chain, preserve_regs, modifiable_memory_range)
+            current_chain.pop()
+
+    def _get_remaining_regs(self, gadget: RopGadget, registers: set[str]) -> set[str] | None:
+        """
+        Get the registers that still need to be controlled after prepending a gadget.
+
+        Returns None if this gadget cannot be used.
+        """
+        # Check if the gadget sets any registers that we need.
+        if gadget.popped_regs.isdisjoint(registers) and not any(
+            reg_move.to_reg in registers and reg_move.bits == self.project.arch.bits
+            for reg_move in gadget.reg_moves
+         ):
+            return None
+
+        remaining_regs = set()
+
+        for reg in registers:
+            if reg in gadget.popped_regs:
+                continue
+            new_reg = reg
+            for reg_move in gadget.reg_moves:
+                if reg_move.to_reg == reg:
+                    if reg_move.bits != self.project.arch.bits:
+                        # Register is only partially overwritten.
+                        return None
+                    new_reg = reg_move.from_reg
+                    break
+            if new_reg in remaining_regs:
+                # Conflict, can't put two different values in the same register.
+                return None
+            remaining_regs.add(new_reg)
+
+        if gadget.transit_type == 'jmp_reg':
+            # I don't know what's the difference between these two so just error if they're different.
+            assert gadget.jump_reg == gadget.pc_reg
+            if gadget.jump_reg in remaining_regs:
+                return None
+            remaining_regs.add(gadget.jump_reg)
+
+        return remaining_regs
