@@ -578,3 +578,28 @@ class RegSetter(Builder):
             remaining_regs.add(gadget.jump_reg)
 
         return remaining_regs
+
+    def _build_concrete_chain(self, gadgets: list[RopGadget], registers: dict[str, int], next_pc: int) -> list[int]:
+        """
+        Build a concrete ROP chain from a list of gadgets.
+
+        Return a list of stack values, not including the address of the first gadget.
+        """
+        stack_len = sum(g.stack_change for g in gadgets) // self.project.arch.bytes
+        init_state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set, stack_gsize=stack_len)
+        state = init_state
+        for gadget in gadgets:
+            state.solver.add(state.ip == gadget.addr)
+            state = rop_utils.step_to_unconstrained_successor(self.project, state)
+        state.solver.add(state.ip == next_pc)
+        for reg, val in registers.items():
+            state.solver.add(state.registers.load(reg) == val)
+        return [
+            state.solver.eval(
+                init_state.stack_read(
+                    i * self.project.arch.bytes,
+                    self.project.arch.bytes,
+                )
+            )
+            for i in range(stack_len)
+        ]
