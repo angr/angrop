@@ -561,6 +561,10 @@ class RegSetter(Builder):
                         return None
                     new_reg = reg_move.from_reg
                     break
+            else:
+                # Check if the gadget changes the register in some other way.
+                if reg in gadget.changed_regs:
+                    return None
             if new_reg in remaining_regs:
                 # Conflict, can't put two different values in the same register.
                 return None
