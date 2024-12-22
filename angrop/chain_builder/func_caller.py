@@ -178,11 +178,11 @@ class FuncCaller(Builder):
         else:
             chain.add_gadget(func_gadget)
 
-        for delta in range(func_gadget.stack_change//arch_bytes):
-            if func_gadget.pc_offset is None or delta != func_gadget.pc_offset:
-                chain.add_value(self._get_fill_val())
-            else:
-                chain.add_value(claripy.BVS("next_pc", self.project.arch.bits))
+            for delta in range(func_gadget.stack_change//arch_bytes):
+                if func_gadget.pc_offset is None or delta != func_gadget.pc_offset:
+                    chain.add_value(self._get_fill_val())
+                else:
+                    chain.add_value(claripy.BVS("next_pc", self.project.arch.bits))
 
         # we are done here if we don't need to return
         if not needs_return:
