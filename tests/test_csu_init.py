@@ -119,12 +119,12 @@ def test_mipstake():
     proj = angr.Project(os.path.join(tests_dir, "mips", "mipstake"), auto_load_libs=False, )
     rop = proj.analyses.ROP(max_block_size=40, fast_mode=False, only_check_near_rets=False, )
 
-    if os.path.exists(cache_path):
+    if os.path.exists(cache_path) and False:
         rop.load_gadgets(cache_path)
     else:
         rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
-    chain = rop.func_call("puts", [1,2], needs_return=False)
+    chain = rop.func_call("puts", [1, 2], needs_return=False)
     print(chain)
 
 
@@ -164,9 +164,11 @@ def test_unexploitable():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
+        print("Finding gadgets...")
         rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
+    chain = rop.func_call("read", [1, 2], needs_return=False)
 
 
     print_rop_gadgets(rop.rop_gadgets)

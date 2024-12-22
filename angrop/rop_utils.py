@@ -95,6 +95,35 @@ def print_mem_access(access, type_str):
     print(f"  Address size: {access.addr_size} bits")
     print(f"  Data size: {access.data_size} bits")
 
+def find_mem_access_control(mem_access_ast):
+    """
+    Given ast that calculates mem access (eg call [rdx+rsi*8]) we want an easy way to control the target.
+    meaning zero out rsi. and say that controlling rdx is enough. This is not very complete, but I hope it will be
+    enough for now.
+    """
+    child_asts = list(mem_access_ast.children_asts())
+    result = {}
+    if len(child_asts) == 0:
+        ast_dep = list(get_ast_dependency(mem_access_ast))[0] # should be only 1 register.
+        return {ast_dep: "controller"}
+    if mem_access_ast.op == '__add__':
+        left_operand = child_asts[0]
+        if len(left_operand.variables) != 1:
+            raise RopException("left operand should have 1 variable")
+        if not list(left_operand.variables)[0].startswith("sreg_"):
+            raise RopException("left operand should be symbolic register")
+        result[list(get_ast_dependency(left_operand))[0]] = "control"
+        right_operand = child_asts[1]
+        if len(right_operand.variables) != 1:
+            raise RopException("right operand should have 1 variable")
+        if not list(right_operand.variables)[0].startswith("sreg_"):
+            raise RopException("right operand should be symbolic reg")
+        result[list(get_ast_dependency(right_operand))[0]] = 0
+        assert len(result) == len(get_ast_dependency(mem_access_ast)) # we treated all variables
+        return result
+    else:
+        raise RopException("Controlling mem access not implemented")
+
 
 def get_ast_dependency(ast):
     """

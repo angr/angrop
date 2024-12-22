@@ -96,23 +96,31 @@ class FuncCaller(Builder):
 
         raise Exception("Could not find mem pointing to func in binary memory")
 
-    def _solve_mem_target_formula(self, mem_target_formula, func_addr):
-        # Create state with symbolic registers
-        state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set)
+    def _solve_mem_target_formula(self, gadget_addr, mem_target_formula, func_addr):
+        # Create initial state with symbolic registers
+        init_state, final_state = self._reach_unconstrained_or_syscall(gadget_addr)
 
-        # Model the memory access with same formula structure
-        state.add_constraints(
-            state.memory.load(mem_target_formula, self.project.arch.bytes,
-                              endness=self.project.arch.memory_endness) == func_addr)
+        # Step through gadget execution
+        final_state = rop_utils.step_to_unconstrained_successor(
+            self.project,
+            init_state,
+            max_steps=2  # Limit steps to handle just this gadget
+        )
 
-        if not state.solver.satisfiable():
-            raise ValueError("Unsatisfiable constraints for function address")
+        # Add constraint on final memory access
+        final_state.add_constraints(
+            final_state.memory.load(mem_target_formula, self.project.arch.bytes,
+                                    endness=final_state.arch.memory_endness) == func_addr
+        )
 
-        # Extract register values
+        if not final_state.solver.satisfiable():
+            raise ValueError("Cannot find register values that would access target function")
+
+        # Get initial register values that lead to this state
         solved_regs = {}
         for var in mem_target_formula.variables:
             reg_name = var.split('_')[1].split('-')[0]
-            val = state.solver.eval(state.registers.load(reg_name))
+            val = init_state.solver.eval(init_state.registers.load(reg_name))
             solved_regs[reg_name] = val
 
         return solved_regs
@@ -150,47 +158,26 @@ class FuncCaller(Builder):
             registers.pop(reg, None)
         chain = self.chain_builder.set_regs(**registers)
 
+        # In case we have a call from mem gadget, we need to set the memory in the gadget itself
         last_gadget = chain._gadgets[-1]
         if last_gadget.transit_type in ('call_reg_from_mem', 'jmp_reg_from_mem'):
-            # Execute the chain to get the state
-            state = chain.exec()
-
             # The address where we'll store func_gadget.addr
             func_addr_in_mem = self._find_function_pointer(func_gadget.addr)
 
-            # Constrain mem_target_formula to func_addr_in_mem
-            mem_target_formula = last_gadget.mem_target_formula
-            state.add_constraints(mem_target_formula == func_addr_in_mem)
+            for i, val in enumerate(chain._values):
+                if val.symbolic and rop_utils.get_ast_dependency(val.data).intersection(last_gadget.mem_target_regs):
+                    # We need to change a value in the chain to control the call using mem access
+                    controlled_register = rop_utils.get_ast_dependency(val.data)
+                    if len(controlled_register) > 1:
+                        raise RopException("Can't handle this case") # not sure when this could happen
+                    controlled_register = list(controlled_register)[0]
+                    if last_gadget.mem_target_regs[controlled_register] == 0: # this is a value we want to zero out
+                        chain._values[i] = RopValue(0, self.project)
+                    if last_gadget.mem_target_regs[controlled_register] == "controller":  # this will control the call
+                        chain._values[i] = RopValue(func_addr_in_mem, self.project)
+        else:
+            chain.add_gadget(func_gadget)
 
-            # Store func_gadget.addr at func_addr_in_mem
-            state.registers.store(func_addr_in_mem, claripy.BVV(func_gadget.addr, state.arch.bits))
-
-            # Solve for the register values used in mem_target_formula
-            reg_vars = mem_target_formula.variables
-            solutions = {}
-            for var in reg_vars:
-                reg_name = var.split('_')[1].split("-")[0]
-                reg_ast = getattr(state.regs, reg_name)
-                reg_value = state.solver.eval(reg_ast, default=None)
-                if reg_value is None:
-                    raise Exception(f"Solver couldn't find a value for {reg_name}")
-                solutions[reg_name] = reg_value
-
-            # Adjust the chain to set the register values
-            chain = self.chain_builder.set_regs(**solutions)
-
-            # Add memory write to store func_gadget.addr at func_addr_in_mem
-            chain.add_value(func_addr_in_mem, func_gadget.addr)
-
-            # Re-execute the chain to verify
-            state = chain.exec()
-            if not state.solver.satisfiable():
-                raise Exception("Unable to find a solution with the given constraints.")
-
-            # Add the function address at func_addr_in_mem to the chain's memory writes if necessary
-            # This step depends on how the chain execution writes to memory
-        # invoke the function
-        chain.add_gadget(func_gadget)
         for delta in range(func_gadget.stack_change//arch_bytes):
             if func_gadget.pc_offset is None or delta != func_gadget.pc_offset:
                 chain.add_value(self._get_fill_val())

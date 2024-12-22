@@ -97,6 +97,7 @@ class GadgetAnalyzer:
         l.debug("... Appending gadget!")
         return gadget
 
+
     def _valid_state(self, init_state, final_state):
         if self._change_arch_state(init_state, final_state):
             return False
@@ -324,15 +325,11 @@ class GadgetAnalyzer:
             # in the case of call [rax+rdx] - we do not have intermediate regs so mem_load X is None
             gadget.mem_load_reg = None
 
-            block = self.project.factory.block(final_state.history.bbl_addrs[-1])
-            last_idx = -2 if self.project.arch.name.startswith('MIPS') else -1
-
             for act in final_state.history.actions:
                 # Find memory read that becomes IP
                 if act.type == 'mem' and act.action == 'read' and act.data.ast is final_state.ip:
-                    # Memory target formula and regs
-                    gadget.mem_target_formula = act.addr.ast
-                    gadget.mem_target_regs = rop_utils.get_ast_dependency(act.addr.ast)
+                    # what registers we need to control and how to make the call / jmp
+                    gadget.mem_target_regs = rop_utils.find_mem_access_control(act.addr.ast)
 
                 # Find register that gets loaded value
                 elif act.type == 'reg' and act.action == 'write' and act.data.ast is final_state.ip:
@@ -340,26 +337,6 @@ class GadgetAnalyzer:
                     if self.project.arch.name.startswith('MIPS'):
                         gadget.jump_reg = gadget.mem_load_reg
 
-        # for ret2csu gadgets, get control registers for memory access
-        # if transit_type == "ret2csu":
-        #     # Find memory read that produced final IP
-        #     for action in final_state.history.actions:
-        #         if action.type == "mem" and action.action == "read":
-        #             if action.data.ast is final_state.ip:
-        #                 # Get registers controlling memory address
-        #                 addr_ast = action.addr.ast
-        #                 gadget.call_target_reg = None
-        #                 gadget.call_index_reg = None
-        #
-        #                 # Parse registers from AST
-        #                 if len(addr_ast.args) == 2:  # base + index*8 pattern
-        #                     base_reg = list(addr_ast.args[0].variables)[0].split('_')[1]
-        #                     idx_reg = list(addr_ast.args[1].args[0].variables)[0].split('_')[1]
-        #                     gadget.call_target_reg = base_reg
-        #                     gadget.call_index_reg = idx_reg
-        #
-        #                 break
-        #
         # for jmp_reg gadget, record the jump target register
         if transit_type == "jmp_reg":
             state = self._state.copy()
