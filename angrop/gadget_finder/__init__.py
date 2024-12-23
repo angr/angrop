@@ -1,5 +1,6 @@
 import re
 import logging
+import itertools
 from multiprocessing import Pool
 from collections import defaultdict
 
@@ -145,15 +146,23 @@ class GadgetFinder:
         return {k:v for k,v in cache.items() if len(v) >= 2}
 
     def find_gadgets(self, processes=4, show_progress=True):
-        gadgets = []
         self._cache = {}
 
         initargs = (self.gadget_analyzer,)
-        with Pool(processes=processes, initializer=_set_global_gadget_analyzer, initargs=initargs) as pool:
-            it = pool.imap_unordered(run_worker, self._addresses_to_check_with_caching(show_progress), chunksize=5)
-            for gadget in it:
-                if gadget is not None:
-                    gadgets.append(gadget)
+        with Pool(
+            processes=processes,
+            initializer=_set_global_gadget_analyzer,
+            initargs=initargs,
+        ) as pool:
+            gadgets = list(
+                itertools.chain.from_iterable(
+                    pool.imap_unordered(
+                        run_worker,
+                        self._addresses_to_check_with_caching(show_progress),
+                        chunksize=5,
+                    )
+                )
+            )
 
         return sorted(gadgets, key=lambda x: x.addr), self.get_duplicates()
 
@@ -164,9 +173,7 @@ class GadgetFinder:
         assert self.gadget_analyzer is not None
 
         for addr in self._addresses_to_check_with_caching(show_progress):
-            gadget = self.gadget_analyzer.analyze_gadget(addr)
-            if gadget is not None:
-                gadgets.append(gadget)
+            gadgets.extend(self.gadget_analyzer.analyze_gadget(addr))
 
         return sorted(gadgets, key=lambda x: x.addr), self.get_duplicates()
 

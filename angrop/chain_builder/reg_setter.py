@@ -577,6 +577,10 @@ class RegSetter(Builder):
                 return None
             remaining_regs.add(gadget.jump_reg)
 
+        if not gadget.constraint_regs.isdisjoint(remaining_regs):
+            return None
+        remaining_regs |= gadget.constraint_regs
+
         return remaining_regs
 
     def _build_concrete_chain(self, gadgets: list[RopGadget], registers: dict[str, int], next_pc: int) -> list[int]:
@@ -590,7 +594,14 @@ class RegSetter(Builder):
         state = init_state
         for gadget in gadgets:
             state.solver.add(state.ip == gadget.addr)
-            state = rop_utils.step_to_unconstrained_successor(self.project, state)
+            for addr in gadget.bbl_addrs[1:]:
+                succ = state.step()
+                succ_states = [state for state in succ.successors if state.solver.is_true(state.ip == addr)]
+                assert len(succ_states) == 1
+                state = succ_states[0]
+            succ = state.step()
+            assert len(succ.unconstrained_successors) == 1
+            state = succ.unconstrained_successors[0]
         state.solver.add(state.ip == next_pc)
         for reg, val in registers.items():
             state.solver.add(state.registers.load(reg) == val)
