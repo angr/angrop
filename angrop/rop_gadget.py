@@ -122,6 +122,11 @@ class RopGadget:
         # when pc_offset==stack_change-arch_bytes, transit_type is basically ret
         self.pc_offset = None
 
+        # List of basic block addresses for gadgets with conditional branches
+        self.bbl_addrs = []
+        # Registers that affect path constraints
+        self.constraint_regs = set()
+
     @property
     def num_mem_access(self):
         return len(self.mem_reads) + len(self.mem_writes) + len(self.mem_changes)

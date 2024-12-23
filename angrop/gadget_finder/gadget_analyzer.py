@@ -42,60 +42,62 @@ class GadgetAnalyzer:
     @rop_utils.timeout(3)
     def analyze_gadget(self, addr):
         """
-        :param addr: address to analyze for a gadget
-        :return: a RopGadget instance
+        :param addr: address to analyze for gadgets
+        :return: a list of RopGadget instances
         """
         l.info("Analyzing 0x%x", addr)
 
         # Step 1: first check if the block makes sense
         if not self._block_make_sense(addr):
-            return None
+            return []
 
-        try:
-            # Step 2: make sure the gadget can lead to a *controlled* unconstrained state within 2 steps
-            # TODO: shall we make the step number configurable?
-            if not self._can_reach_unconstrained(addr):
-                l.debug("... cannot get to unconstrained successor according to static analysis")
-                return None
+        init_state = self._state.copy()
+        init_state.ip = addr
+        simgr = self.project.factory.simulation_manager(init_state, save_unconstrained=True)
+        simgr.run(n=3)
 
-            init_state, final_state = self._reach_unconstrained_or_syscall(addr)
+        gadgets = []
 
-            if not self._valid_state(init_state, final_state):
-                return None
+        for final_state in simgr.unconstrained:
+            try:
+                if not self._valid_state(init_state, final_state):
+                    continue
 
-            ctrl_type = self._check_for_control_type(init_state, final_state)
-            if not ctrl_type:
-                # for example, jump outside of the controllable region
-                l.debug("... cannot maintain the control flow hijacking primitive after executing the gadget")
-                return None
+                ctrl_type = self._check_for_control_type(init_state, final_state)
+                if not ctrl_type:
+                    # for example, jump outside of the controllable region
+                    l.debug("... cannot maintain the control flow hijacking primitive after executing the gadget")
+                    continue
 
-            # Step 3: gadget effect analysis
-            l.debug("... analyzing rop potential of block")
-            gadget = self._create_gadget(addr, init_state, final_state, ctrl_type)
-            if not gadget:
-                return None
+                # Step 3: gadget effect analysis
+                l.debug("... analyzing rop potential of block")
+                gadget = self._create_gadget(addr, init_state, final_state, ctrl_type)
+                if not gadget:
+                    continue
 
-            # Step 4: filter out bad gadgets
-            # too many mem accesses, it can only be done after gadget creation
-            # specifically, memory access analysis
-            if gadget.num_mem_access > self.arch.max_sym_mem_access:
-                l.debug("... too many symbolic memory accesses")
-                return None
+                # Step 4: filter out bad gadgets
+                # too many mem accesses, it can only be done after gadget creation
+                # specifically, memory access analysis
+                if gadget.num_mem_access > self.arch.max_sym_mem_access:
+                    l.debug("... too many symbolic memory accesses")
+                    continue
 
-        except RopException as e:
-            l.debug("... %s", e)
-            return None
-        except (claripy.errors.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError):
-            return None
-        except (claripy.ClaripyFrontendError, angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e:
-            l.warning("... claripy error: %s", e)
-            return None
-        except Exception as e:# pylint:disable=broad-except
-            l.exception(e)
-            return None
+                l.debug("... Appending gadget!")
+                gadgets.append(gadget)
 
-        l.debug("... Appending gadget!")
-        return gadget
+            except RopException as e:
+                l.debug("... %s", e)
+                continue
+            except (claripy.errors.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError):
+                continue
+            except (claripy.ClaripyFrontendError, angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e:
+                l.warning("... claripy error: %s", e)
+                continue
+            except Exception as e:# pylint:disable=broad-except
+                l.exception(e)
+                continue
+
+        return gadgets
 
     def _valid_state(self, init_state, final_state):
         if self._change_arch_state(init_state, final_state):
@@ -289,21 +291,7 @@ class GadgetAnalyzer:
 
         # for jmp_reg gadget, record the jump target register
         if transit_type == "jmp_reg":
-            state = self._state.copy()
-            insns = self.project.factory.block(addr).capstone.insns
-            if state.project.arch.name.startswith("MIPS"):
-                idx = -2 # delayed slot
-            else:
-                idx = -1
-            if len(insns) < abs(idx):
-                return None
-            jump_inst_addr = insns[idx].address
-            state.ip = jump_inst_addr
-            succ = rop_utils.step_to_unconstrained_successor(self.project, state=state)
-            jump_reg = list(succ.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
-            pc_reg = list(final_state.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
-            gadget.pc_reg = pc_reg
-            gadget.jump_reg = jump_reg
+            gadget.pc_reg = gadget.jump_reg = list(final_state.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
 
         # compute sp change
         l.debug("... computing sp change")
@@ -342,6 +330,14 @@ class GadgetAnalyzer:
             if not m_access.is_valid():
                 l.debug("... mem access with no addr dependencies")
                 return None
+
+        # Store block address list for gadgets with conditional branches
+        gadget.bbl_addrs = list(final_state.history.bbl_addrs)
+
+        for constraint in final_state.history.jump_guards:
+            for var in constraint.variables:
+                if var.startswith("sreg_"):
+                    gadget.constraint_regs.add(var.split('_', 1)[1].split('-', 1)[0])
 
         return gadget
 
