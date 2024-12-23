@@ -168,7 +168,7 @@ def test_unexploitable():
         rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
-    chain = rop.func_call("read", [1, 2], needs_return=False)
+    chain = rop.func_call("sleep", [1, 2], needs_return=False)
 
 
     print_rop_gadgets(rop.rop_gadgets)
@@ -190,5 +190,5 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         globals()['test_' + sys.argv[1]]()
     else:
-        test_mipstake()
-        # test_unexploitable()
+        # test_mipstake()
+        test_unexploitable()

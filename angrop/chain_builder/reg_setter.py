@@ -373,9 +373,11 @@ class RegSetter(Builder):
                        len(g.mem_writes) == 0 and
                        (len(g.mem_reads) == 0 or
                         len(g.mem_reads) == 1 and g.transit_type in ('jmp_reg_from_mem', 'call_reg_from_mem'))]
-            best_reg_tuple, best_stack_change, data = self._graph_search_gadgets(gadgets, max_stack_change,
+            best_reg_tuple, best_stack_change, data = self._graph_search_gadgets(gadgets,
+                                                                                 max_stack_change,
                                                                                  modifiable_memory_range,
-                                                                                 partial_controllers, preserve_regs,
+                                                                                 partial_controllers,
+                                                                                 preserve_regs,
                                                                                  search_regs,
                                                                                  True)
             if best_reg_tuple is None:
