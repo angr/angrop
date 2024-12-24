@@ -12,9 +12,8 @@ def addr_to_asmstring(project, addr):
     return "; ".join(["%s %s" %(i.mnemonic, i.op_str) for i in block.capstone.insns])
 
 def gadget_to_asmstring(project, gadget):
-    if not gadget.block_length:
-        return ""
-    return addr_to_asmstring(project, gadget.addr)
+    return "; ".join(addr_to_asmstring(project, addr) for addr in gadget.bbl_addrs)
+
 
 def get_ast_dependency(ast):
     """
