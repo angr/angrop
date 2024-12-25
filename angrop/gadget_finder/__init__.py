@@ -120,6 +120,23 @@ class GadgetFinder:
     def analyze_gadget(self, addr):
         return self.gadget_analyzer.analyze_gadget(addr)
 
+    def analyze_gadget_list(self, addr_list, processes=4, show_progress=True):
+        gadgets = []
+
+        initargs = (self.gadget_analyzer,)
+        iterable = addr_list
+        if show_progress:
+            iterable = tqdm.tqdm(iterable=iterable, smoothing=0, total=len(addr_list),
+                                 desc="ROP", maxinterval=0.5, dynamic_ncols=True)
+
+        with Pool(processes=processes, initializer=_set_global_gadget_analyzer, initargs=initargs) as pool:
+            it = pool.imap_unordered(run_worker, iterable, chunksize=1)
+            for gadget in it:
+                if gadget is not None:
+                    gadgets.append(gadget)
+
+        return sorted(gadgets, key=lambda x: x.addr)
+
     def get_duplicates(self):
         """
         return duplicates that have been seen at least twice
