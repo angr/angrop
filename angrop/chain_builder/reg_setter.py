@@ -538,12 +538,20 @@ class RegSetter(Builder):
             return
         visited.add(reg_tuple)
 
+        potential_next_gadgets = []
+
         for gadget in gadgets:
             if not gadget.changed_regs.isdisjoint(preserve_regs):
                 continue
             remaining_regs = self._get_remaining_regs(gadget, registers)
             if remaining_regs is None:
                 continue
+            potential_next_gadgets.append((gadget, remaining_regs))
+
+        # Sort gadgets by number of remaining registers and instruction count
+        potential_next_gadgets.sort(key=lambda g: (len(g[1]), g[0].isn_count))
+
+        for gadget, remaining_regs in potential_next_gadgets:
             current_chain.append(gadget)
             yield from self._backwards_recursive_search(gadgets, remaining_regs, current_chain, preserve_regs, modifiable_memory_range, visited)
             current_chain.pop()

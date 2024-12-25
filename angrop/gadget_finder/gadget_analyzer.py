@@ -333,6 +333,7 @@ class GadgetAnalyzer:
 
         # Store block address list for gadgets with conditional branches
         gadget.bbl_addrs = list(final_state.history.bbl_addrs)
+        gadget.isn_count = sum(self.project.factory.block(addr).instructions for addr in gadget.bbl_addrs)
 
         for constraint in final_state.history.jump_guards:
             for var in constraint.variables:
