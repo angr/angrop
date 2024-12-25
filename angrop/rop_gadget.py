@@ -126,6 +126,8 @@ class RopGadget:
         self.bbl_addrs = []
         # Registers that affect path constraints
         self.constraint_regs = set()
+        # Instruction count to estimate complexity
+        self.isn_count = None
 
     @property
     def num_mem_access(self):
