@@ -113,6 +113,13 @@ class RegSetter(Builder):
                                                           **registers)
         if best_chain:
             chains += [best_chain]
+        else:
+            best_chain_partial, _, _ = self._find_reg_setting_gadgets(modifiable_memory_range,
+                                                              True,
+                                                              preserve_regs=preserve_regs,
+                                                              **registers)
+            if best_chain_partial:
+                chains += [best_chain_partial]
 
         # find chains using BFS based on pops
         chains += self._find_all_candidate_chains(gadgets, preserve_regs.copy(), **registers)
@@ -495,7 +502,7 @@ class RegSetter(Builder):
             if not mem_accesses_controlled:
                 return set(), set()
 
-        # analyze  all registers that we control
+        # analyze all registers that we control
         for reg in g.changed_regs:
             end_regs.discard(reg)
             partial_regs.discard(reg)
@@ -557,7 +564,7 @@ class RegSetter(Builder):
         if succ.ip is succ.registers.load(reg):
             return False
 
-        if succ.solver.solution(succ.registers.load(reg), value):
+        if succ.solver.satisfiable(extra_constraints=(succ.registers.load(reg) == value.data,)):
             # make sure wasnt a symbolic read
             for var in succ.registers.load(reg).variables:
                 if "symbolic_read" in var:

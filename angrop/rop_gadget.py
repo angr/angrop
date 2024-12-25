@@ -110,6 +110,8 @@ class RopGadget:
         self.mem_writes = []
         self.mem_changes = []
 
+        # generic data
+        self.makes_syscall = False
         # TODO: pc shouldn't be treated differently from other registers
         # it is just a register. With the register setting framework, we will be able to
         # utilize gadgets like `call qword ptr [rax+rbx]` because we have the dependency information.
@@ -324,39 +326,3 @@ class SyscallGadget(RopGadget):
         new.makes_syscall = self.makes_syscall
         new.starts_with_syscall = self.starts_with_syscall
         return new
-
-
-class CSUGadget(RopGadget):
-    """
-    Represents a ret2csu gadget pair (popper + caller)
-    """
-
-    def __init__(self, addr):
-        super().__init__(addr)
-        self.caller_addr = None
-        self.controlled_regs = {}  # Will be set based on arch
-        self.call_target_reg = None
-        self.call_index_reg = None
-        self.arch_type = None
-
-    def init_arch_specifics(self, arch):
-        """Initialize architecture-specific properties"""
-        if isinstance(arch, AMD64):
-            self.controlled_regs = {
-                'rdi': ('r13', 32),
-                'rsi': ('r14', 64),
-                'rdx': ('r15', 64)
-            }
-            self.call_target_reg = 'r12'
-            self.call_index_reg = 'rbx'
-            self.arch_type = 'amd64'
-
-        elif isinstance(arch, MIPS):
-            self.controlled_regs = {
-                'a0': ('s3', 32),
-                'a1': ('s4', 32),
-                'a2': ('s5', 32)
-            }
-            self.call_target_reg = 's1'
-            self.call_index_reg = 's0'
-            self.arch_type = 'mips'

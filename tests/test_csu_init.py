@@ -164,14 +164,14 @@ def test_unexploitable():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        print("Finding gadgets...")
+        # print("Finding gadgets...")
         rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.func_call("sleep", [1, 2], needs_return=False)
+    print(chain)
 
-
-    print_rop_gadgets(rop.rop_gadgets)
+    # print_rop_gadgets(rop.rop_gadgets)
 
 
 def run_all():

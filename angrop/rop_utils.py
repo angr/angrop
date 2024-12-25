@@ -19,6 +19,17 @@ def gadget_to_asmstring(project, gadget):
     return addr_to_asmstring(project, gadget.addr)
 
 
+def to_signed(value, size_bits=64):
+    """Convert unsigned value to signed.
+    Args:
+        value (int): Unsigned integer value
+        size_bits (int): Bit width (default: 64)
+    Returns:
+        int: Signed value
+    """
+    if value >= 2 ** (size_bits - 1):
+        value -= 2 ** size_bits
+    return value
 def print_gadget(gadget):
     """
     Print all available information about a ROP gadget

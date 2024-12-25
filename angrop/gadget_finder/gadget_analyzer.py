@@ -361,7 +361,7 @@ class GadgetAnalyzer:
         if gadget.stack_change % (self.project.arch.bytes) != 0:
             l.debug("... uneven sp change")
             return None
-        if gadget.stack_change < 0:
+        if gadget.stack_change < 0 and gadget.transit_type not in ('jmp_reg_from_mem', 'call_reg_from_mem'):
             l.debug("stack change is negative!!")
             #FIXME: technically, it can be negative, e.g. call instructions
             return None
@@ -661,7 +661,9 @@ class GadgetAnalyzer:
 
             assert self.arch.base_pointer not in dependencies
             if len(dependencies) == 0 and not sp_change.symbolic:
-                stack_changes = [init_state.solver.eval(sp_change)]
+                sp_change_value = init_state.solver.eval(sp_change)
+                sp_change_value = rop_utils.to_signed(sp_change_value, sp_change.size())
+                stack_changes = [sp_change_value]
             elif list(dependencies)[0] == self.arch.stack_pointer:
                 stack_changes = init_state.solver.eval_upto(sp_change, 2)
             else:
