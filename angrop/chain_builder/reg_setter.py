@@ -515,12 +515,15 @@ class RegSetter(Builder):
         self,
         gadgets: Iterable[RopGadget],
         registers: set[str],
-        current_chain: list[RopGadget] = [],
+        current_chain: list[RopGadget] | None = None,
         preserve_regs: set[str] = set(),
         modifiable_memory_range: tuple[int, int] | None = None,
         visited: set[tuple[str, ...]] | None = None,
     ) -> Iterator[list[RopGadget]]:
         """Recursively build ROP chains starting from the end using the RiscyROP algorithm."""
+        if current_chain is None:
+            current_chain = []
+
         if visited is None:
             visited = set()
 
