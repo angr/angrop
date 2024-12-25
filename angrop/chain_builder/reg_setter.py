@@ -519,6 +519,7 @@ class RegSetter(Builder):
         preserve_regs: set[str] = set(),
         modifiable_memory_range: tuple[int, int] | None = None,
         visited: set[tuple[str, ...]] | None = None,
+        max_length: int = 10,
     ) -> Iterator[list[RopGadget]]:
         """Recursively build ROP chains starting from the end using the RiscyROP algorithm."""
         if current_chain is None:
@@ -530,6 +531,9 @@ class RegSetter(Builder):
         # Base case.
         if not registers:
             yield current_chain[::-1]
+            return
+
+        if max_length == 0:
             return
 
         # Stop if we've seen the same set of registers before to prevent infinite recursion.
@@ -553,7 +557,15 @@ class RegSetter(Builder):
 
         for gadget, remaining_regs in potential_next_gadgets:
             current_chain.append(gadget)
-            yield from self._backwards_recursive_search(gadgets, remaining_regs, current_chain, preserve_regs, modifiable_memory_range, visited)
+            yield from self._backwards_recursive_search(
+                gadgets,
+                remaining_regs,
+                current_chain,
+                preserve_regs,
+                modifiable_memory_range,
+                visited,
+                max_length - 1,
+            )
             current_chain.pop()
 
         visited.remove(reg_tuple)
