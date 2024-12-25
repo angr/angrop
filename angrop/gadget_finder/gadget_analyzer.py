@@ -90,9 +90,6 @@ class GadgetAnalyzer:
         except (claripy.ClaripyFrontendError, angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e:
             l.warning("... claripy error: %s", e)
             return None
-        except Exception as e:# pylint:disable=broad-except
-            l.exception(e)
-            return None
 
         l.debug("... Appending gadget!")
         return gadget
@@ -223,12 +220,11 @@ class GadgetAnalyzer:
 
         if self.is_in_kernel(final_state):
             state = final_state.copy()
-            try:
-                succ = self.project.factory.successors(state)
-                state = succ.flat_successors[0]
-                state2 = rop_utils.step_to_unconstrained_successor(self.project, state=state)
-            except Exception: # pylint: disable=broad-exception-caught
+            succ = self.project.factory.successors(state)
+            if len(succ.flat_successors) == 0:
                 return init_state, final_state
+            state = succ.flat_successors[0]
+            state2 = rop_utils.step_to_unconstrained_successor(self.project, state=state)
             return init_state, state2
         return init_state, final_state
 
