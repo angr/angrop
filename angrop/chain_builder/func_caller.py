@@ -158,23 +158,24 @@ class FuncCaller(Builder):
             registers.pop(reg, None)
         chain = self.chain_builder.set_regs(**registers)
 
-        # In case we have a call from mem gadget, we need to set the memory in the gadget itself
-        last_gadget = chain._gadgets[-1]
-        if last_gadget.transit_type in ('call_reg_from_mem', 'jmp_reg_from_mem'):
-            # The address where we'll store func_gadget.addr
-            func_addr_in_mem = self._find_function_pointer(func_gadget.addr)
+        # In case we have a call from mem gadget, we need to set the memory in the gadget itself.
+        if len(chain._gadgets) > 0:
+            last_gadget = chain._gadgets[-1]
+            if last_gadget.transit_type in ('call_reg_from_mem', 'jmp_reg_from_mem'):
+                # The address where we'll store func_gadget.addr
+                func_addr_in_mem = self._find_function_pointer(func_gadget.addr)
 
-            for i, val in enumerate(chain._values):
-                if val.symbolic and rop_utils.get_ast_dependency(val.data).intersection(last_gadget.mem_target_regs):
-                    # We need to change a value in the chain to control the call using mem access
-                    controlled_register = rop_utils.get_ast_dependency(val.data)
-                    if len(controlled_register) > 1:
-                        raise RopException("Can't handle this case") # not sure when this could happen
-                    controlled_register = list(controlled_register)[0]
-                    if last_gadget.mem_target_regs[controlled_register] == 0: # this is a value we want to zero out
-                        chain._values[i] = RopValue(0, self.project)
-                    if last_gadget.mem_target_regs[controlled_register] == "controller":  # this will control the call
-                        chain._values[i] = RopValue(func_addr_in_mem, self.project)
+                for i, val in enumerate(chain._values):
+                    if val.symbolic and rop_utils.get_ast_dependency(val.data).intersection(last_gadget.mem_target_regs):
+                        # We need to change a value in the chain to control the call using mem access
+                        controlled_register = rop_utils.get_ast_dependency(val.data)
+                        if len(controlled_register) > 1:
+                            raise RopException("Can't handle this case") # not sure when this could happen
+                        controlled_register = list(controlled_register)[0]
+                        if last_gadget.mem_target_regs[controlled_register] == 0: # this is a value we want to zero out
+                            chain._values[i] = RopValue(0, self.project)
+                        if last_gadget.mem_target_regs[controlled_register] == "controller":  # this will control the call
+                            chain._values[i] = RopValue(func_addr_in_mem, self.project)
         else:
             chain.add_gadget(func_gadget)
 

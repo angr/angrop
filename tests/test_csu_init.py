@@ -155,6 +155,36 @@ UNEXPLOITABLE
 .text:0000000000400608 ; } // starts at 400580
 '''
 
+
+def test_random():
+    cache_path = os.path.join(data_dir, "isalnum")
+    proj = angr.Project(os.path.join(tests_dir, "i386", "isalnum"), auto_load_libs=False, )
+    rop = proj.analyses.ROP(max_block_size=40, fast_mode=False, only_check_near_rets=False, )
+    got_entries = []
+    for name, addr in proj.loader.main_object.plt.items():
+        try:
+            got_addr = proj.loader.find_symbol(name).rebased_addr
+            got_entries.append((name, got_addr))
+        except:
+            continue
+
+    if not got_entries:
+        return "no got entries"
+
+    # Get first GOT entry
+    func_name, func_addr = got_entries[0]
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        # print("Finding gadgets...")
+        rop.find_gadgets_single_threaded()
+        rop.save_gadgets(cache_path)
+
+    chain = rop.func_call(func_name, [1, 2], needs_return=False)
+    print(chain)
+
+
 def test_unexploitable():
     print("testing unexploitable")
     cache_path = os.path.join(data_dir, "unexploitable")
@@ -191,4 +221,5 @@ if __name__ == "__main__":
         globals()['test_' + sys.argv[1]]()
     else:
         # test_mipstake()
-        test_unexploitable()
+        # test_unexploitable()
+        test_random()
