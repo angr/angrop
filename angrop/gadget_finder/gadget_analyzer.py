@@ -60,7 +60,12 @@ class GadgetAnalyzer:
         init_state = self._state.copy()
         init_state.ip = addr
         simgr = self.project.factory.simulation_manager(init_state, save_unconstrained=True)
-        simgr.run(n=3)
+        simgr.run(
+            n=3,
+            filter_func=lambda state: simgr.DROP
+            if state.ip.concrete and self.project.is_hooked(state.ip.concrete_value)
+            else None,
+        )
 
         gadgets = []
 
