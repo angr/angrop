@@ -153,6 +153,7 @@ class GadgetFinder:
             processes=processes,
             initializer=_set_global_gadget_analyzer,
             initargs=initargs,
+            maxtasksperchild=256,
         ) as pool:
             gadgets = list(
                 itertools.chain.from_iterable(
