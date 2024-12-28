@@ -39,12 +39,18 @@ class GadgetAnalyzer:
                                                     fast_mode=self._fast_mode)
         self._concrete_sp = self._state.solver.eval(self._state.regs.sp)
 
-    @rop_utils.timeout(3)
     def analyze_gadget(self, addr):
         """
         :param addr: address to analyze for gadgets
         :return: a list of RopGadget instances
         """
+        try:
+            return self._analyze_gadget(addr)
+        except RopException:  # Timeout
+            return []
+
+    @rop_utils.timeout(3)
+    def _analyze_gadget(self, addr):
         l.info("Analyzing 0x%x", addr)
 
         # Step 1: first check if the block makes sense
