@@ -344,7 +344,6 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
 def timeout(seconds_before_timeout):
     def decorate(f):
         def handler(signum, frame):# pylint:disable=unused-argument
-            print("[angrop] Timeout")
             raise RopException("[angrop] Timeout!")
         def new_f(*args, **kwargs):
             old = signal.signal(signal.SIGALRM, handler)
