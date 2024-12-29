@@ -104,6 +104,8 @@ class GadgetAnalyzer:
             except (claripy.ClaripyFrontendError, angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e:
                 l.warning("... claripy error: %s", e)
                 continue
+            except angr.errors.SimSolverModeError:
+                continue
             except Exception as e:# pylint:disable=broad-except
                 l.exception(e)
                 continue
