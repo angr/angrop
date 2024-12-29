@@ -350,6 +350,9 @@ class GadgetAnalyzer:
             for var in constraint.variables:
                 if var.startswith("sreg_"):
                     gadget.constraint_regs.add(var.split('_', 1)[1].split('-', 1)[0])
+                elif not var.startswith("symbolic_stack_"):
+                    l.debug("... path constraint not controlled by registers and stack")
+                    return None
 
         return gadget
 
