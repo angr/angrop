@@ -1,4 +1,5 @@
 import heapq
+import itertools
 import logging
 from collections import defaultdict
 from typing import Iterable, Iterator
@@ -547,6 +548,14 @@ class RegSetter(Builder):
         for gadget in gadgets:
             if not gadget.changed_regs.isdisjoint(preserve_regs):
                 continue
+            # Skip gadgets with non-constant memory accesses if we don't have memory that can be safely accessed.
+            if modifiable_memory_range is None and any(
+                mem_access.addr_constant is None
+                for mem_access in itertools.chain(
+                    gadget.mem_changes, gadget.mem_reads, gadget.mem_writes
+                )
+            ):
+                continue
             remaining_regs = self._get_remaining_regs(gadget, registers)
             if remaining_regs is None:
                 continue
@@ -616,9 +625,21 @@ class RegSetter(Builder):
             return None
         remaining_regs |= gadget.constraint_regs
 
+        for mem_access in itertools.chain(gadget.mem_changes, gadget.mem_reads, gadget.mem_writes):
+            for reg in mem_access.addr_dependencies:
+                if reg in remaining_regs:
+                    return None
+                remaining_regs.add(reg)
+
         return remaining_regs
 
-    def _build_concrete_chain(self, gadgets: list[RopGadget], registers: dict[str, int], next_pc: int) -> list[int]:
+    def _build_concrete_chain(
+        self,
+        gadgets: list[RopGadget],
+        registers: dict[str, int],
+        next_pc: int,
+        modifiable_memory_range: tuple[int, int] | None,
+    ) -> list[int]:
         """
         Build a concrete ROP chain from a list of gadgets.
 
@@ -640,6 +661,12 @@ class RegSetter(Builder):
         state.solver.add(state.ip == next_pc)
         for reg, val in registers.items():
             state.solver.add(state.registers.load(reg) == val)
+        for action in state.history.actions:
+            if action.type == 'mem' and action.addr.ast.symbolic:
+                if modifiable_memory_range is None:
+                    raise RopException("Symbolic memory address without modifiable memory range")
+                state.solver.add(action.addr.ast >= modifiable_memory_range[0])
+                state.solver.add(action.addr.ast < modifiable_memory_range[1])
         return [
             state.solver.eval(
                 init_state.stack_read(
