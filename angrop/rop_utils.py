@@ -4,7 +4,7 @@ import signal
 import angr
 import claripy
 
-from .errors import RegNotFoundException, RopException
+from .errors import RegNotFoundException, RopException, RopTimeoutException
 from .rop_value import RopValue
 
 def addr_to_asmstring(project, addr):
@@ -344,7 +344,7 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
 def timeout(seconds_before_timeout):
     def decorate(f):
         def handler(signum, frame):# pylint:disable=unused-argument
-            raise RopException("[angrop] Timeout!")
+            raise RopTimeoutException("[angrop] Timeout!")
         def new_f(*args, **kwargs):
             old = signal.signal(signal.SIGALRM, handler)
             old_time_left = signal.alarm(seconds_before_timeout)

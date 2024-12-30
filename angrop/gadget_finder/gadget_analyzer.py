@@ -8,7 +8,7 @@ import claripy
 from .. import rop_utils
 from ..arch import get_arch, X86
 from ..rop_gadget import RopGadget, RopMemAccess, RopRegMove, PivotGadget, SyscallGadget
-from ..errors import RopException, RegNotFoundException
+from ..errors import RopException, RegNotFoundException, RopTimeoutException
 
 l = logging.getLogger("angrop.gadget_analyzer")
 
@@ -46,7 +46,7 @@ class GadgetAnalyzer:
         """
         try:
             return self._analyze_gadget(addr)
-        except RopException:  # Timeout
+        except RopTimeoutException:
             return []
 
     @rop_utils.timeout(3)
@@ -73,6 +73,8 @@ class GadgetAnalyzer:
             l.warning("... claripy error: %s", e)
             return []
         except angr.errors.SimSolverModeError:
+            return []
+        except RopTimeoutException:
             return []
         except Exception as e:# pylint:disable=broad-except
             l.exception(e)
@@ -107,6 +109,8 @@ class GadgetAnalyzer:
                 l.debug("... Appending gadget!")
                 gadgets.append(gadget)
 
+            except RopTimeoutException:
+                return gadgets
             except RopException as e:
                 l.debug("... %s", e)
                 continue
