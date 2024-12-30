@@ -63,6 +63,7 @@ class GadgetAnalyzer:
             simgr = self.project.factory.simulation_manager(init_state, save_unconstrained=True)
             simgr.run(
                 n=3,
+                num_inst=30,
                 filter_func=lambda state: simgr.DROP
                 if state.ip.concrete and self.project.is_hooked(state.ip.concrete_value)
                 else None,
