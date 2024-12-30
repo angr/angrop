@@ -4,3 +4,7 @@ class RegNotFoundException(Exception):
 
 class RopException(Exception):
     pass
+
+
+class RopTimeoutException(RopException):
+    pass
