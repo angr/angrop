@@ -57,15 +57,26 @@ class GadgetAnalyzer:
         if not self._block_make_sense(addr):
             return []
 
-        init_state = self._state.copy()
-        init_state.ip = addr
-        simgr = self.project.factory.simulation_manager(init_state, save_unconstrained=True)
-        simgr.run(
-            n=3,
-            filter_func=lambda state: simgr.DROP
-            if state.ip.concrete and self.project.is_hooked(state.ip.concrete_value)
-            else None,
-        )
+        try:
+            init_state = self._state.copy()
+            init_state.ip = addr
+            simgr = self.project.factory.simulation_manager(init_state, save_unconstrained=True)
+            simgr.run(
+                n=3,
+                filter_func=lambda state: simgr.DROP
+                if state.ip.concrete and self.project.is_hooked(state.ip.concrete_value)
+                else None,
+            )
+        except (claripy.errors.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError):
+            return []
+        except (claripy.ClaripyFrontendError, angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e:
+            l.warning("... claripy error: %s", e)
+            return []
+        except angr.errors.SimSolverModeError:
+            return []
+        except Exception as e:# pylint:disable=broad-except
+            l.exception(e)
+            return []
 
         gadgets = []
 
