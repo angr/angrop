@@ -647,6 +647,7 @@ class RegSetter(Builder):
         """
         stack_len = sum(g.stack_change for g in gadgets) // self.project.arch.bytes
         init_state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set, stack_gsize=stack_len)
+        init_state.ip = init_state.solver.BVS("init_ip", self.project.arch.bits)
         state = init_state
         for gadget in gadgets:
             state.solver.add(state.ip == gadget.addr)
