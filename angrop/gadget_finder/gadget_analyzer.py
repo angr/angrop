@@ -363,13 +363,28 @@ class GadgetAnalyzer:
         gadget.bbl_addrs = list(final_state.history.bbl_addrs)
         gadget.isn_count = sum(self.project.factory.block(addr).instructions for addr in gadget.bbl_addrs)
 
-        for constraint in final_state.history.jump_guards:
-            for var in constraint.variables:
-                if var.startswith("sreg_"):
-                    gadget.constraint_regs.add(var.split('_', 1)[1].split('-', 1)[0])
-                elif not var.startswith("symbolic_stack_"):
-                    l.debug("... path constraint not controlled by registers and stack")
-                    return None
+        constraint_vars = {
+            var
+            for constraint in final_state.history.jump_guards
+            for var in constraint.variables
+        }
+
+        for action in final_state.history.actions:
+            if action.type == 'mem':
+                constraint_vars |= action.addr.variables
+
+        for var in constraint_vars:
+            if var.startswith("sreg_"):
+                gadget.constraint_regs.add(var.split('_', 1)[1].split('-', 1)[0])
+            elif not var.startswith("symbolic_stack_"):
+                l.debug("... constraint not controlled by registers and stack")
+                return None
+
+        gadget.popped_regs = {
+            reg
+            for reg in gadget.popped_regs
+            if final_state.registers.load(reg).variables.isdisjoint(constraint_vars)
+        }
 
         return gadget
 

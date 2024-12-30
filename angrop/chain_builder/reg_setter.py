@@ -625,12 +625,6 @@ class RegSetter(Builder):
             return None
         remaining_regs |= gadget.constraint_regs
 
-        for mem_access in itertools.chain(gadget.mem_changes, gadget.mem_reads, gadget.mem_writes):
-            for reg in mem_access.addr_dependencies:
-                if reg in remaining_regs:
-                    return None
-                remaining_regs.add(reg)
-
         return remaining_regs
 
     def _build_concrete_chain(
