@@ -1,7 +1,7 @@
 import heapq
 import itertools
 import logging
-from collections import defaultdict
+from collections import defaultdict, Counter
 from typing import Iterable, Iterator
 
 import claripy
@@ -23,11 +23,20 @@ class RegSetter(Builder):
         super().__init__(chain_builder)
         self._reg_setting_gadgets = None
         self.hard_chain_cache = None
+        # Estimate of how difficult it is to set each register.
+        self._reg_weights = None
         self.update()
 
     def update(self):
         self._reg_setting_gadgets = self._filter_gadgets(self.chain_builder.gadgets)
         self.hard_chain_cache = {}
+        reg_pops = Counter()
+        for gadget in self._reg_setting_gadgets:
+            reg_pops.update(gadget.popped_regs)
+        self._reg_weights = {
+            reg: 5 if reg_pops[reg] == 0 else 2 if reg_pops[reg] == 1 else 1
+            for reg in self.arch.reg_set
+        }
 
     def verify(self, chain, preserve_regs, registers):
         """
@@ -562,7 +571,7 @@ class RegSetter(Builder):
             potential_next_gadgets.append((gadget, remaining_regs))
 
         # Sort gadgets by number of remaining registers and instruction count
-        potential_next_gadgets.sort(key=lambda g: (len(g[1]), g[0].isn_count))
+        potential_next_gadgets.sort(key=lambda g: (sum(self._reg_weights[reg] for reg in g[1]), g[0].isn_count))
 
         for gadget, remaining_regs in potential_next_gadgets:
             current_chain.append(gadget)
