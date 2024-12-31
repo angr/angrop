@@ -100,6 +100,9 @@ class RopGadget:
         # register effect information
         self.changed_regs = set()
         self.popped_regs = set()
+        # Stores the stack variables that each register depends on.
+        # Used to check for cases where two registers are popped from the same location.
+        self.popped_reg_vars = {}
         self.concrete_regs = {}
         self.reg_dependencies = {}  # like rax might depend on rbx, rcx
         self.reg_controllers = {}  # like rax might be able to be controlled by rbx (for any value of rcx)

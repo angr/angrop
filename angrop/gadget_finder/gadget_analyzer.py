@@ -387,6 +387,11 @@ class GadgetAnalyzer:
             if final_state.registers.load(reg).variables.isdisjoint(constraint_vars)
         }
 
+        gadget.popped_reg_vars = {
+            reg: final_state.registers.load(reg).variables
+            for reg in gadget.popped_regs
+        }
+
         return gadget
 
     def _analyze_concrete_regs(self, init_state, final_state, gadget):
