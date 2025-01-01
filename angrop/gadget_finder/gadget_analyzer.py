@@ -337,6 +337,8 @@ class GadgetAnalyzer:
         if type(gadget) is not PivotGadget and transit_type in ['pop_pc', 'ret']:
             idx = list(final_state.ip.variables)[0].split('_')[2]
             gadget.pc_offset = int(idx) * self.project.arch.bytes
+            if gadget.pc_offset >= gadget.stack_change:
+                return None
 
         l.info("... checking for controlled regs")
         self._check_reg_changes(final_state, init_state, gadget)
