@@ -276,3 +276,9 @@ class RopChain:
 
     def __str__(self):
         return self.payload_code()
+
+    def print_gadget_asm(self):
+        for gadget in self._gadgets:
+            for addr in gadget.bbl_addrs:
+                self._p.factory.block(addr).capstone.pp()
+            print()
