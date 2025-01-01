@@ -11,80 +11,6 @@ tests_dir = os.path.join(bin_path, 'tests')
 data_dir = os.path.join(bin_path, 'tests_data', 'angrop_gadgets_cache')
 
 
-def print_rop_gadgets(gadgets, project=None):
-    """
-    Print detailed information about ROP gadgets in a one-line format per gadget.
-
-    Args:
-        gadgets: List of ROP gadgets to display
-        project: Optional angr project object for resolving addresses to symbols
-
-    Format:
-    [addr] (len) type="transit_type" stack_Δ=N | changed={regs} popped={regs} concrete={reg:val} |
-    deps={reg:[deps]} controllers={reg:[controllers]} | moves=[reg->reg] | mem_access=[type:addr->data]
-    """
-    for g in gadgets:
-        # Basic gadget info
-        parts = []
-        addr_str = f"[{g.addr:#x}]"
-        if project and project.loader.find_symbol(g.addr):
-            addr_str += f"({project.loader.find_symbol(g.addr).name})"
-        parts.append(f"{addr_str} ({g.block_length}) type={g.transit_type}")
-
-        # Stack info
-        parts.append(f"stack_Δ={g.stack_change:#x}")
-
-        # Register operations
-        reg_parts = []
-        if g.changed_regs:
-            reg_parts.append(f"changed={{{','.join(sorted(g.changed_regs))}}}")
-        if g.popped_regs:
-            reg_parts.append(f"popped={{{','.join(sorted(g.popped_regs))}}}")
-        if g.concrete_regs:
-            concrete = [f"{r}:{v:#x}" for r, v in sorted(g.concrete_regs.items())]
-            reg_parts.append(f"concrete={{{','.join(concrete)}}}")
-        if reg_parts:
-            parts.append(" | " + " ".join(reg_parts))
-
-        # Register dependencies and controllers
-        dep_parts = []
-        if g.reg_dependencies:
-            deps = [f"{r}:[{','.join(sorted(d))}]" for r, d in sorted(g.reg_dependencies.items())]
-            dep_parts.append(f"deps={{{','.join(deps)}}}")
-        if g.reg_controllers:
-            controllers = [f"{r}:[{','.join(sorted(c))}]" for r, c in sorted(g.reg_controllers.items())]
-            dep_parts.append(f"controllers={{{','.join(controllers)}}}")
-        if dep_parts:
-            parts.append(" | " + " ".join(dep_parts))
-
-        # Register moves
-        if g.reg_moves:
-            moves = [f"{m.from_reg}->{m.to_reg}({m.bits}b)" for m in g.reg_moves]
-            parts.append(f" | moves=[{','.join(moves)}]")
-
-        # Memory operations
-        mem_parts = []
-        for access in g.mem_reads:
-            addr = f"{access.addr_constant:#x}" if access.addr_constant is not None else "{" + ",".join(
-                access.addr_dependencies) + "}"
-            data = "{" + ",".join(access.data_dependencies) + "}"
-            mem_parts.append(f"read:{addr}->{data}")
-        for access in g.mem_writes:
-            addr = f"{access.addr_constant:#x}" if access.addr_constant is not None else "{" + ",".join(
-                access.addr_dependencies) + "}"
-            data = f"{access.data_constant:#x}" if access.data_constant is not None else "{" + ",".join(
-                access.data_dependencies) + "}"
-            mem_parts.append(f"write:{addr}->{data}")
-        for access in g.mem_changes:
-            addr = f"{access.addr_constant:#x}" if access.addr_constant is not None else "{" + ",".join(
-                access.addr_dependencies) + "}"
-            data = "{" + ",".join(access.data_dependencies) + "}"
-            mem_parts.append(f"change({access.op}):{addr}->{data}")
-        if mem_parts:
-            parts.append(f" | mem=[{','.join(mem_parts)}]")
-
-        print(" ".join(parts))
-
 """
 MIPSTAKE
 .text:00400E40 loc_400E40:                              # CODE XREF: __libc_csu_init+84↓j
@@ -113,20 +39,37 @@ MIPSTAKE
 """
 
 
-def test_mipstake():
-    print("Testing mipstake")
-    cache_path = os.path.join(data_dir, "mipstake")
-    proj = angr.Project(os.path.join(tests_dir, "mips", "mipstake"), auto_load_libs=False, )
-    rop = proj.analyses.ROP(max_block_size=40, fast_mode=False, only_check_near_rets=False, )
+class CheckSleep(angr.SimProcedure):
+    def run(self):
+        # For MIPS architecture, arguments are in registers a0, a1, etc.
+        arg0 = self.state.solver.eval(self.state.regs.get(self.cc.ARG_REGS[0]))
+        arg1 = self.state.solver.eval(self.state.regs.get(self.cc.ARG_REGS[1]))
 
-    if os.path.exists(cache_path) and False:
+        # Check if the arguments are 1 and 2
+        assert arg0 == 1 and arg1 == 2, f"Arguments are {arg0} and {arg1}, expected 1 and 2"
+        return 0  # Return value of 'sleep' if needed
+
+
+def test_mipstake():
+    cache_path = os.path.join(data_dir, "mipstake")
+    proj = angr.Project(os.path.join(tests_dir, "mips", "mipstake"), auto_load_libs=True, arch="mips")
+    proj.hook_symbol('sleep', CheckSleep())
+    rop = proj.analyses.ROP(max_block_size=40)
+
+    if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
         rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
-    chain = rop.func_call("puts", [1, 2], needs_return=False)
-    print(chain)
 
+    chain = rop.func_call("sleep", [1, 2], needs_return=False)
+    from test_rop import execute_chain
+    state = chain.exec()
+    # Get call-related actions
+    func_calls = [act.sim_procedure.display_name
+                  for act in state.history.actions
+                  if act.type == 'exit' and act.target.ast.concrete and hasattr(act.sim_procedure, "display_name")]
+    assert "CheckSleep" in func_calls
 
 
 '''
@@ -155,40 +98,11 @@ UNEXPLOITABLE
 .text:0000000000400608 ; } // starts at 400580
 '''
 
-
-def test_random():
-    cache_path = os.path.join(data_dir, "isalnum")
-    proj = angr.Project(os.path.join(tests_dir, "i386", "isalnum"), auto_load_libs=False, )
-    rop = proj.analyses.ROP(max_block_size=40, fast_mode=False, only_check_near_rets=False, )
-    got_entries = []
-    for name, addr in proj.loader.main_object.plt.items():
-        try:
-            got_addr = proj.loader.find_symbol(name).rebased_addr
-            got_entries.append((name, got_addr))
-        except:
-            continue
-
-    if not got_entries:
-        return "no got entries"
-
-    # Get first GOT entry
-    func_name, func_addr = got_entries[0]
-
-    if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
-    else:
-        # print("Finding gadgets...")
-        rop.find_gadgets_single_threaded()
-        rop.save_gadgets(cache_path)
-
-    chain = rop.func_call(func_name, [1, 2], needs_return=False)
-    print(chain)
-
-
 def test_unexploitable():
     print("testing unexploitable")
     cache_path = os.path.join(data_dir, "unexploitable")
-    proj = angr.Project(os.path.join(tests_dir, "x86_64", "unexploitable"), auto_load_libs=False, )
+    proj = angr.Project(os.path.join(tests_dir, "x86_64", "unexploitable"), auto_load_libs=False, arch="x86_64")
+    proj.hook_symbol('sleep', CheckSleep())
     rop = proj.analyses.ROP(max_block_size=40, fast_mode=False, only_check_near_rets=False, )
 
     if os.path.exists(cache_path):
@@ -199,10 +113,12 @@ def test_unexploitable():
         rop.save_gadgets(cache_path)
 
     chain = rop.func_call("sleep", [1, 2], needs_return=False)
-    print(chain)
-
-    # print_rop_gadgets(rop.rop_gadgets)
-
+    state = chain.exec()
+    # Get call-related actions
+    func_calls = [act.sim_procedure.display_name
+                  for act in state.history.actions
+                  if act.type == 'exit' and act.target.ast.concrete and hasattr(act.sim_procedure, "display_name")]
+    assert "CheckSleep" in func_calls
 
 def run_all():
     functions = globals()
@@ -212,7 +128,6 @@ def run_all():
             all_functions[f]()
 
 
-
 if __name__ == "__main__":
     logging.getLogger("angrop.rop").setLevel(logging.DEBUG)
 
@@ -220,6 +135,5 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         globals()['test_' + sys.argv[1]]()
     else:
-        # test_mipstake()
-        # test_unexploitable()
-        test_random()
+        test_mipstake()
+        test_unexploitable()
