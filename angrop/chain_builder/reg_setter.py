@@ -45,7 +45,13 @@ class RegSetter(Builder):
         """
         state = chain.exec()
         for reg, val in registers.items():
-            chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in chain._gadgets])
+            chain_str = "\n-----\n".join(
+                "\n".join(
+                    str(self.project.factory.block(addr).capstone)
+                    for addr in g.bbl_addrs
+                )
+                for g in chain._gadgets
+            )
             bv = getattr(state.regs, reg)
             for act in state.history.actions.hardcopy:
                 if act.type not in ("mem", "reg"):
@@ -71,19 +77,7 @@ class RegSetter(Builder):
         pc_var = set(state.regs.pc.variables).pop()
         return pc_var.startswith("symbolic_stack") or pc_var.startswith("next_pc")
 
-    def _maybe_fix_jump_chain(self, chain, preserve_regs):
-        all_changed_regs = set()
-        for g in chain._gadgets[:-1]:
-            all_changed_regs.update(g.changed_regs)
-        jump_reg = chain._gadgets[-1].jump_reg
-        if jump_reg in all_changed_regs:
-            return chain
-        shifter = self.chain_builder._shifter.shift(self.project.arch.bytes)
-        next_ip = rop_utils.cast_rop_value(shifter._gadgets[0].addr, self.project)
-        new = self.run(preserve_regs=preserve_regs, **{jump_reg: next_ip})
-        return new + chain
-
-    def run(self, modifiable_memory_range=None, use_partial_controllers=False,  preserve_regs=None, **registers):
+    def run(self, modifiable_memory_range=None, use_partial_controllers=False,  preserve_regs=None, max_length=10, **registers):
         if len(registers) == 0:
             return RopChain(self.project, None, badbytes=self.badbytes)
 
@@ -97,31 +91,28 @@ class RegSetter(Builder):
         for x in registers:
             registers[x] = rop_utils.cast_rop_value(registers[x], self.project)
 
-        gadgets = self._find_relevant_gadgets(**registers)
-
-        chains = []
-
-        # find the chain provided by the graph search algorithm
-        best_chain, _, _ = self._find_reg_setting_gadgets(modifiable_memory_range,
-                                                          use_partial_controllers,
-                                                          preserve_regs=preserve_regs,
-                                                          **registers)
-        if best_chain:
-            chains += [best_chain]
-
-        # find chains using BFS based on pops
-        chains += self._find_all_candidate_chains(gadgets, preserve_regs.copy(), **registers)
-
-        for gadgets in chains:
-            chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in gadgets])
+        for gadgets in self._backwards_recursive_search(
+            self._reg_setting_gadgets,
+            set(registers),
+            current_chain=[],
+            preserve_regs=preserve_regs,
+            modifiable_memory_range=modifiable_memory_range,
+            visited={},
+            max_length=max_length,
+        ):
+            chain_str = "\n-----\n".join(
+                "\n".join(
+                    str(self.project.factory.block(addr).capstone)
+                    for addr in g.bbl_addrs
+                )
+                for g in gadgets
+            )
             l.debug("building reg_setting chain with chain:\n%s", chain_str)
             stack_change = sum(x.stack_change for x in gadgets)
             try:
                 chain = self._build_reg_setting_chain(gadgets, modifiable_memory_range,
                                                      registers, stack_change)
                 chain._concretize_chain_values(timeout=len(chain._values)*3)
-                if chain._gadgets[-1].transit_type == 'jmp_reg':
-                    chain = self._maybe_fix_jump_chain(chain, preserve_regs)
                 if self.verify(chain, preserve_regs, registers):
                     #self._chain_cache[reg_tuple].append(gadgets)
                     return chain
@@ -525,19 +516,13 @@ class RegSetter(Builder):
         self,
         gadgets: Iterable[RopGadget],
         registers: set[str],
-        current_chain: list[RopGadget] | None = None,
-        preserve_regs: set[str] = set(),
-        modifiable_memory_range: tuple[int, int] | None = None,
-        visited: dict[tuple[str, ...], int] | None = None,
-        max_length: int = 10,
+        current_chain: list[RopGadget],
+        preserve_regs: set[str],
+        modifiable_memory_range: tuple[int, int] | None,
+        visited: dict[tuple[str, ...], int],
+        max_length: int,
     ) -> Iterator[list[RopGadget]]:
         """Recursively build ROP chains starting from the end using the RiscyROP algorithm."""
-        if current_chain is None:
-            current_chain = []
-
-        if visited is None:
-            visited = {}
-
         # Base case.
         if not registers:
             yield current_chain[::-1]
