@@ -37,7 +37,7 @@ def _set_global_gadget_analyzer(rop_gadget_analyzer):
     _disable_loggers()
 
 def run_worker(addr):
-    return _global_gadget_analyzer.analyze_gadget(addr)
+    return _global_gadget_analyzer.analyze_gadget(addr, allow_conditional_branches=True)
 
 class GadgetFinder:
     """
@@ -174,7 +174,7 @@ class GadgetFinder:
         assert self.gadget_analyzer is not None
 
         for addr in self._addresses_to_check_with_caching(show_progress):
-            gadgets.extend(self.gadget_analyzer.analyze_gadget(addr))
+            gadgets.extend(self.gadget_analyzer.analyze_gadget(addr, allow_conditional_branches=True))
 
         return sorted(gadgets, key=lambda x: x.addr), self.get_duplicates()
 

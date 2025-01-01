@@ -39,18 +39,32 @@ class GadgetAnalyzer:
                                                     fast_mode=self._fast_mode)
         self._concrete_sp = self._state.solver.eval(self._state.regs.sp)
 
-    def analyze_gadget(self, addr):
+    def analyze_gadget(self, addr, allow_conditional_branches=False):
         """
+        Find gadgets at the given address.
+
+        Support for gadgets with conditional branches can be enabled using the
+        allow_conditional_branches option, which is False by default for
+        compatibility with existing code that can't handle these gadgets.
+        Returns a list of gadgets when allow_conditional_branches is enabled,
+        and a single gadget or None when it is disabled.
+
         :param addr: address to analyze for gadgets
-        :return: a list of RopGadget instances
+        :param allow_conditional_branches: whether to allow gadgets with conditional branches
+        :return: a list of RopGadget instances or a single RopGadget instance
         """
         try:
-            return self._analyze_gadget(addr)
+            gadgets = self._analyze_gadget(addr, allow_conditional_branches)
         except RopTimeoutException:
-            return []
+            return [] if allow_conditional_branches else None
+        if allow_conditional_branches:
+            return gadgets
+        else:
+            assert len(gadgets) <= 1
+            return gadgets[0] if gadgets else None
 
     @rop_utils.timeout(3)
-    def _analyze_gadget(self, addr):
+    def _analyze_gadget(self, addr, allow_conditional_branches):
         l.info("Analyzing 0x%x", addr)
 
         # Step 1: first check if the block makes sense
@@ -79,6 +93,11 @@ class GadgetAnalyzer:
             return []
         except Exception as e:# pylint:disable=broad-except
             l.exception(e)
+            return []
+
+        if not allow_conditional_branches and (
+            simgr.active or simgr.deadended or len(simgr.unconstrained) != 1
+        ):
             return []
 
         gadgets = []
