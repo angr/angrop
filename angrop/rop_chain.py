@@ -1,5 +1,6 @@
 from . import rop_utils
 from .errors import RopException
+from .rop_gadget import RopGadget
 from .rop_value import RopValue
 
 CHAIN_TIMEOUT_DEFAULT = 3
@@ -63,8 +64,20 @@ class RopChain:
         self._values.append(value)
         self.payload_len += self._p.arch.bytes
 
-    def add_gadget(self, gadget):
-        self._gadgets.append(gadget)
+    def add_gadget(self, gadget, append_addr_only=False):
+        # angrop was originally written with the assumption that gadget addresses
+        # appear in the chain in the same order in which the gadgets are executed.
+        # This is not always true when there are gadgets that end with a jump to
+        # an address from a register instead of the stack.
+        # For example, if the ROP chain has three gadgets A, B, and C where gadget
+        # B ends with a jump to some register, gadget A would have to load the
+        # address of gadget C into the register before jumping to gadget B.
+        # Therefore, the address of gadget C might need to be placed before the
+        # address of gadget B.
+        # The append_addr_only argument and the set_gadgets method below were added
+        # to support chains like this without breaking the existing API.
+        if not append_addr_only:
+            self._gadgets.append(gadget)
 
         value = gadget.addr
         if self._pie:
@@ -73,11 +86,13 @@ class RopChain:
         if self._pie:
             value._rebase = True
 
-        idx = self.next_pc_idx()
-        if idx is None:
+        if append_addr_only or (idx := self.next_pc_idx()) is None:
             self.add_value(value)
         else:
             self._values[idx] = value
+
+    def set_gadgets(self, gadgets: list[RopGadget]):
+        self._gadgets = gadgets
 
     def add_constraint(self, cons):
         """
@@ -245,7 +260,7 @@ class RopChain:
         for value, _ in reversed(concrete_vals[1:]):
             state.stack_push(value)
         if max_steps is None:
-            max_steps = len(self._gadgets)*2
+            max_steps = sum(len(gadget.bbl_addrs) for gadget in self._gadgets)
         return rop_utils.step_to_unconstrained_successor(self._p, state, max_steps=max_steps,
                                                          allow_simprocedures=True)
 

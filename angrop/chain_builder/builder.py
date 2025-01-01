@@ -6,6 +6,7 @@ import claripy
 
 from .. import rop_utils
 from ..errors import RopException
+from ..rop_gadget import RopGadget
 from ..rop_value import RopValue
 from ..rop_chain import RopChain
 
@@ -102,104 +103,131 @@ class Builder:
         return None
 
     @rop_utils.timeout(2)
-    def _build_reg_setting_chain(self, gadgets, modifiable_memory_range, register_dict, stack_change):
+    def _build_reg_setting_chain(
+        self, gadgets, modifiable_memory_range, register_dict, stack_change
+    ):
         """
         This function figures out the actual values needed in the chain
         for a particular set of gadgets and register values
         This is done by stepping a symbolic state through each gadget
         then constraining the final registers to the values that were requested
-        FIXME: trim this disgusting function
         """
 
         # emulate a 'pop pc' of the first gadget
-        test_symbolic_state = self.make_sim_state(gadgets[0].addr)
+        test_symbolic_state = rop_utils.make_symbolic_state(
+            self.project,
+            self.arch.reg_set,
+            stack_gsize=stack_change // self.project.arch.bytes,
+        )
+        rop_utils.make_reg_symbolic(test_symbolic_state, self.arch.base_pointer)
+        test_symbolic_state.ip = test_symbolic_state.stack_pop()
+        test_symbolic_state.solver._solver.timeout = 5000
 
-        addrs = [g.addr for g in gadgets]
-        addrs.append(test_symbolic_state.solver.BVS("next_addr", self.project.arch.bits))
+        # Maps each stack variable to the RopValue or RopGadget that should be placed there.
+        stack_var_to_value = {}
+
+        def map_stack_var(ast, value):
+            if len(ast.variables) != 1:
+                raise RopException("Target value not controlled by a single variable")
+            var = next(iter(ast.variables))
+            if not var.startswith("symbolic_stack_"):
+                raise RopException("Target value not controlled by the stack")
+            stack_var_to_value[var] = value
 
         arch_bytes = self.project.arch.bytes
 
         state = test_symbolic_state
 
-        # step through each gadget
-        # for each gadget, constrain memory addresses and add constraints for the successor
-        for addr in addrs[1:]:
-            succ = rop_utils.step_to_unconstrained_successor(self.project, state)
-            state.add_constraints(succ.regs.ip == addr)
-            # constrain reads/writes
-            for a in succ.log.actions:
-                if a.type == "mem" and a.addr.ast.symbolic:
-                    if modifiable_memory_range is None:
-                        raise RopException("Symbolic memory address when there shouldnt have been")
-                    test_symbolic_state.add_constraints(a.addr.ast >= modifiable_memory_range[0])
-                    test_symbolic_state.add_constraints(a.addr.ast < modifiable_memory_range[1])
-            test_symbolic_state.add_constraints(succ.regs.ip == addr)
-            # get to the unconstrained successor
-            state = rop_utils.step_to_unconstrained_successor(self.project, state)
+        # Step through each gadget and constrain the ip.
+        for gadget in gadgets:
+            map_stack_var(state.ip, gadget)
+            state.solver.add(state.ip == gadget.addr)
+            for addr in gadget.bbl_addrs[1:]:
+                succ = state.step()
+                succ_states = [
+                    state
+                    for state in succ.successors
+                    if state.solver.is_true(state.ip == addr)
+                ]
+                if len(succ_states) != 1:
+                    raise RopException(
+                        "Zero or multiple states match address of next block"
+                    )
+                state = succ_states[0]
+            succ = state.step()
+            if succ.flat_successors or len(succ.unconstrained_successors) != 1:
+                raise RopException(
+                    "Executing gadget doesn't result in a single unconstrained state"
+                )
+            state = succ.unconstrained_successors[0]
 
-        # re-adjuest the stack pointer
-        sp = test_symbolic_state.regs.sp
-        sp -= arch_bytes
+        # Record the variable that controls the final ip.
+        next_pc_val = rop_utils.cast_rop_value(
+            test_symbolic_state.solver.BVS("next_pc", self.project.arch.bits),
+            self.project,
+        )
+        map_stack_var(state.ip, next_pc_val)
+
+        # Constrain final register values.
+        for reg, val in register_dict.items():
+            var = state.registers.load(reg)
+            map_stack_var(var, val)
+            state.solver.add(var == val)
+
+        # Constrain memory access addresses.
+        for action in state.history.actions:
+            if action.type == action.MEM and action.addr.symbolic:
+                if modifiable_memory_range is None:
+                    raise RopException(
+                        "Symbolic memory address without modifiable memory range"
+                    )
+                state.solver.add(action.addr.ast >= modifiable_memory_range[0])
+                state.solver.add(action.addr.ast < modifiable_memory_range[1])
+
+        test_symbolic_state.solver.add(*state.solver.constraints)
+
         bytes_per_pop = arch_bytes
-
-        # constrain the final registers
-        rebase_state = test_symbolic_state.copy()
-        var_dict = {}
-        for r, v in register_dict.items():
-            var = claripy.BVS(r, self.project.arch.bits)
-            var_name = var._encoded_name.decode()
-            var_dict[var_name] = v
-            test_symbolic_state.add_constraints(state.registers.load(r) == var)
-            test_symbolic_state.add_constraints(var == v.data)
 
         # constrain the "filler" values
         if self.roparg_filler is not None:
-            for i in range(stack_change // bytes_per_pop):
-                sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
-                                                           endness=self.project.arch.memory_endness)
+            for offset in range(0, stack_change, bytes_per_pop):
+                sym_word = test_symbolic_state.stack_read(offset, bytes_per_pop)
                 # check if we can constrain val to be the roparg_filler
-                if test_symbolic_state.solver.satisfiable((sym_word == self.roparg_filler,)) and \
-                        rebase_state.solver.satisfiable((sym_word == self.roparg_filler,)):
+                if test_symbolic_state.solver.satisfiable(
+                    (sym_word == self.roparg_filler,)
+                ):
                     # constrain the val to be the roparg_filler
                     test_symbolic_state.add_constraints(sym_word == self.roparg_filler)
-                    rebase_state.add_constraints(sym_word == self.roparg_filler)
 
         # create the ropchain
-        chain = RopChain(self.project, self, state=test_symbolic_state.copy(),
-                       badbytes=self.badbytes)
+        chain = RopChain(
+            self.project, self, state=test_symbolic_state.copy(), badbytes=self.badbytes
+        )
 
         # iterate through the stack values that need to be in the chain
-        # HACK: handle jump register separately because of angrop's broken
-        # assumptions on x86's ret behavior
-        if gadgets[-1].transit_type == 'jmp_reg':
-            stack_change += arch_bytes
-        for i in range(stack_change // bytes_per_pop):
-            sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
-                                                       endness=self.project.arch.memory_endness)
-            val = test_symbolic_state.solver.eval(sym_word)
-            if len(gadgets) > 0 and val == gadgets[0].addr:
-                chain.add_gadget(gadgets[0])
-                gadgets = gadgets[1:]
-            else:
-                # propagate the initial RopValue provided by users to preserve info like rebase
-                var = sym_word
-                for c in test_symbolic_state.solver.constraints:
-                    if len(c.variables) != 2: # it is always xx == yy
-                        continue
-                    if not sym_word.variables.intersection(c.variables):
-                        continue
-                    var_name = set(c.variables - sym_word.variables).pop()
-                    if var_name.startswith('next_addr_'):
-                        var = rop_utils.cast_rop_value(test_symbolic_state.solver.BVS('next_pc', self.project.arch.bits), self.project)
+        for offset in range(-bytes_per_pop, stack_change, bytes_per_pop):
+            sym_word = test_symbolic_state.stack_read(offset, bytes_per_pop)
+            assert len(sym_word.variables) == 1
+            sym_var = next(iter(sym_word.variables))
+            if sym_var in stack_var_to_value:
+                val = stack_var_to_value[sym_var]
+                if isinstance(val, RopGadget):
+                    chain.add_gadget(val, append_addr_only=True)
+                else:
+                    # HACK: Because angrop appears to have originally been written
+                    # with assumptions around x86 ret gadgets, the target of the final jump
+                    # is not included in the chain if it is the last value.
+                    if (
+                        offset == stack_change - bytes_per_pop
+                        and sym_var is next_pc_val
+                    ):
                         break
-                    if var_name not in var_dict:
-                        continue
-                    var = var_dict[var_name]
-                    break
-                chain.add_value(var)
+                    chain.add_value(val)
+            else:
+                chain.add_value(sym_word)
 
-        if len(gadgets) > 0:
-            raise RopException("Didnt find all gadget addresses, something must've broke")
+        chain.set_gadgets(gadgets)
+
         return chain
 
     def _get_fill_val(self):
