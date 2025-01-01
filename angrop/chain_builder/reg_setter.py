@@ -28,7 +28,7 @@ class RegSetter(Builder):
         self.update()
 
     def update(self):
-        self._reg_setting_gadgets = self._filter_gadgets(self.chain_builder.gadgets)
+        self._reg_setting_gadgets = self.chain_builder.gadgets
         self.hard_chain_cache = {}
         reg_pops = Counter()
         for gadget in self._reg_setting_gadgets:

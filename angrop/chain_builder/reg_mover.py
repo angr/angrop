@@ -20,7 +20,7 @@ class RegMover(Builder):
         self.update()
 
     def update(self):
-        self._reg_moving_gadgets = self._filter_gadgets(self.chain_builder.gadgets)
+        self._reg_moving_gadgets = self.chain_builder.gadgets
 
     def verify(self, chain, preserve_regs, registers):
         """
