@@ -19,7 +19,7 @@ def test_x86_64_func_call():
         rop.save_gadgets(cache_path)
 
     chain = rop.func_call('puts', [0x402704]) + rop.func_call('puts', [0x402704])
-    state = chain.exec()
+    state = chain.exec(max_steps=8)
     assert state.posix.dumps(1) == b'Enter username: \nEnter username: \n'
 
 def test_i386_func_call():
@@ -105,7 +105,7 @@ def test_preserve_regs():
     chain1 = rop.set_regs(rdi=0x402715)
     chain2 = rop.func_call('puts', [0x402704], preserve_regs=['rdi'])
     chain = chain1+chain2
-    state = chain.exec()
+    state = chain.exec(max_steps=5)
     assert state.posix.dumps(1) == b'Failed to parse username.\n'
 
 def test_i386_mem_write():
