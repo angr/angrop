@@ -91,12 +91,9 @@ class GadgetAnalyzer:
         except (claripy.ClaripyFrontendError, angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e:
             l.warning("... claripy error: %s", e)
             return []
-        except angr.errors.SimSolverModeError:
+        except (angr.errors.AngrError, angr.errors.AngrRuntimeError, angr.errors.SimError):
             return []
         except RopTimeoutException:
-            return []
-        except Exception as e:# pylint:disable=broad-except
-            l.exception(e)
             return []
 
         final_states = list(simgr.unconstrained)
@@ -147,10 +144,7 @@ class GadgetAnalyzer:
             except (claripy.ClaripyFrontendError, angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e:
                 l.warning("... claripy error: %s", e)
                 continue
-            except angr.errors.SimSolverModeError:
-                continue
-            except Exception as e:# pylint:disable=broad-except
-                l.exception(e)
+            except (angr.errors.AngrError, angr.errors.AngrRuntimeError, angr.errors.SimError):
                 continue
 
         return gadgets
