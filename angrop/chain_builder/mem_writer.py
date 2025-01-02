@@ -31,6 +31,8 @@ class MemWriter(Builder):
     def _get_all_mem_write_gadgets(gadgets):
         possible_gadgets = set()
         for g in gadgets:
+            if g.has_conditional_branch:
+                continue
             if len(g.mem_reads) + len(g.mem_changes) > 0 or len(g.mem_writes) != 1:
                 continue
             if g.stack_change <= 0:
