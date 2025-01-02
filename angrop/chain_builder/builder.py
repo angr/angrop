@@ -219,7 +219,7 @@ class Builder:
                     # is not included in the chain if it is the last value.
                     if (
                         offset == stack_change - bytes_per_pop
-                        and sym_var is next_pc_val
+                        and val is next_pc_val
                     ):
                         break
                     chain.add_value(val)
