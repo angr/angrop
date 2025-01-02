@@ -34,7 +34,7 @@ class Pivot(Builder):
         self.update()
 
     def update(self):
-        self._pivot_gadgets = self._filter_gadgets(self.chain_builder.pivot_gadgets)
+        self._pivot_gadgets = self.chain_builder.pivot_gadgets
 
     def pivot(self, thing):
         if thing.is_register:

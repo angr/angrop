@@ -18,7 +18,7 @@ class Shifter(Builder):
         self.update()
 
     def update(self):
-        self.shift_gadgets = self._filter_gadgets(self.chain_builder.gadgets)
+        self.shift_gadgets = self.chain_builder.gadgets
 
     def verify_shift(self, chain, length, preserve_regs):
         arch_bytes = self.project.arch.bytes
