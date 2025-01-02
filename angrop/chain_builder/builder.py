@@ -117,7 +117,7 @@ class Builder:
         test_symbolic_state = rop_utils.make_symbolic_state(
             self.project,
             self.arch.reg_set,
-            stack_gsize=stack_change // self.project.arch.bytes,
+            stack_gsize=stack_change // self.project.arch.bytes + 1,
         )
         rop_utils.make_reg_symbolic(test_symbolic_state, self.arch.base_pointer)
         test_symbolic_state.ip = test_symbolic_state.stack_pop()
