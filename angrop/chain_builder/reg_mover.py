@@ -20,11 +20,7 @@ class RegMover(Builder):
         self.update()
 
     def update(self):
-        self._reg_moving_gadgets = [
-            gadget
-            for gadget in self.chain_builder.gadgets
-            if not gadget.has_conditional_branch
-        ]
+        self._reg_moving_gadgets = self._filter_gadgets(self.chain_builder.gadgets)
 
     def verify(self, chain, preserve_regs, registers):
         """
@@ -126,21 +122,21 @@ class RegMover(Builder):
         """
         filter gadgets having the same effect
         """
-        gadgets = set(gadgets)
+        gadgets = {g for g in gadgets if not g.has_conditional_branch}
         # first: filter out gadgets that don't do register move
         gadgets = set(x for x in gadgets if x.reg_moves)
-        # second: remove gadgets that are strictly worse than some others
-        skip = set({})
-        while True:
-            to_remove = set({})
-            for g in gadgets-skip:
-                to_remove.update({x for x in gadgets-{g} if g.reg_move_better_than(x)})
-                if to_remove:
-                    break
-                skip.add(g)
-            if not to_remove:
-                break
-            gadgets -= to_remove
+        # # second: remove gadgets that are strictly worse than some others
+        # skip = set({})
+        # while True:
+        #     to_remove = set({})
+        #     for g in gadgets-skip:
+        #         to_remove.update({x for x in gadgets-{g} if g.reg_move_better_than(x)})
+        #         if to_remove:
+        #             break
+        #         skip.add(g)
+        #     if not to_remove:
+        #         break
+        #     gadgets -= to_remove
         # third: remove gadgets that only move from itself to itself, it is not helpful
         # for exploitation
         new_gadgets = set(x for x in gadgets if any(y.from_reg != y.to_reg for y in x.reg_moves))
