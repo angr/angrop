@@ -102,7 +102,7 @@ class Builder:
                     return addr
         return None
 
-    @rop_utils.timeout(2)
+    @rop_utils.timeout(8)
     def _build_reg_setting_chain(
         self, gadgets, modifiable_memory_range, register_dict, stack_change
     ):
