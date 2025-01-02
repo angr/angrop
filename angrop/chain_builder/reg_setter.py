@@ -43,31 +43,31 @@ class RegSetter(Builder):
         given a potential chain, verify whether the chain can set the registers correctly by symbolically
         execute the chain
         """
-        state = chain.exec()
-        for reg, val in registers.items():
-            chain_str = "\n-----\n".join(
-                "\n".join(
-                    str(self.project.factory.block(addr).capstone)
-                    for addr in g.bbl_addrs
-                )
-                for g in chain._gadgets
+        chain_str = "\n-----\n".join(
+            "\n".join(
+                str(self.project.factory.block(addr).capstone)
+                for addr in g.bbl_addrs
             )
+            for g in chain._gadgets
+        )
+        state = chain.exec()
+        for act in state.history.actions.hardcopy:
+            if act.type not in ("mem", "reg"):
+                continue
+            if act.type == 'mem':
+                if act.addr.ast.variables:
+                    l.exception("memory access outside stackframe\n%s\n", chain_str)
+                    return False
+            if act.type == 'reg' and act.action == 'write':
+                # get the full name of the register
+                offset = act.offset
+                offset -= act.offset % self.project.arch.bytes
+                reg_name = self.project.arch.translate_register_name(offset)
+                if reg_name in preserve_regs:
+                    l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation - 1.", chain_str)
+                    return False
+        for reg, val in registers.items():
             bv = getattr(state.regs, reg)
-            for act in state.history.actions.hardcopy:
-                if act.type not in ("mem", "reg"):
-                    continue
-                if act.type == 'mem':
-                    if act.addr.ast.variables:
-                        l.exception("memory access outside stackframe\n%s\n", chain_str)
-                        return False
-                if act.type == 'reg' and act.action == 'write':
-                    # get the full name of the register
-                    offset = act.offset
-                    offset -= act.offset % self.project.arch.bytes
-                    reg_name = self.project.arch.translate_register_name(offset)
-                    if reg_name in preserve_regs:
-                        l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation - 1.", chain_str)
-                        return False
             if bv.symbolic or state.solver.eval(bv != val.data):
                 l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation - 2.", chain_str)
                 return False
