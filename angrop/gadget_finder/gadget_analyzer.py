@@ -75,13 +75,17 @@ class GadgetAnalyzer:
             init_state = self._state.copy()
             init_state.ip = addr
             simgr = self.project.factory.simulation_manager(init_state, save_unconstrained=True)
-            simgr.run(
-                n=3,
-                num_inst=30,
-                filter_func=lambda state: simgr.DROP
-                if state.ip.concrete and self.project.is_hooked(state.ip.concrete_value)
-                else None,
-            )
+
+            def filter(state):
+                if state.ip.concrete and self.project.is_hooked(state.addr):
+                    # We don't want to go into SimProcedures.
+                    return simgr.DROP
+                if rop_utils.is_in_kernel(self.project, state):
+                    return "syscall"
+                return None
+
+            simgr.run(n=4, num_inst=30, filter_func=filter)
+
         except (claripy.errors.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError):
             return []
         except (claripy.ClaripyFrontendError, angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e:
@@ -95,14 +99,18 @@ class GadgetAnalyzer:
             l.exception(e)
             return []
 
+        final_states = list(simgr.unconstrained)
+        if "syscall" in simgr.stashes:
+            final_states.extend(self._try_stepping_past_syscall(state) for state in simgr.syscall)
+
         if not allow_conditional_branches and (
-            simgr.active or simgr.deadended or len(simgr.unconstrained) != 1
+            simgr.active or simgr.deadended or len(final_states) != 1
         ):
             return []
 
         gadgets = []
 
-        for final_state in simgr.unconstrained:
+        for final_state in final_states:
             try:
                 if not self._valid_state(init_state, final_state):
                     continue
@@ -281,6 +289,12 @@ class GadgetAnalyzer:
                 return init_state, final_state
             return init_state, state2
         return init_state, final_state
+
+    def _try_stepping_past_syscall(self, state):
+        try:
+            return rop_utils.step_to_unconstrained_successor(self.project, state, max_steps=3)
+        except Exception:  # pylint: disable=broad-exception-caught
+            return state
 
     def _identify_transit_type(self, final_state, ctrl_type):
         # FIXME: not always jump, could be call as well
