@@ -131,6 +131,7 @@ class RopGadget:
         self.constraint_regs = set()
         # Instruction count to estimate complexity
         self.isn_count = None
+        self.has_conditional_branch = None
 
     @property
     def num_mem_access(self):

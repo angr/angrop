@@ -20,7 +20,11 @@ class RegMover(Builder):
         self.update()
 
     def update(self):
-        self._reg_moving_gadgets = self.chain_builder.gadgets
+        self._reg_moving_gadgets = [
+            gadget
+            for gadget in self.chain_builder.gadgets
+            if not gadget.has_conditional_branch
+        ]
 
     def verify(self, chain, preserve_regs, registers):
         """

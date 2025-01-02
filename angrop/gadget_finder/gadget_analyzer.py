@@ -61,7 +61,11 @@ class GadgetAnalyzer:
             return gadgets
         else:
             assert len(gadgets) <= 1
-            return gadgets[0] if gadgets else None
+            return (
+                gadgets[0]
+                if gadgets and not gadgets[0].has_conditional_branch
+                else None
+            )
 
     @rop_utils.timeout(3)
     def _analyze_gadget(self, addr, allow_conditional_branches):
@@ -398,6 +402,8 @@ class GadgetAnalyzer:
             for constraint in final_state.history.jump_guards
             for var in constraint.variables
         }
+
+        gadget.has_conditional_branch = len(constraint_vars) > 0
 
         for action in final_state.history.actions:
             if action.type == 'mem':
