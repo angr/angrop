@@ -289,7 +289,7 @@ class GadgetFinder:
                 yield addr+offset
             for segment in self._get_executable_ranges():
                 l.debug("Analyzing segment with address range: 0x%x, 0x%x", segment.min_addr, segment.max_addr)
-                start = segment.min_addr + (alignment - segment.min_addr % alignment)
+                start = alignment * ((segment.min_addr + alignment - 1) // alignment)
                 for addr in range(start, start+segment.memsize, alignment):
                     yield addr+offset
 
