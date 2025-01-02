@@ -374,6 +374,89 @@ def test_pop_pc_syscall_chain():
     assert state.regs.rdi.concrete_value == 0x41414141
     assert 0 not in state.posix.fd
 
+def test_aarch64_basic_reg_setting():
+    proj = angr.load_shellcode(
+        """
+        mov x0, x29
+        ldp x29, x30, [sp], #0x10
+        ret
+        """,
+        "aarch64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.set_regs(x0=0x41414141)
+    state = chain.exec()
+    assert state.regs.x0.concrete_value == 0x41414141
+
+def test_aarch64_jump_reg():
+    proj = angr.load_shellcode(
+        """
+        ldp x0, x4, [sp, #0x10]
+        ldp x29, x30, [sp], #0x20
+        ret
+        mov x1, x29
+        br x4
+        """,
+        "aarch64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.set_regs(x0=0x41414141, x1=0x42424242)
+    state = chain.exec()
+    assert state.regs.x0.concrete_value == 0x41414141
+    assert state.regs.x1.concrete_value == 0x42424242
+
+def test_aarch64_cond_branch():
+    proj = angr.load_shellcode(
+        """
+        ldp x0, x1, [sp, #0x10]
+        ldp x29, x30, [sp], #0x20
+        ret
+        ldr x2, [sp, #0x10]
+        add x0, x0, #0x42
+        cmp x0, x1
+        b.ne .ret
+        ldp x29, x30, [sp], #0x20
+        .ret:
+        ret
+        """,
+        "aarch64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.set_regs(x2=0x41414141)
+    state = chain.exec()
+    assert state.regs.x2.concrete_value == 0x41414141
+
+def test_aarch64_mem_access():
+    proj = angr.load_shellcode(
+        """
+        ldp x0, x1, [sp, #0x10]
+        str x1, [x1]
+        ldp x29, x30, [sp], #0x20
+        ret
+        """,
+        "aarch64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.set_regs(x0=0x41414141, modifiable_memory_range=(0x1000, 0x2000))
+    state = chain.exec()
+    assert state.regs.x0.concrete_value == 0x41414141
+    for action in state.history.actions:
+        if action.type == action.MEM and action.action == action.WRITE:
+            assert action.addr.ast.concrete_value >= 0x1000
+            assert action.addr.ast.concrete_value < 0x2000
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
