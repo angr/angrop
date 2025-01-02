@@ -153,6 +153,8 @@ class GadgetFinder:
             processes=processes,
             initializer=_set_global_gadget_analyzer,
             initargs=initargs,
+            # There is some kind of memory leak issue involving z3,
+            # so we periodically restart the worker processes.
             maxtasksperchild=64,
         ) as pool:
             gadgets = list(
