@@ -18,11 +18,7 @@ class Shifter(Builder):
         self.update()
 
     def update(self):
-        self.shift_gadgets = [
-            gadget
-            for gadget in self.chain_builder.gadgets
-            if not gadget.has_conditional_branch
-        ]
+        self.shift_gadgets = self._filter_gadgets(self.chain_builder.gadgets)
 
     def verify_shift(self, chain, length, preserve_regs):
         arch_bytes = self.project.arch.bytes
@@ -124,21 +120,27 @@ class Shifter(Builder):
         filter gadgets having the same effect
         """
         # we don't like gadgets with any memory accesses or jump gadgets
-        gadgets = [x for x in gadgets if x.num_mem_access == 0 and x.transit_type != 'jmp_reg']
+        gadgets = [
+            x
+            for x in gadgets
+            if x.num_mem_access == 0
+            and x.transit_type != "jmp_reg"
+            and not x.has_conditional_branch
+        ]
 
         # now do the standard filtering
-        gadgets = set(gadgets)
-        skip = set({})
-        while True:
-            to_remove = set({})
-            for g in gadgets-skip:
-                to_remove.update({x for x in gadgets-{g} if self.better_than(g, x)})
-                if to_remove:
-                    break
-                skip.add(g)
-            if not to_remove:
-                break
-            gadgets -= to_remove
+        # gadgets = set(gadgets)
+        # skip = set({})
+        # while True:
+        #     to_remove = set({})
+        #     for g in gadgets-skip:
+        #         to_remove.update({x for x in gadgets-{g} if self.better_than(g, x)})
+        #         if to_remove:
+        #             break
+        #         skip.add(g)
+        #     if not to_remove:
+        #         break
+        #     gadgets -= to_remove
 
         d = defaultdict(list)
         for g in gadgets:
