@@ -260,7 +260,10 @@ class RopChain:
         for value, _ in reversed(concrete_vals[1:]):
             state.stack_push(value)
         if max_steps is None:
-            max_steps = sum(len(gadget.bbl_addrs) for gadget in self._gadgets)
+            max_steps = max(
+                sum(len(gadget.bbl_addrs) for gadget in self._gadgets),
+                2 * len(self._gadgets),
+            )
         return rop_utils.step_to_unconstrained_successor(self._p, state, max_steps=max_steps,
                                                          allow_simprocedures=True)
 
