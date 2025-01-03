@@ -176,6 +176,9 @@ class Builder:
                     f"sreg_{val.reg_name}-"
                 ):
                     raise RopException("Register wasn't moved correctly")
+            elif not var.symbolic and not val.symbolic:
+                if var.concrete_value != val.concreted:
+                    raise RopException("Register set to incorrect value")
             else:
                 map_stack_var(var, val)
                 state.solver.add(var == val)
