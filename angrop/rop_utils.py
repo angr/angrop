@@ -1,5 +1,5 @@
-import time
-import signal
+import ctypes
+import threading
 
 import angr
 import claripy
@@ -342,24 +342,40 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
     except (angr.errors.AngrError, angr.errors.SimError) as e:
         raise RopException("Does not get to a single unconstrained successor") from e
 
+class ThreadWithReturnValue(threading.Thread):
+    def __init__(self, group=None, target=None, name=None,
+                 args=(), kwargs={}):
+        threading.Thread.__init__(self, group, target, name, args, kwargs)
+        self._return = None
+    def run(self):
+        if self._target is not None:
+            try:
+                self._return = self._target(*self._args, **self._kwargs)
+            except RopException:
+                self._return = None
+    def join(self, *args, **kwargs):
+        threading.Thread.join(self, *args, **kwargs)
+        return self._return
+
+
 def timeout(seconds_before_timeout):
     def decorate(f):
-        def handler(signum, frame):# pylint:disable=unused-argument
-            print("[angrop] Timeout")
-            raise RopException("[angrop] Timeout!")
         def new_f(*args, **kwargs):
-            old = signal.signal(signal.SIGALRM, handler)
-            old_time_left = signal.alarm(seconds_before_timeout)
-            if 0 < old_time_left < seconds_before_timeout: # never lengthen existing timer
-                signal.alarm(old_time_left)
-            start_time = time.time()
-            try:
+            if threading.current_thread().name.startswith("angrop_timeout_") or seconds_before_timeout == 0:
+                # We are already executing in an angrop timeout thread, no need to spin up another thread
                 result = f(*args, **kwargs)
-            finally:
-                if old_time_left > 0: # deduct f's run time from the saved timer
-                    old_time_left -= int(time.time() - start_time)
-                signal.signal(signal.SIGALRM, old)
-                signal.alarm(old_time_left)
+            else:
+                thread_name = f"angrop_timeout_{seconds_before_timeout}s_{f.__name__}"
+                thread = ThreadWithReturnValue(target=f, name=thread_name, args=args, kwargs=kwargs)
+                thread.start()
+                result = thread.join(timeout=seconds_before_timeout)
+                exception_count = 0
+                while thread.is_alive():
+                    if exception_count == 0:
+                        print("[angrop] Timeout")
+                    exception_count += 1
+                    ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(thread.ident), ctypes.py_object(RopException))
+                    result = thread.join(timeout=0.1)
             return result
         return new_f
     return decorate
