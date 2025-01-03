@@ -171,8 +171,14 @@ class Builder:
         # Constrain final register values.
         for reg, val in register_dict.items():
             var = state.registers.load(reg)
-            map_stack_var(var, val)
-            state.solver.add(var == val)
+            if val.is_register:
+                if var.op != "BVS" or not next(iter(var.variables)).startswith(
+                    f"sreg_{val.reg_name}-"
+                ):
+                    raise RopException("Register wasn't moved correctly")
+            else:
+                map_stack_var(var, val)
+                state.solver.add(var == val)
 
         # Constrain memory access addresses.
         for action in state.history.actions:
