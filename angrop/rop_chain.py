@@ -292,5 +292,5 @@ class RopChain:
     def print_gadget_asm(self):
         for gadget in self._gadgets:
             for addr in gadget.bbl_addrs:
-                self._p.factory.block(addr).capstone.pp()
+                self._p.factory.block(addr).pp()
             print()
