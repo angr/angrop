@@ -203,16 +203,21 @@ def test_roptest_x86_64():
     r.find_gadgets_single_threaded(show_progress=False)
     c = r.execve(path=b"/bin/sh")
 
-    # verifying this is a giant pain, partially because the binary is so tiny, and there's no code beyond the syscall
-    assert len(c._gadgets) == 8
+    state = p.factory.blank_state()
+    state.memory.store(state.regs.sp, c.payload_str())
+    state.ip = state.stack_pop()
 
-    # verify the chain is valid
-    chain_addrs = [ g.addr for g in c._gadgets ]
-    assert chain_addrs[1] in [0x4000b2, 0x4000bd]
-    assert chain_addrs[5] in [0x4000b2, 0x4000bd]
-    chain_addrs[1] = 0x4000b2
-    chain_addrs[5] = 0x4000b2
-    assert chain_addrs == [ 0x4000b0, 0x4000b2, 0x4000b4, 0x4000b0, 0x4000bb, 0x4000b2, 0x4000bf, 0x4000c1 ]
+    # Step to the syscall.
+    while state.block(num_inst=1).disassembly.insns[0].mnemonic != 'syscall':
+        succ = state.step()
+        assert len(succ.flat_successors) == 1
+        assert not succ.unconstrained_successors
+        state = succ.flat_successors[0]
+
+    assert state.solver.is_true(state.memory.load(state.regs.rdi, 8) == b'/bin/sh\0')
+    assert state.regs.rsi.concrete_value == 0
+    assert state.regs.rdx.concrete_value == 0
+    assert state.regs.rax.concrete_value == 0x3b
 
 def test_roptest_mips():
     proj = angr.Project(os.path.join(public_bin_location, "mipsel/darpa_ping"), auto_load_libs=False)
