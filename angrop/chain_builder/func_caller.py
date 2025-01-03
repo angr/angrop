@@ -50,7 +50,7 @@ class FuncCaller(Builder):
     def _find_function_pointer_in_got(self, func_addr):
         """
         Search if a func addr is in plt. If it's in plt, find func name and
-        translate it to GOT so we can directly call/jmp to the memroy location pointed there.
+        translate it to GOT so that we can directly call/jmp to the memroy location pointed there.
         """
         # Search GOT and PLT across all loaded objects
         func_name = None
@@ -63,7 +63,7 @@ class FuncCaller(Builder):
             if func_got:
                 return func_got.rebased_addr
             else:
-                # this is from plt but not in got? weird
+                # this is from plt but not in got somehow
                 return None
         # not in plt. We can search in other ways
         else:
@@ -96,34 +96,6 @@ class FuncCaller(Builder):
 
         raise Exception("Could not find mem pointing to func in binary memory")
 
-    def _solve_mem_target_formula(self, gadget_addr, mem_target_formula, func_addr):
-        # Create initial state with symbolic registers
-        init_state, final_state = self._reach_unconstrained_or_syscall(gadget_addr)
-
-        # Step through gadget execution
-        final_state = rop_utils.step_to_unconstrained_successor(
-            self.project,
-            init_state,
-            max_steps=2  # Limit steps to handle just this gadget
-        )
-
-        # Add constraint on final memory access
-        final_state.add_constraints(
-            final_state.memory.load(mem_target_formula, self.project.arch.bytes,
-                                    endness=final_state.arch.memory_endness) == func_addr
-        )
-
-        if not final_state.solver.satisfiable():
-            raise ValueError("Cannot find register values that would access target function")
-
-        # Get initial register values that lead to this state
-        solved_regs = {}
-        for var in mem_target_formula.variables:
-            reg_name = var.split('_')[1].split('-')[0]
-            val = init_state.solver.eval(init_state.registers.load(reg_name))
-            solved_regs[reg_name] = val
-
-        return solved_regs
 
     def _func_call(self, func_gadget, cc, args, extra_regs=None, preserve_regs=None,
                    needs_return=True, **kwargs):
@@ -161,7 +133,7 @@ class FuncCaller(Builder):
         # In case we have a call from mem gadget, we need to set the memory in the gadget itself.
         if len(chain._gadgets) > 0 and chain._gadgets[-1].transit_type in ('call_reg_from_mem', 'jmp_reg_from_mem'):
             last_gadget = chain._gadgets[-1]
-            # The address where we'll store func_gadget.addr
+            # The address in memory where our desired ptr is located
             func_addr_in_mem = self._find_function_pointer(func_gadget.addr)
 
             for i, val in enumerate(chain._values):

@@ -101,7 +101,7 @@ class Builder:
                     return addr
         return None
 
-    #@rop_utils.timeout(2)
+    @rop_utils.timeout(2)
     def _build_reg_setting_chain(self, gadgets, modifiable_memory_range, register_dict, stack_change):
         """
         This function figures out the actual values needed in the chain
@@ -121,7 +121,7 @@ class Builder:
         3. Handle the memory load constraints
         """
 
-        # For memory control gadgets, add their memory control registers to dependencies
+        # For memory control gadgets, add registers that control the memory access to dependencies
         for g in gadgets:
             if g.transit_type in ('jmp_reg_from_mem', 'call_reg_from_mem'):
                 # Add memory addressing registers to register_dict if not already there
@@ -130,7 +130,7 @@ class Builder:
                         rop_val = rop_utils.cast_rop_value(test_symbolic_state.registers.load(reg), self.project)
                         register_dict[reg] = rop_val
 
-                # For MIPS, add the register that gets loaded value
+                # We need to preserve intermediate registers as-well
                 if g.mem_load_reg and g.mem_load_reg not in register_dict:
                     rop_val = rop_utils.cast_rop_value(test_symbolic_state.registers.load(g.mem_load_reg), self.project)
                     register_dict[g.mem_load_reg] = rop_val

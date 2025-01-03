@@ -39,7 +39,7 @@ class GadgetAnalyzer:
                                                     fast_mode=self._fast_mode)
         self._concrete_sp = self._state.solver.eval(self._state.regs.sp)
 
-    #@rop_utils.timeout(3)
+    @rop_utils.timeout(3)
     def analyze_gadget(self, addr):
         """
         :param addr: address to analyze for a gadget
@@ -96,7 +96,6 @@ class GadgetAnalyzer:
 
         l.debug("... Appending gadget!")
         return gadget
-
 
     def _valid_state(self, init_state, final_state):
         if self._change_arch_state(init_state, final_state):
@@ -263,8 +262,6 @@ class GadgetAnalyzer:
                 if last_insn.mnemonic == 'jr':
                     return 'jmp_reg_from_mem'
 
-            return None
-
             # If we couldn't determine the type, return None
             return None
 
@@ -316,13 +313,12 @@ class GadgetAnalyzer:
         gadget.block_length = self.project.factory.block(addr).size
         gadget.transit_type = transit_type
 
-        # For jumps through memory
+        # build gadgets for memory control gadgets.
         if transit_type in ('jmp_reg_from_mem', 'call_reg_from_mem'):
-            # This is not None in case we do not have intermediate register. (call [rax+rdx])
-            # if we do have intermediate register (mov rax, [rdx]; jmp rax )
-            # in this case the mem_load_reg = rax
-            #                  mem_target_regs = {rdx}
-            # in the case of call [rax+rdx] - we do not have intermediate regs so mem_load X is None
+            # mem_load_reg is used when we have intermediate register. (mov rax, [rdx]; jmp rax ) (
+            # In this case mem_load_reg = rax. mem_target_regs = rdx
+            # Another example: call [rax+rdx]
+            #   we do not have intermediate regs so mem_load X is None. and mem_target_regs = rax, rdx
             gadget.mem_load_reg = None
 
             for act in final_state.history.actions:

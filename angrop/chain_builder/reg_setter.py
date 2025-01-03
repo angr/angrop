@@ -65,7 +65,7 @@ class RegSetter(Builder):
 
         # the next pc must come from the stack or memory for call_reg_from_mem
         if chain._gadgets[-1].transit_type in ('call_reg_from_mem', 'jmp_reg_from_mem'):
-            # For memory calls, pc will be uninitialized from memory read
+            # For memory calls, pc will be uninitialized from memory read. We can probably tight it better
             if not any('uninitialized' in v for v in state.regs.pc.variables):
                 return False
         else:
@@ -113,6 +113,7 @@ class RegSetter(Builder):
                                                           **registers)
         if best_chain:
             chains += [best_chain]
+        # Second chance. Attempt building chain with partial controllers.
         else:
             best_chain_partial, _, _ = self._find_reg_setting_gadgets(modifiable_memory_range,
                                                               True,
@@ -149,7 +150,7 @@ class RegSetter(Builder):
         """
         gadgets = set({})
         for g in self._reg_setting_gadgets:
-            # Skip gadgets with symbolic access UNLESS they are our validated ret2csu gadgets
+            # Skip gadgets with symbolic access UNLESS they are our validated from memory gadgets
             if g.has_symbolic_access() and g.transit_type not in ('jmp_reg_from_mem', 'call_reg_from_mem'):
                 continue
 
@@ -324,7 +325,6 @@ class RegSetter(Builder):
 
         return True
 
-
     # todo allow user to specify rop chain location so that we can use read_mem gadgets to load values
     # todo allow specify initial regs
     # todo memcopy(from_addr, to_addr, len)
@@ -373,7 +373,8 @@ class RegSetter(Builder):
                                                                              search_regs,
                                                                              False)
         if best_reg_tuple is None:
-            # last resort - attempt using ret2csu style gadgets. This requires mem_read access and adding 0 stack change gadgets to the graph search.
+            # last resort - attempt using ret2csu style gadgets.
+            # This allows gadgets with mem_read access and adding 0 stack change gadgets to the graph search.
             gadgets = set(self._reg_setting_gadgets)
             gadgets = [g for g in gadgets if
                        len(g.mem_changes) == 0 and
@@ -393,10 +394,16 @@ class RegSetter(Builder):
         gadgets = self._tuple_to_gadgets(data, best_reg_tuple)
         return gadgets, best_stack_change, data
 
-    # We add permissive_search in the 2nd run after the first search resulted in no useful gadgets. This allows gadgets
-    # that conain memory reads. it also allows gadgets that have stack_change <= 0.
+
     def _graph_search_gadgets(self, gadgets, max_stack_change, modifiable_memory_range, partial_controllers,
                               preserve_regs, search_regs, permissive_search):
+        '''
+        Exported the graph search logic into a function.
+        We add permissive_search parameter in the 2nd run after the first search resulted in no useful gadgets.
+        This allows gadgets that contain memory reads. it also allows gadgets that have stack_change <= 0.
+        '''
+
+
         data = {}
         to_process = []
         to_process.append((0, ()))
@@ -445,7 +452,7 @@ class RegSetter(Builder):
                     continue
 
                 # if we havent seen that tuple before, or payload is shorter or less partially controlled regs.
-                if end_reg_tuple in data:  # we have seen the tuple before
+                if end_reg_tuple in data: # we have seen the tuple before
                     end_data = data.get(end_reg_tuple, None)
                     # payload is longer or contains more partially controlled regs
                     if not (new_stack_change < end_data[1] and npartial <= len(end_data[3])):
@@ -486,7 +493,7 @@ class RegSetter(Builder):
         usable_regs = start_regs - partial_regs
         end_regs = set(start_regs)
 
-        # skip ones that change memory if no modifiable_memory_addr
+        # skip ones that change memory if no modifiable_memory_addr. In permissive_search allow memory change (reads)
         if modifiable_memory_range is None and not permissive_search and \
                 (len(g.mem_reads) > 0 or len(g.mem_writes) > 0 or len(g.mem_changes) > 0):
             return set(), set()
@@ -502,7 +509,7 @@ class RegSetter(Builder):
             if not mem_accesses_controlled:
                 return set(), set()
 
-        # analyze all registers that we control
+        # analyze  all registers that we control
         for reg in g.changed_regs:
             end_regs.discard(reg)
             partial_regs.discard(reg)

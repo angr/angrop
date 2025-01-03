@@ -39,21 +39,20 @@ MIPSTAKE
 """
 
 
-class CheckSleep(angr.SimProcedure):
+class CheckCall(angr.SimProcedure):
     def run(self):
-        # For MIPS architecture, arguments are in registers a0, a1, etc.
         arg0 = self.state.solver.eval(self.state.regs.get(self.cc.ARG_REGS[0]))
         arg1 = self.state.solver.eval(self.state.regs.get(self.cc.ARG_REGS[1]))
 
         # Check if the arguments are 1 and 2
-        assert arg0 == 1 and arg1 == 2, f"Arguments are {arg0} and {arg1}, expected 1 and 2"
-        return 0  # Return value of 'sleep' if needed
+        assert arg0 == 0xdeadbeef and arg1 == 0xdeadbeef, f"Arguments are {arg0} and {arg1}, expected 1 and 2"
+        return 0
 
 
 def test_mipstake():
     cache_path = os.path.join(data_dir, "mipstake")
     proj = angr.Project(os.path.join(tests_dir, "mips", "mipstake"), auto_load_libs=True, arch="mips")
-    proj.hook_symbol('sleep', CheckSleep())
+    proj.hook_symbol('sleep', CheckCall())
     rop = proj.analyses.ROP(max_block_size=40)
 
     if os.path.exists(cache_path):
@@ -102,7 +101,7 @@ def test_unexploitable():
     print("testing unexploitable")
     cache_path = os.path.join(data_dir, "unexploitable")
     proj = angr.Project(os.path.join(tests_dir, "x86_64", "unexploitable"), auto_load_libs=False, arch="x86_64")
-    proj.hook_symbol('sleep', CheckSleep())
+    proj.hook_symbol('sleep', CheckCall())
     rop = proj.analyses.ROP(max_block_size=40, fast_mode=False, only_check_near_rets=False, )
 
     if os.path.exists(cache_path):
@@ -112,13 +111,14 @@ def test_unexploitable():
         rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
-    chain = rop.func_call("sleep", [1, 2], needs_return=False)
+    chain = rop.func_call("sleep", [2, 1], needs_return=True)
+    print(chain)
     state = chain.exec()
     # Get call-related actions
     func_calls = [act.sim_procedure.display_name
                   for act in state.history.actions
                   if act.type == 'exit' and act.target.ast.concrete and hasattr(act.sim_procedure, "display_name")]
-    assert "CheckSleep" in func_calls
+    assert "CheckCall" in func_calls
 
 def run_all():
     functions = globals()
@@ -135,5 +135,5 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         globals()['test_' + sys.argv[1]]()
     else:
-        test_mipstake()
+        # test_mipstake()
         test_unexploitable()
