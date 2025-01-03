@@ -236,13 +236,7 @@ class GadgetAnalyzer:
         return True
 
     def is_in_kernel(self, state):
-        ip = state.ip
-        if not ip.symbolic:
-            obj = self.project.loader.find_object_containing(ip.concrete_value)
-            if obj.binary == 'cle##kernel':
-                return True
-            return False
-        return False
+        return rop_utils.is_in_kernel(self.project, state)
 
     def _can_reach_unconstrained(self, addr, max_steps=2):
         """
