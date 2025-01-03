@@ -96,7 +96,13 @@ def compare_gadgets(test_gadgets, known_gadgets):
 
 def execute_chain(project, chain):
     s = project.factory.blank_state()
-    s.memory.store(s.regs.sp, chain.payload_str() + b"AAAAAAAAA")
+    s.memory.store(s.regs.sp, chain.payload_str())
+    goal_idx = chain.next_pc_idx()
+    s.memory.store(
+        s.regs.sp
+        + (chain.payload_len if goal_idx is None else goal_idx * project.arch.bytes),
+        b"A" * project.arch.bytes,
+    )
     s.ip = s.stack_pop()
     p = project.factory.simulation_manager(s)
     goal_addr = 0x4141414141414141 % (1 << project.arch.bits)
