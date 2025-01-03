@@ -555,12 +555,12 @@ class RegSetter(Builder):
                 continue
             potential_next_gadgets.append((gadget, remaining_regs))
 
-        # Sort gadgets by number of remaining registers, instruction count, and stack change
+        # Sort gadgets by number of remaining registers, stack change, and instruction count
         potential_next_gadgets.sort(
             key=lambda g: (
                 sum(self._reg_weights[reg] for reg in g[1]),
-                g[0].isn_count,
                 g[0].stack_change,
+                g[0].isn_count,
             )
         )
 
