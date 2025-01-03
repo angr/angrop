@@ -91,14 +91,21 @@ class RegSetter(Builder):
         for x in registers:
             registers[x] = rop_utils.cast_rop_value(registers[x], self.project)
 
-        for gadgets in self._backwards_recursive_search(
-            self._reg_setting_gadgets,
-            set(registers),
-            current_chain=[],
-            preserve_regs=preserve_regs,
-            modifiable_memory_range=modifiable_memory_range,
-            visited={},
-            max_length=max_length,
+        for gadgets in itertools.chain(
+            self._find_all_candidate_chains(
+                self._find_relevant_gadgets(**registers),
+                preserve_regs.copy(),
+                **registers,
+            ),
+            self._backwards_recursive_search(
+                self._reg_setting_gadgets,
+                set(registers),
+                current_chain=[],
+                preserve_regs=preserve_regs,
+                modifiable_memory_range=modifiable_memory_range,
+                visited={},
+                max_length=max_length,
+            ),
         ):
             chain_str = "\n-----\n".join(
                 "\n".join(
