@@ -553,7 +553,11 @@ class GadgetAnalyzer:
             saved_ip_addr = None
             for act in final_state.history.actions:
                 if act.type == 'mem' and act.action == 'read':
-                    if act.size == self.project.arch.bits and not (act.data.ast == ip).symbolic:
+                    if (
+                        act.size == self.project.arch.bits
+                        and isinstance(act.data.ast, claripy.ast.BV)
+                        and not (act.data.ast == ip).symbolic
+                    ):
                         if init_state.solver.eval(act.data.ast == ip):
                             saved_ip_addr = act.addr.ast
                             break
