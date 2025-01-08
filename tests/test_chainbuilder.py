@@ -1,6 +1,8 @@
 import os
 
 import angr
+
+import angrop.rop_utils
 import test_rop
 import angrop # pylint: disable=unused-import
 from angrop.rop_value import RopValue
@@ -407,49 +409,22 @@ MIPSTAKE
 def test_mipstake():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "mips", "mipstake"), auto_load_libs=True, arch="mips")
     rop = proj.analyses.ROP(max_block_size=40)
-
+    rop.find_gadgets_single_threaded(show_progress=False)
     chain = rop.func_call("sleep", [1, 2], needs_return=False)
     sleep_addr = proj.loader.main_object.imports['sleep'].value
-    result_state = test_rop.execute_chain(proj, chain, sleep_addr)
+    result_state = angrop.rop_utils.execute_chain(proj, chain, sleep_addr)
     assert result_state.solver.eval(result_state.registers.load('a0'), cast_to=int) == 1
     assert result_state.solver.eval(result_state.registers.load('a1'), cast_to=int) == 2
     assert chain._gadgets[-1].transit_type == 'call_from_mem'
-    assert True == False
-
-
-'''
-UNEXPLOITABLE
-
-.text:00000000004005D0 loc_4005D0:                             ; CODE XREF: .text:00000000004005E4↓j
-.text:00000000004005D0                 mov     rdx, r15
-.text:00000000004005D3                 mov     rsi, r14
-.text:00000000004005D6                 mov     edi, r13d
-.text:00000000004005D9                 call    qword ptr [r12+rbx*8]
-.text:00000000004005DD                 add     rbx, 1
-.text:00000000004005E1                 cmp     rbx, rbp
-.text:00000000004005E1 __libc_csu_init endp ; sp-analysis failed
-.text:00000000004005E1
-.text:00000000004005E4                 jnz     short loc_4005D0
-.text:00000000004005E6
-.text:00000000004005E6 loc_4005E6:                             ; CODE XREF: __libc_csu_init+48↑j
-.text:00000000004005E6                 mov     rbx, [rsp+8]
-.text:00000000004005EB                 mov     rbp, [rsp+10h]
-.text:00000000004005F0                 mov     r12, [rsp+18h]
-.text:00000000004005F5                 mov     r13, [rsp+20h]
-.text:00000000004005FA                 mov     r14, [rsp+28h]
-.text:00000000004005FF                 mov     r15, [rsp+30h]
-.text:0000000000400604                 add     rsp, 38h
-.text:0000000000400608                 retn
-.text:0000000000400608 ; } // starts at 400580
-'''
 
 
 def test_unexploitable():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "unexploitable"), auto_load_libs=False, arch="x86_64")
     rop = proj.analyses.ROP(max_block_size=40, fast_mode=False, only_check_near_rets=False, )
+    rop.find_gadgets_single_threaded(show_progress=False)
     chain = rop.func_call("sleep", [1, 0xdeadbeefdeadbeef], needs_return=True)
     sleep_addr = proj.loader.main_object.imports['sleep'].value
-    result_state = test_rop.execute_chain(proj, chain, sleep_addr)
+    result_state = angrop.rop_utils.execute_chain(proj, chain, sleep_addr)
     assert result_state.solver.eval(result_state.registers.load('rsi'), cast_to=int) == 0xdeadbeefdeadbeef
     assert result_state.solver.eval(result_state.registers.load('rdi'), cast_to=int) == 0x1
     assert chain._gadgets[-1].transit_type == 'call_from_mem'

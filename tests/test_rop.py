@@ -1,9 +1,11 @@
 import os
 import angr
-import angrop  # pylint: disable=unused-import
 import pickle
 
 import logging
+
+from angrop.rop_utils import execute_chain
+
 l = logging.getLogger("angrop.tests.test_rop")
 
 public_bin_location = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../binaries/tests')
@@ -84,19 +86,6 @@ def compare_gadgets(test_gadgets, known_gadgets):
     # check gadgets
     for g in known_gadgets:
         assert_gadgets_equal(g, test_gadget_dict[g.addr])
-
-
-def execute_chain(project, chain, target_val):
-    s = project.factory.blank_state()
-    s.memory.store(s.regs.sp, chain.payload_str() + b"AAAAAAAAA")
-    s.ip = s.stack_pop()
-    p = project.factory.simulation_manager(s)
-    goal_addr = target_val % (1 << project.arch.bits)
-    while p.one_active.addr != goal_addr:
-        p.step()
-        assert len(p.active) == 1
-
-    return p.one_active
 
 
 def test_rop_x86_64():
@@ -206,7 +195,7 @@ def test_roptest_mips():
     rop.find_gadgets_single_threaded(show_progress=False)
 
     chain = rop.set_regs(s0=0x41414141, s1=0x42424242, v0=0x43434343)
-    result_state = execute_chain(proj, chain)
+    result_state = execute_chain(proj, chain, 0x4141414141414141)
     assert result_state.solver.eval(result_state.regs.s0) == 0x41414141
     assert result_state.solver.eval(result_state.regs.s1) == 0x42424242
     assert result_state.solver.eval(result_state.regs.v0) == 0x43434343

@@ -407,3 +407,16 @@ def timeout(seconds_before_timeout):
             return result
         return new_f
     return decorate
+
+
+def execute_chain(project, chain, target_val):
+    s = project.factory.blank_state()
+    s.memory.store(s.regs.sp, chain.payload_str() + b"AAAAAAAAA")
+    s.ip = s.stack_pop()
+    p = project.factory.simulation_manager(s)
+    goal_addr = target_val % (1 << project.arch.bits)
+    while p.one_active.addr != goal_addr:
+        p.step()
+        assert len(p.active) == 1
+
+    return p.one_active

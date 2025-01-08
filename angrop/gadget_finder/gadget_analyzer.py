@@ -294,7 +294,8 @@ class GadgetAnalyzer:
 
     def _create_gadget(self, addr, init_state, final_state, ctrl_type):
         transit_type = self._identify_transit_type(final_state, ctrl_type)
-
+        if transit_type is None:
+            return None
         # create the gadget
         if ctrl_type == 'syscall' or self._does_syscall(final_state):
             gadget = SyscallGadget(addr=addr)
@@ -353,7 +354,7 @@ class GadgetAnalyzer:
         if gadget.stack_change % (self.project.arch.bytes) != 0:
             l.debug("... uneven sp change")
             return None
-        if gadget.stack_change < 0 and gadget.transit_type != 'call_from_mem':
+        if gadget.stack_change < 0 and gadget.transit_type not in ('call_from_mem', 'syscall'):
             l.debug("stack change is negative!!")
             #FIXME: technically, it can be negative, e.g. call instructions
             return None
@@ -481,50 +482,7 @@ class GadgetAnalyzer:
                     if ast_1 is ast_2:
                         gadget.reg_moves.append(RopRegMove(from_reg, reg, half_bits))
 
-    # TODO: need to handle reg calls
-    def _check_for_control_type(self, init_state, final_state):
-        """
-        :return: the data provenance of the controlled ip in the final state, either the stack or registers
-        """
-
-        ip = final_state.ip
-
-        # this gadget arrives a syscall
-        if self.is_in_kernel(final_state):
-            return 'syscall'
-
-        ip_from_mem = False
-        mem_addr_dependencies = set()
-
-        # Analyze history to find memory reads that determine IP
-        for act in final_state.history.actions:
-            if act.type == 'mem' and act.action == 'read':
-                # Check if this read determines the IP
-                if act.data.ast is ip:
-                    ip_from_mem = True
-                    # Get all register dependencies of the memory address
-                    mem_addr_dependencies = rop_utils.get_ast_dependency(act.addr.ast)
-                    break
-
-        # IP comes from memory AND memory address fully controlled by registers
-        if ip_from_mem and mem_addr_dependencies and \
-                all(x in self.arch.reg_set for x in mem_addr_dependencies):
-            return "mem_control"
-
-        # the ip is controlled by stack
-        if self._check_if_stack_controls_ast(ip, init_state):
-            return "stack"
-
-        # the ip is not controlled by regs
-        if not ip.variables:
-            return None
-
-        # the ip is fully controlled by regs
-        variables = list(ip.variables)
-        if all(x.startswith("sreg_") for x in variables):
-            return "register"
-
-        # this is a stack pivoting gadget
+    def _handle_stack_pivoting(self, init_state, final_state, ip, variables):
         if all(x.startswith("symbolic_read_") for x in variables) and len(final_state.regs.sp.variables) == 1:
             # we don't fully control sp
             if not init_state.solver.satisfiable(extra_constraints=[final_state.regs.sp == 0x41414100]):
@@ -552,6 +510,55 @@ class GadgetAnalyzer:
             if offset % self.project.arch.bytes != 0: # filter misaligned gadgets
                 return None
             return "pivot"
+        else:
+            return None
+
+    # TODO: need to handle reg calls
+    def _check_for_control_type(self, init_state, final_state):
+        """
+        :return: the data provenance of the controlled ip in the final state, either the stack or registers
+        """
+
+        ip = final_state.ip
+
+        # this gadget arrives a syscall
+        if self.is_in_kernel(final_state):
+            return 'syscall'
+
+        # the ip is controlled by stack
+        if self._check_if_stack_controls_ast(ip, init_state):
+            return "stack"
+
+        # the ip is not controlled by regs
+        if not ip.variables:
+            return None
+
+        # the ip is fully controlled by regs
+        variables = list(ip.variables)
+        if all(x.startswith("sreg_") for x in variables):
+            return "register"
+
+        # this is a stack pivoting gadget
+        if self._handle_stack_pivoting(init_state, final_state, ip, variables):
+            return "pivot"
+
+        ip_from_mem = False
+        mem_addr_dependencies = set()
+
+        # Analyze history to find memory reads that determine IP
+        for act in final_state.history.actions:
+            if act.type == 'mem' and act.action == 'read':
+                # Check if this read determines the IP
+                if act.data.ast is ip:
+                    ip_from_mem = True
+                    # Get all register dependencies of the memory address
+                    mem_addr_dependencies = rop_utils.get_ast_dependency(act.addr.ast)
+                    break
+
+        # IP comes from memory AND memory address fully controlled by registers
+        if ip_from_mem and mem_addr_dependencies and \
+                all(x in self.arch.reg_set for x in mem_addr_dependencies):
+            return "mem_control"
 
         return None
 
