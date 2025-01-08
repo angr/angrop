@@ -101,17 +101,15 @@ class Builder:
                     return addr
         return None
 
-    #@rop_utils.timeout(2)
+    @rop_utils.timeout(2)
     def _build_reg_setting_chain(self, gadgets, modifiable_memory_range, register_dict, stack_change):
         """
         This function figures out the actual values needed in the chain
         for a particular set of gadgets and register values
         This is done by stepping a symbolic state through each gadget
         then constraining the final registers to the values that were requested
+        FIXME: trim this disgusting function
         """
-        print("\nStarting chain build with %d gadgets, stack_change: %#x" % (len(gadgets), stack_change))
-        for i, g in enumerate(gadgets):
-            print("Gadget[%d]: %#x type:%s stack_change:%#x" % (i, g.addr, g.transit_type, g.stack_change))
 
         # emulate a 'pop pc' of the first gadget
         test_symbolic_state = self.make_sim_state(gadgets[0].addr)
@@ -119,36 +117,27 @@ class Builder:
         # For memory control gadgets, add registers that control the memory access to dependencies
         for g in gadgets:
             if g.transit_type in ('jmp_reg_from_mem', 'call_reg_from_mem'):
-                print("\nProcessing mem gadget %#x" % g.addr)
                 # Add memory addressing registers to register_dict if not already there
                 for reg in g.mem_target_regs:
                     if reg not in register_dict:
-                        print("Adding mem target reg %s to register_dict" % reg)
                         rop_val = rop_utils.cast_rop_value(test_symbolic_state.registers.load(reg), self.project)
                         register_dict[reg] = rop_val
 
                 # We need to preserve intermediate registers as-well
                 if g.mem_load_reg and g.mem_load_reg not in register_dict:
-                    print("Adding mem load reg %s to register_dict" % g.mem_load_reg)
                     rop_val = rop_utils.cast_rop_value(test_symbolic_state.registers.load(g.mem_load_reg), self.project)
                     register_dict[g.mem_load_reg] = rop_val
 
-            print("\nCurrent register_dict: %s" % str(register_dict))
-
         addrs = [g.addr for g in gadgets]
         addrs.append(test_symbolic_state.solver.BVS("next_addr", self.project.arch.bits))
-        print("\nGadget addresses to process: %s" % [hex(x) for x in addrs[:-1]])
 
         arch_bytes = self.project.arch.bytes
+
         state = test_symbolic_state
 
         # step through each gadget
+        # for each gadget, constrain memory addresses and add constraints for the successor
         for addr in addrs[1:]:
-            if not isinstance(addr, int):
-                print("\nProcessing symbolic address")
-            else:
-                print("\nProcessing addr: %#x" % addr)
-
             succ = rop_utils.step_to_unconstrained_successor(self.project, state)
             state.add_constraints(succ.regs.ip == addr)
             # constrain reads/writes
@@ -167,8 +156,6 @@ class Builder:
         sp -= arch_bytes
         bytes_per_pop = arch_bytes
 
-        print("\nReady to build chain. Stack change: %#x, bytes_per_pop: %#x" % (stack_change, bytes_per_pop))
-
         # constrain the final registers
         rebase_state = test_symbolic_state.copy()
         var_dict = {}
@@ -181,9 +168,8 @@ class Builder:
 
         # constrain the "filler" values
         if self.roparg_filler is not None:
-            print("\nUsing roparg_filler: %#x" % self.roparg_filler)
             for i in range(stack_change // bytes_per_pop):
-                sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop * i, bytes_per_pop,
+                sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
                                                            endness=self.project.arch.memory_endness)
                 # check if we can constrain val to be the roparg_filler
                 if test_symbolic_state.solver.satisfiable((sym_word == self.roparg_filler,)) and \
@@ -194,34 +180,27 @@ class Builder:
 
         # create the ropchain
         chain = RopChain(self.project, self, state=test_symbolic_state.copy(),
-                         badbytes=self.badbytes)
+                       badbytes=self.badbytes)
 
         # iterate through the stack values that need to be in the chain
+        # HACK: handle jump register separately because of angrop's broken
+        # assumptions on x86's ret behavior
         if gadgets[-1].transit_type == 'jmp_reg' or \
                 gadgets[-1].transit_type in ('jmp_reg_from_mem', 'call_reg_from_mem'):
-            print("\nAdjusting stack_change for %s gadget" % gadgets[-1].transit_type)
             stack_change += arch_bytes
 
-        print("\nProcessing %d stack values:" % (stack_change // bytes_per_pop))
         for i in range(stack_change // bytes_per_pop):
-            sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop * i, bytes_per_pop,
+            sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
                                                        endness=self.project.arch.memory_endness)
             val = test_symbolic_state.solver.eval(sym_word)
-            print("Stack value[%d]: %#x" % (i, val))
-
-            if len(gadgets) > 0:
-                print("Next gadget to match: %#x" % gadgets[0].addr)
-
             if len(gadgets) > 0 and val == gadgets[0].addr:
-                print("Matched and added gadget %#x" % gadgets[0].addr)
                 chain.add_gadget(gadgets[0])
                 gadgets = gadgets[1:]
             else:
-                print("Added value %#x to chain" % val)
+                # propagate the initial RopValue provided by users to preserve info like rebase
                 var = sym_word
                 for c in test_symbolic_state.solver.constraints:
-                    print("  ", c)
-                    if len(c.variables) != 2:  # it is always xx == yy
+                    if len(c.variables) != 2: # it is always xx == yy
                         continue
                     if not sym_word.variables.intersection(c.variables):
                         continue
@@ -232,11 +211,7 @@ class Builder:
                     break
                 chain.add_value(var)
 
-        print("\nRemaining unhandled gadgets: %d" % len(gadgets))
         if len(gadgets) > 0:
-            print("Unhandled gadgets:")
-            for g in gadgets:
-                print("  %#x type:%s stack_change:%#x" % (g.addr, g.transit_type, g.stack_change))
             raise RopException("Didnt find all gadget addresses, something must've broke")
         return chain
 

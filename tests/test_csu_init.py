@@ -1,7 +1,6 @@
 import os
 import angr
 import test_rop
-import angrop.rop_utils
 import angrop  # pylint: disable=unused-import
 import pickle
 
@@ -40,21 +39,9 @@ MIPSTAKE
 .text:00400E84 addiu   $sp, 0x38
 """
 
-
-class CheckCall(angr.SimProcedure):
-    def run(self):
-        arg0 = self.state.solver.eval(self.state.regs.get(self.cc.ARG_REGS[0]))
-        arg1 = self.state.solver.eval(self.state.regs.get(self.cc.ARG_REGS[1]))
-
-        # Check if the arguments are 1 and 2
-        assert arg0 == 1 and arg1 == 0xdeadbeefdeadbeef, f"Arguments are {arg0} and {arg1}, expected 1 and 2"
-        return 0
-
-
 def test_mipstake():
     cache_path = os.path.join(data_dir, "mipstake")
     proj = angr.Project(os.path.join(tests_dir, "mips", "mipstake"), auto_load_libs=True, arch="mips")
-    proj.hook_symbol('sleep', CheckCall())
     rop = proj.analyses.ROP(max_block_size=40)
 
     if os.path.exists(cache_path):
@@ -64,13 +51,11 @@ def test_mipstake():
         rop.save_gadgets(cache_path)
 
     chain = rop.func_call("sleep", [1, 2], needs_return=False)
-    from test_rop import execute_chain
-    state = chain.exec()
-    # Get call-related actions
-    func_calls = [act.sim_procedure.display_name
-                  for act in state.history.actions
-                  if act.type == 'exit' and act.target.ast.concrete and hasattr(act.sim_procedure, "display_name")]
-    assert "CheckSleep" in func_calls
+    sleep_addr = proj.loader.main_object.imports['sleep'].value
+    result_state = test_rop.execute_chain(proj, chain, sleep_addr)
+    assert result_state.solver.eval(result_state.registers.load('a0'), cast_to=int) == 1
+    assert result_state.solver.eval(result_state.registers.load('a1'), cast_to=int) == 2
+    assert chain._gadgets[-1].transit_type == 'call_reg_from_mem'
 
 
 '''
@@ -100,31 +85,23 @@ UNEXPLOITABLE
 '''
 
 def test_unexploitable():
-    print("testing unexploitable")
     cache_path = os.path.join(data_dir, "unexploitable")
     proj = angr.Project(os.path.join(tests_dir, "x86_64", "unexploitable"), auto_load_libs=False, arch="x86_64")
     state = proj.factory.blank_state()
-    print(f"Memory at 0x601010: {hex(state.mem[0x601010].uint64_t.concrete)}")
-    # proj.hook_symbol('sleep', CheckCall())
     rop = proj.analyses.ROP(max_block_size=40, fast_mode=False, only_check_near_rets=False, )
 
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        # print("Finding gadgets...")
         rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
-    chain = rop.func_call("sleep", [1, 0xdeadbeefdeadbeef], needs_return=False)
-    print(chain)
-    result_state = test_rop.execute_chain(proj, chain, 0x700010)
-
-    # state = chain.exec(pro)
-    # Get call-related actions
-    func_calls = [act.sim_procedure.display_name
-                  for act in state.history.actions
-                  if act.type == 'exit' and act.target.ast.concrete and hasattr(act.sim_procedure, "display_name")]
-    assert "CheckCall" in func_calls
+    chain = rop.func_call("sleep", [1, 0xdeadbeefdeadbeef], needs_return=True)
+    sleep_addr = proj.loader.main_object.imports['sleep'].value
+    result_state = test_rop.execute_chain(proj, chain, sleep_addr)
+    assert result_state.solver.eval(result_state.registers.load('rsi'), cast_to=int) == 0xdeadbeefdeadbeef
+    assert result_state.solver.eval(result_state.registers.load('rdi'), cast_to=int) == 0x1
+    assert chain._gadgets[-1].transit_type == 'call_reg_from_mem'
 
 def run_all():
     functions = globals()
@@ -141,5 +118,5 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         globals()['test_' + sys.argv[1]]()
     else:
-        # test_mipstake()
+        test_mipstake()
         test_unexploitable()

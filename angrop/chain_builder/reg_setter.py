@@ -40,16 +40,8 @@ class RegSetter(Builder):
                     continue
                 if act.type == 'mem':
                     if act.addr.ast.variables:
-                        register_names = set()
-                        for _g in chain._gadgets:
-                            if _g.mem_target_regs:
-                                register_names.update(_g.mem_target_regs.keys())
-                        ast_dep = rop_utils.get_ast_dependency(act.addr.ast)
-                        if ast_dep.issubset(register_names):  # Allow memory access if the register dependent is in mem_target_regs
-                            continue
-                        else:
-                            l.exception("memory access outside stackframe\n%s\n", chain_str)
-                            return False
+                        l.exception("memory access outside stackframe\n%s\n", chain_str)
+                        return False
                 if act.type == 'reg' and act.action == 'write':
                     # get the full name of the register
                     offset = act.offset
@@ -141,7 +133,7 @@ class RegSetter(Builder):
             try:
                 chain = self._build_reg_setting_chain(gadgets, modifiable_memory_range,
                                                      registers, stack_change)
-                chain._concretize_chain_values(timeout=9999)
+                chain._concretize_chain_values(timeout=len(chain._values)*3)
                 if chain._gadgets[-1].transit_type == 'jmp_reg':
                     chain = self._maybe_fix_jump_chain(chain, preserve_regs)
                 if self.verify(chain, preserve_regs, registers):
@@ -469,7 +461,8 @@ class RegSetter(Builder):
                     if npartial >= len(end_data[3]):
                         continue
 
-                # For memory transit type we to make sure we also control the transit type register since it's not captured anywher else
+                # For memory transit type we to make sure we also control the
+                # registers responsible for the transit since it's not captured anywhere else
                 if g.transit_type in ('call_reg_from_mem', 'jmp_reg_from_mem') \
                         and not set(g.mem_target_regs.keys()).issubset(set(end_reg_tuple)):
                     continue
