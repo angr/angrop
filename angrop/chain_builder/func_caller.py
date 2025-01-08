@@ -47,7 +47,7 @@ class FuncCaller(Builder):
 
         return False
 
-    def _find_function_pointer_in_got(self, func_addr):
+    def _find_function_pointer_in_got_plt(self, func_addr):
         """
         Search if a func addr is in plt. If it's in plt, find func name and
         translate it to GOT so that we can directly call/jmp to the memroy location pointed there.
@@ -57,6 +57,10 @@ class FuncCaller(Builder):
         for sym in self.project.loader.main_object.symbols:
             if sym.rebased_addr == func_addr:
                 func_name = sym.name
+
+        for sym, val in self.project.loader.main_object.plt.items():
+            if val == func_addr:
+                func_name = sym
         # addr is found in plt. we look for this symbol in got
         if func_name:
             func_got = self.project.loader.main_object.imports.get(func_name)
@@ -73,7 +77,7 @@ class FuncCaller(Builder):
     def _find_function_pointer(self, func_addr):
         """Find pointer to function, allowing for potential memory locations"""
         # Existing GOT/PLT search logic first
-        got_ptr = self._find_function_pointer_in_got(func_addr)
+        got_ptr = self._find_function_pointer_in_got_plt(func_addr)
         if got_ptr is not None:
             return got_ptr
 

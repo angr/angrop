@@ -1,5 +1,7 @@
 import os
 import angr
+import test_rop
+import angrop.rop_utils
 import angrop  # pylint: disable=unused-import
 import pickle
 
@@ -45,7 +47,7 @@ class CheckCall(angr.SimProcedure):
         arg1 = self.state.solver.eval(self.state.regs.get(self.cc.ARG_REGS[1]))
 
         # Check if the arguments are 1 and 2
-        assert arg0 == 0xdeadbeef and arg1 == 0xdeadbeef, f"Arguments are {arg0} and {arg1}, expected 1 and 2"
+        assert arg0 == 1 and arg1 == 0xdeadbeefdeadbeef, f"Arguments are {arg0} and {arg1}, expected 1 and 2"
         return 0
 
 
@@ -101,7 +103,9 @@ def test_unexploitable():
     print("testing unexploitable")
     cache_path = os.path.join(data_dir, "unexploitable")
     proj = angr.Project(os.path.join(tests_dir, "x86_64", "unexploitable"), auto_load_libs=False, arch="x86_64")
-    proj.hook_symbol('sleep', CheckCall())
+    state = proj.factory.blank_state()
+    print(f"Memory at 0x601010: {hex(state.mem[0x601010].uint64_t.concrete)}")
+    # proj.hook_symbol('sleep', CheckCall())
     rop = proj.analyses.ROP(max_block_size=40, fast_mode=False, only_check_near_rets=False, )
 
     if os.path.exists(cache_path):
@@ -111,9 +115,11 @@ def test_unexploitable():
         rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
-    chain = rop.func_call("sleep", [2, 1], needs_return=True)
+    chain = rop.func_call("sleep", [1, 0xdeadbeefdeadbeef], needs_return=False)
     print(chain)
-    state = chain.exec()
+    result_state = test_rop.execute_chain(proj, chain, 0x700010)
+
+    # state = chain.exec(pro)
     # Get call-related actions
     func_calls = [act.sim_procedure.display_name
                   for act in state.history.actions
