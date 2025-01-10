@@ -116,7 +116,7 @@ class Builder:
 
         # For memory control gadgets, add registers that control the memory access to dependencies
         for g in gadgets:
-            if g.transit_type in ('jmp_reg_from_mem', 'call_reg_from_mem'):
+            if g.transit_type == 'call_reg_from_mem':
                 # Add memory addressing registers to register_dict if not already there
                 for reg in g.mem_target_regs:
                     if reg not in register_dict:
@@ -186,7 +186,7 @@ class Builder:
         # HACK: handle jump register separately because of angrop's broken
         # assumptions on x86's ret behavior
         if gadgets[-1].transit_type == 'jmp_reg' or \
-                gadgets[-1].transit_type in ('jmp_reg_from_mem', 'call_reg_from_mem'):
+                gadgets[-1].transit_type == 'call_reg_from_mem':
             stack_change += arch_bytes
         for i in range(stack_change // bytes_per_pop):
             sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,

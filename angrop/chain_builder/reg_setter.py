@@ -53,8 +53,7 @@ class RegSetter(Builder):
             if bv.symbolic:
                 # For mem calls, we expect the target reg to be symbolic as it's loaded from memory
                 gadget = chain._gadgets[-1]
-                if gadget.transit_type in ('call_reg_from_mem', 'jmp_reg_from_mem') and \
-                        reg == gadget.jump_reg:
+                if gadget.transit_type == 'call_reg_from_mem' and reg == gadget.jump_reg:
                     continue
                 l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation - 2.", chain_str)
                 return False
@@ -64,7 +63,7 @@ class RegSetter(Builder):
                 return False
 
         # the next pc must come from the stack or memory for call_reg_from_mem
-        if chain._gadgets[-1].transit_type in ('call_reg_from_mem', 'jmp_reg_from_mem'):
+        if chain._gadgets[-1].transit_type == 'call_reg_from_mem':
             # For memory calls, pc will be uninitialized from memory read. We can probably tight it better
             if not any('uninitialized' in v for v in state.regs.pc.variables):
                 return False
@@ -152,11 +151,11 @@ class RegSetter(Builder):
         gadgets = set({})
         for g in self._reg_setting_gadgets:
             # Skip gadgets with symbolic access UNLESS they are our validated from memory gadgets
-            if g.has_symbolic_access() and g.transit_type not in ('jmp_reg_from_mem', 'call_reg_from_mem'):
+            if g.has_symbolic_access() and g.transit_type != 'call_reg_from_mem':
                 continue
 
             # If it is one of our validated gadgets, verify the only symbolic access is the control transfer
-            if g.transit_type in ('jmp_reg_from_mem', 'call_reg_from_mem'):
+            if g.transit_type == 'call_reg_from_mem':
                 # Count how many memory accesses have symbolic addresses
                 sym_accesses = sum(1 for m in g.mem_reads + g.mem_writes + g.mem_changes
                                    if m.is_symbolic_access())
@@ -381,7 +380,7 @@ class RegSetter(Builder):
                        len(g.mem_changes) == 0 and
                        len(g.mem_writes) == 0 and
                        (len(g.mem_reads) == 0 or
-                        len(g.mem_reads) == 1 and g.transit_type in ('jmp_reg_from_mem', 'call_reg_from_mem'))]
+                        len(g.mem_reads) == 1 and g.transit_type == 'call_reg_from_mem')]
             best_reg_tuple, best_stack_change, data = self._graph_search_gadgets(gadgets,
                                                                                  max_stack_change,
                                                                                  modifiable_memory_range,
@@ -463,7 +462,7 @@ class RegSetter(Builder):
 
                 # For memory transit type we to make sure we also control the
                 # registers responsible for the transit since it's not captured anywhere else
-                if g.transit_type in ('call_reg_from_mem', 'jmp_reg_from_mem') \
+                if g.transit_type == 'call_reg_from_mem' \
                         and not set(g.mem_target_regs.keys()).issubset(set(end_reg_tuple)):
                     continue
 

@@ -135,7 +135,7 @@ class FuncCaller(Builder):
         chain = self.chain_builder.set_regs(**registers)
 
         # In case we have a call from mem gadget, we need to set the memory in the gadget itself.
-        if len(chain._gadgets) > 0 and chain._gadgets[-1].transit_type in ('call_reg_from_mem', 'jmp_reg_from_mem'):
+        if len(chain._gadgets) > 0 and chain._gadgets[-1].transit_type == 'call_reg_from_mem':
             last_gadget = chain._gadgets[-1]
             # The address in memory where our desired ptr is located
             func_addr_in_mem = self._find_function_pointer(func_gadget.addr)

@@ -250,8 +250,6 @@ class GadgetAnalyzer:
                 last_insn = block.capstone.insns[-1]
                 if last_insn.mnemonic == 'call':
                     return 'call_reg_from_mem'
-                if last_insn.mnemonic == 'jmp':
-                    return 'jmp_reg_from_mem'
 
             # For MIPS
             elif self.project.arch.name.startswith('MIPS'):
@@ -259,8 +257,6 @@ class GadgetAnalyzer:
                 last_insn = block.capstone.insns[-2]
                 if last_insn.mnemonic == 'jalr':
                     return 'call_reg_from_mem'
-                if last_insn.mnemonic == 'jr':
-                    return 'jmp_reg_from_mem'
 
             # If we couldn't determine the type, return None
             return None
@@ -314,8 +310,8 @@ class GadgetAnalyzer:
         gadget.transit_type = transit_type
 
         # build gadgets for memory control gadgets.
-        if transit_type in ('jmp_reg_from_mem', 'call_reg_from_mem'):
-            # mem_load_reg is used when we have intermediate register. (mov rax, [rdx]; jmp rax ) (
+        if transit_type == 'call_reg_from_mem':
+            # mem_load_reg is used when we have intermediate register. (mov rax, [rdx]; call rax )
             # In this case mem_load_reg = rax. mem_target_regs = rdx
             # Another example: call [rax+rdx]
             #   we do not have intermediate regs so mem_load X is None. and mem_target_regs = rax, rdx
@@ -357,7 +353,7 @@ class GadgetAnalyzer:
         if gadget.stack_change % (self.project.arch.bytes) != 0:
             l.debug("... uneven sp change")
             return None
-        if gadget.stack_change < 0 and gadget.transit_type not in ('jmp_reg_from_mem', 'call_reg_from_mem'):
+        if gadget.stack_change < 0 and gadget.transit_type != 'call_reg_from_mem':
             l.debug("stack change is negative!!")
             #FIXME: technically, it can be negative, e.g. call instructions
             return None
