@@ -2,7 +2,7 @@ import os
 import angr
 import test_rop
 import angrop  # pylint: disable=unused-import
-import pickle
+
 
 import logging
 l = logging.getLogger("angrop.tests.test_csu_init")
@@ -38,6 +38,7 @@ MIPSTAKE
 .text:00400E80 jr      $ra
 .text:00400E84 addiu   $sp, 0x38
 """
+
 
 def test_mipstake():
     cache_path = os.path.join(data_dir, "mipstake")
@@ -84,10 +85,10 @@ UNEXPLOITABLE
 .text:0000000000400608 ; } // starts at 400580
 '''
 
+
 def test_unexploitable():
     cache_path = os.path.join(data_dir, "unexploitable")
     proj = angr.Project(os.path.join(tests_dir, "x86_64", "unexploitable"), auto_load_libs=False, arch="x86_64")
-    state = proj.factory.blank_state()
     rop = proj.analyses.ROP(max_block_size=40, fast_mode=False, only_check_near_rets=False, )
 
     if os.path.exists(cache_path):
@@ -102,6 +103,7 @@ def test_unexploitable():
     assert result_state.solver.eval(result_state.registers.load('rsi'), cast_to=int) == 0xdeadbeefdeadbeef
     assert result_state.solver.eval(result_state.registers.load('rdi'), cast_to=int) == 0x1
     assert chain._gadgets[-1].transit_type == 'call_reg_from_mem'
+
 
 def run_all():
     functions = globals()

@@ -30,6 +30,8 @@ def to_signed(value, size_bits=64):
     if value >= 2 ** (size_bits - 1):
         value -= 2 ** size_bits
     return value
+
+
 def print_gadget(gadget):
     """
     Print all available information about a ROP gadget
@@ -105,6 +107,7 @@ def print_mem_access(access, type_str):
 
     print(f"  Address size: {access.addr_size} bits")
     print(f"  Data size: {access.data_size} bits")
+
 
 def find_mem_access_control(mem_access_ast):
     """
@@ -306,7 +309,7 @@ def make_initial_state(project, stack_gsize, fast_mode=False):
 
     initial_state.options.discard(angr.options.CGC_ZERO_FILL_UNCONSTRAINED_MEMORY)
     initial_state.options.update({angr.options.TRACK_REGISTER_ACTIONS, angr.options.TRACK_MEMORY_ACTIONS,
-                                angr.options.TRACK_JMP_ACTIONS, angr.options.TRACK_CONSTRAINT_ACTIONS})
+                                  angr.options.TRACK_JMP_ACTIONS, angr.options.TRACK_CONSTRAINT_ACTIONS})
     symbolic_stack = claripy.Concat(*[
         initial_state.solver.BVS(f"symbolic_stack_{i}", project.arch.bits) for i in range(stack_gsize)
     ])

@@ -188,7 +188,6 @@ class Builder:
         if gadgets[-1].transit_type == 'jmp_reg' or \
                 gadgets[-1].transit_type in ('jmp_reg_from_mem', 'call_reg_from_mem'):
             stack_change += arch_bytes
-
         for i in range(stack_change // bytes_per_pop):
             sym_word = test_symbolic_state.memory.load(sp + bytes_per_pop*i, bytes_per_pop,
                                                        endness=self.project.arch.memory_endness)

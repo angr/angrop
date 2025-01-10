@@ -239,7 +239,7 @@ class GadgetAnalyzer:
         if ctrl_type == 'syscall':
             return ctrl_type
 
-        # Handle mem_control case first
+        # Handle mem_control case
         if ctrl_type == 'mem_control':
             # Get the block containing the control transfer
             block = self.project.factory.block(final_state.history.bbl_addrs[-1])
@@ -485,34 +485,6 @@ class GadgetAnalyzer:
                     if ast_1 is ast_2:
                         gadget.reg_moves.append(RopRegMove(from_reg, reg, half_bits))
 
-    def _check_ret2csu_pattern(self, init_state, final_state):
-        """
-        Check if this gadget has ret2csu control pattern:
-        - Has an indirect call/jump through memory
-        - Memory address is controlled by a register
-        """
-        ip = final_state.ip
-
-        # Must be indirect - check variables pattern
-        if not ip.variables or len(ip.variables) < 1:
-            return False
-        var = list(ip.variables)[0]
-
-        # Check if it came from a memory read
-        if not var.startswith("symbolic_read_"):
-            return False
-
-        # Find the memory read action that produced IP
-        for action in final_state.history.actions:
-            if action.type == "mem" and action.action == "read":
-                if action.data.ast is ip:
-                    # Check if read address is register-controlled
-                    addr_vars = list(action.addr.ast.variables)
-                    if addr_vars and all(var.startswith("sreg_") for var in addr_vars):
-                        return True
-
-        return False
-
     # TODO: need to handle reg calls
     def _check_for_control_type(self, init_state, final_state):
         """
@@ -658,7 +630,7 @@ class GadgetAnalyzer:
             assert self.arch.base_pointer not in dependencies
             if len(dependencies) == 0 and not sp_change.symbolic:
                 sp_change_value = init_state.solver.eval(sp_change)
-                sp_change_value = rop_utils.to_signed(sp_change_value, sp_change.size())
+                sp_change_value = rop_utils.to_signed(sp_change_value, sp_change.size()) # handle negative stack change
                 stack_changes = [sp_change_value]
             elif list(dependencies)[0] == self.arch.stack_pointer:
                 stack_changes = init_state.solver.eval_upto(sp_change, 2)
