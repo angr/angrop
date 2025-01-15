@@ -68,7 +68,7 @@ class RegSetter(Builder):
                     return False
         for reg, val in registers.items():
             bv = getattr(state.regs, reg)
-            if bv.symbolic or state.solver.eval(bv != val.data):
+            if (val.symbolic != bv.symbolic) or state.solver.eval(bv != val.data):
                 l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation - 2.", chain_str)
                 return False
         # the next pc must come from the stack

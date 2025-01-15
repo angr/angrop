@@ -2,10 +2,30 @@ import os
 
 import angr
 import angrop # pylint: disable=unused-import
+import claripy
 from angrop.rop_value import RopValue
 
 BIN_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "binaries")
 CACHE_DIR = os.path.join(BIN_DIR, 'tests_data', 'angrop_gadgets_cache')
+
+def test_symbolic_data():
+    cache_path = os.path.join(CACHE_DIR, "amd64_glibc_2.19")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    var1 = claripy.BVS("var1", proj.arch.bits)
+    var2 = claripy.BVS("var2", proj.arch.bits)
+    chain = rop.set_regs(rax=var1, rbx=var2)
+
+    state = chain.exec()
+    assert state.solver.satisfiable(extra_constraints=[state.regs.rax != var1]) is False
+    assert state.solver.satisfiable(extra_constraints=[state.regs.rbx != var2]) is False
 
 def test_x86_64_func_call():
     cache_path = os.path.join(CACHE_DIR, "1after909")

@@ -264,9 +264,20 @@ class RopChain:
         state.solver.reload_solver([]) # remove constraints
         state.regs.pc = self._values[0].concreted
         concrete_vals = self._concretize_chain_values(timeout=timeout, preserve_next_pc=True)
+
+        # when the chain data includes symbolic values, we need to replace the concrete values
+        # with the user's symbolic data
+        values = concrete_vals
+        for idx, val in enumerate(self._values):
+            if not val.symbolic:
+                continue
+            if all(var.startswith("symbolic_stack") for var in val.ast.variables):
+                continue
+            values[idx] = (val.data, val.rebase)
+
         # the assumption is that the first value in the chain is a code address
         # it sounds like a reasonable assumption to me. But I can be wrong.
-        for value, _ in reversed(concrete_vals[1:]):
+        for value, _ in reversed(values[1:]):
             state.stack_push(value)
         if max_steps is None:
             max_steps = max(

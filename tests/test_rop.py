@@ -236,6 +236,7 @@ def run_all():
     all_functions = dict([x for x in functions.items() if x[0].startswith('test_')])
     for f in sorted(all_functions.keys()):
         if hasattr(all_functions[f], '__call__'):
+            print(f)
             all_functions[f]()
 
 
