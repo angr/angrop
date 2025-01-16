@@ -1,3 +1,4 @@
+import ctypes
 import logging
 from collections import defaultdict
 
@@ -67,17 +68,15 @@ class GadgetAnalyzer:
                 else None
             )
 
-    @rop_utils.timeout(3)
-    def _analyze_gadget(self, addr, allow_conditional_branches):
-        l.info("Analyzing 0x%x", addr)
+    def _step_to_gadget_stopping_states(self, init_state):
+        """
+        Currently, the following scenarios are considered as stopping states:
+        1. unconstrained (e.g. ret)
+        2. invokes syscall (e.g. syscall)
 
-        # Step 1: first check if the block makes sense
-        if not self._block_make_sense(addr):
-            return []
-
+        for gadgets invoking syscalls, we will try to step over it to find gadgets such as "syscall; ret"
+        """
         try:
-            init_state = self._state.copy()
-            init_state.ip = addr
             simgr = self.project.factory.simulation_manager(init_state, save_unconstrained=True)
 
             def filter(state):
@@ -88,7 +87,7 @@ class GadgetAnalyzer:
                     return "syscall"
                 return None
 
-            simgr.run(n=4, num_inst=30, filter_func=filter)
+            simgr.run(n=2, filter_func=filter)
 
         except (claripy.errors.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError):
             return []
@@ -104,9 +103,25 @@ class GadgetAnalyzer:
         if "syscall" in simgr.stashes:
             final_states.extend(self._try_stepping_past_syscall(state) for state in simgr.syscall)
 
-        if not allow_conditional_branches and (
-            simgr.active or simgr.deadended or len(final_states) != 1
-        ):
+        bad_states = simgr.active + simgr.deadended
+
+        return final_states, bad_states
+
+    @rop_utils.timeout(3)
+    def _analyze_gadget(self, addr, allow_conditional_branches):
+        l.info("Analyzing 0x%x", addr)
+
+        # Step 1: first statically check if the block can reach stopping states
+        #         static analysis is much faster
+        if not self._can_reach_stopping_states(addr, allow_conditional_branches):
+            return []
+
+        # Step 2: get all potential successor states
+        init_state = self._state.copy()
+        init_state.ip = addr
+        final_states, bad_states = self._step_to_gadget_stopping_states(init_state)
+
+        if not allow_conditional_branches and (bad_states or len(final_states) != 1):
             return []
 
         gadgets = []
@@ -149,6 +164,8 @@ class GadgetAnalyzer:
                 l.warning("... claripy error: %s", e)
                 continue
             except (angr.errors.AngrError, angr.errors.AngrRuntimeError, angr.errors.SimError):
+                continue
+            except ctypes.ArgumentError as e:
                 continue
 
         return gadgets
@@ -238,31 +255,30 @@ class GadgetAnalyzer:
     def is_in_kernel(self, state):
         return rop_utils.is_in_kernel(self.project, state)
 
-    def _can_reach_unconstrained(self, addr, max_steps=2):
+    def _can_reach_stopping_states(self, addr, allow_conditional_branches, max_steps=2):
         """
         Use static analysis to check whether the address can lead to unconstrained targets
         It is much faster than directly doing symbolic execution on the addr
         """
+        if not self._block_make_sense(addr):
+            return False
+
         b = self.project.factory.block(addr)
         constant_jump_targets = list(b.vex.constant_jump_targets)
 
         if not constant_jump_targets:
             return True
 
-        # we drop block that have more than 1 jump targets
-        # technically, this check make us miss some gadgets that have a branch that is never satisfiable
-        # but it is what we need to pay for performance
-        if len(constant_jump_targets) > 1:
+        if not allow_conditional_branches and len(constant_jump_targets) > 1:
             return False
 
         if max_steps == 0:
             return False
 
-        target_block_addr = constant_jump_targets[0]
-        if not self._block_make_sense(target_block_addr):
-            return False
-
-        return self._can_reach_unconstrained(target_block_addr, max_steps-1)
+        for target_block_addr in constant_jump_targets:
+            if self._can_reach_stopping_states(target_block_addr, max_steps-1):
+                return True
+        return False
 
     def _reach_unconstrained_or_syscall(self, addr):
         init_state = self._state.copy()

@@ -155,6 +155,10 @@ def test_shift_gadget():
     assert all(gadget_exists(rop, x) for x in [0x454e75, 0x5622d5, 0x490058])
 
 def test_i386_syscall():
+    """
+    in 32-bit world, syscall instruction is only valid for AMD CPUs, we consider it invalid in angrop for
+    better portability, see https://github.com/angr/angrop/issues/104
+    """
     # pylint: disable=pointless-string-statement
     proj = angr.Project(os.path.join(tests_dir, "i386", "angrop_syscall_test"), auto_load_libs=False)
 
@@ -162,22 +166,13 @@ def test_i386_syscall():
     """
     804918c  int     0x80
     """
-    """
-    8049195  mov     esp, 0x804c038
-    804919a  ret
-    """
 
-    assert all(gadget_exists(rop, x) for x in [0x804918c, 0x8049195])
+    assert all(gadget_exists(rop, x) for x in [0x804918c])
 
     """
     8049189  syscall
     """
-
-    """
-    804918f  mov     esp, 0x804c020
-    8049194  ret
-    """
-    assert all(not gadget_exists(rop, x) for x in [0x8049189, 0x804918f])
+    assert all(not gadget_exists(rop, x) for x in [0x8049189])
 
 def test_gadget_timeout():
     # pylint: disable=pointless-string-statement
