@@ -193,7 +193,7 @@ def local_multiprocess_analyze_gadget_list():
     0x4005d8            bad instruction
     """
     gadgets = rop.analyze_gadget_list([0x4006d8, 0x4005d8, 0x400864])
-    assert len(gadgets[1]) == 2
+    assert len(gadgets) == 2
     assert gadgets[0].addr == 0x4006d8
     assert gadgets[1].addr == 0x400864
 
