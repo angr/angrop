@@ -88,6 +88,7 @@ class GadgetAnalyzer:
                 return None
 
             simgr.run(n=2, filter_func=filter)
+            simgr.move(from_stash='active', to_stash='syscall', filter_func=lambda s: rop_utils.is_in_kernel(self.project, s))
 
         except (claripy.errors.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError):
             return []
