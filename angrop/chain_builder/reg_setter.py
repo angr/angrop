@@ -163,8 +163,8 @@ class RegSetter(Builder):
                 continue
             if g.changed_regs.intersection(hard_preserve_regs):
                 continue
-            destory_regs = g.changed_regs.intersection(preserve_regs)
-            if destory_regs - set_regs:
+            clobbered_regs = g.changed_regs.intersection(preserve_regs)
+            if clobbered_regs - set_regs:
                 continue
             new_preserve = preserve_regs.copy()
             new_preserve.update(set_regs)

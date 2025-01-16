@@ -43,12 +43,15 @@ class FuncCaller(Builder):
             stack_arguments = args[len(cc.ARG_REGS):]
 
         # set register arguments
+        if needs_return and isinstance(cc.RETURN_ADDR, SimRegArg) and cc.RETURN_ADDR.reg_name != 'ip_at_syscall':
+            reg_name = cc.RETURN_ADDR.reg_name
+            preserve_regs.add(reg_name)
         registers = {} if extra_regs is None else extra_regs
         for arg, reg in zip(register_arguments, cc.ARG_REGS):
             registers[reg] = arg
         for reg in preserve_regs:
             registers.pop(reg, None)
-        chain = self.chain_builder.set_regs(**registers)
+        chain = self.chain_builder.set_regs(**registers, preserve_regs=preserve_regs)
 
         # invoke the function
         chain.add_gadget(func_gadget)
@@ -66,7 +69,7 @@ class FuncCaller(Builder):
         # 1. handle stack arguments
         # 2. handle function return address to maintain the control flow
         if stack_arguments:
-            cleaner = self.chain_builder.shift((len(stack_arguments)+1)*arch_bytes, next_pc_idx=-1)
+            cleaner = self.chain_builder.shift((len(stack_arguments)+1)*arch_bytes, next_pc_idx=-1, preserve_regs=preserve_regs)
             chain.add_gadget(cleaner._gadgets[0])
             for arg in stack_arguments:
                 chain.add_value(arg)
