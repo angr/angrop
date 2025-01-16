@@ -1,6 +1,7 @@
 import logging
 from collections import defaultdict
 
+from .. import rop_utils
 from .builder import Builder
 from ..rop_chain import RopChain
 from ..errors import RopException
@@ -64,7 +65,12 @@ class Shifter(Builder):
             return False
         return True
 
-    def shift(self, length, preserve_regs=None):
+    def shift(self, length, preserve_regs=None, next_pc_idx=-1):
+        """
+        length:         how many bytes to shift
+        preserve_regs:  what registers not to clobber
+        next_pc_idx:    where is the next pc, e.g for ret, it is -1
+        """
         preserve_regs = set(preserve_regs) if preserve_regs else set()
         arch_bytes = self.project.arch.bytes
 
@@ -75,14 +81,31 @@ class Shifter(Builder):
             raise RopException("Encounter a shifting request that requires chaining multiple shifting gadgets " +
                                "together which is not support atm. Plz create an issue on GitHub " +
                                "so we can add the support!")
+        g_cnt = length // arch_bytes
+        next_pc_idx = (next_pc_idx % g_cnt + g_cnt) % g_cnt # support negative indexing
         for g in self.shift_gadgets[length]:
             if preserve_regs.intersection(g.changed_regs):
                 continue
+            if next_pc_idx == g_cnt-1:
+                if g.transit_type != 'ret':
+                    continue
+            else:
+                if g.transit_type != 'pop_pc':
+                    continue
+                if g.pc_offset != next_pc_idx*arch_bytes:
+                    continue
             try:
                 chain = RopChain(self.project, self.chain_builder)
                 chain.add_gadget(g)
-                for _ in range(g.stack_change//arch_bytes-1):
-                    chain.add_value(self._get_fill_val())
+                for idx in range(g_cnt):
+                    if idx != next_pc_idx:
+                        chain.add_value(self._get_fill_val())
+                    else:
+                        next_pc_val = rop_utils.cast_rop_value(
+                            chain._blank_state.solver.BVS("next_pc", self.project.arch.bits),
+                            self.project,
+                        )
+                        chain.add_value(next_pc_val)
                 if self.verify_shift(chain, length, preserve_regs):
                     return chain
             except RopException:

@@ -4,6 +4,7 @@ import angr
 import angrop # pylint: disable=unused-import
 import claripy
 from angrop.rop_value import RopValue
+from angrop.errors import RopException
 
 BIN_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "binaries")
 CACHE_DIR = os.path.join(BIN_DIR, 'tests_data', 'angrop_gadgets_cache')
@@ -393,6 +394,30 @@ def test_pop_pc_syscall_chain():
     state = chain.exec()
     assert state.regs.rdi.concrete_value == 0x41414141
     assert 0 not in state.posix.fd
+
+def test_retn_i386_call_chain():
+    cache_path = os.path.join(CACHE_DIR, "bronze_ropchain")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "bronze_ropchain"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    # force to use 'retn 0xc' to clean up function arguments
+    g = rop.analyze_gadget(0x809d9fb)
+    rop._chain_builder._shifter.shift_gadgets = {g.stack_change: [g]}
+
+    rop.func_call('write', [1, 0x80AC5E8, 17], needs_return=False)
+
+    chain = None
+    try:
+        chain = rop.func_call('write', [1, 0x80AC5E8, 17])
+    except RopException:
+        pass
+    assert chain is None
 
 def test_aarch64_basic_reg_setting():
     proj = angr.load_shellcode(

@@ -11,12 +11,12 @@ class RopChain:
     """
     cls_timeout = CHAIN_TIMEOUT_DEFAULT
 
-    def __init__(self, project, rop, state=None, badbytes=None):
+    def __init__(self, project, builder, state=None, badbytes=None):
         """
         """
         self._p = project
         self._pie = self._p.loader.main_object.pic
-        self._rop = rop
+        self._builder = builder
 
         self._gadgets = []
         self._values = []
@@ -147,19 +147,22 @@ class RopChain:
 
         return concrete_vals
 
-    def _concretize_chain_values(self, constraints=None, timeout=None, preserve_next_pc=False):
+    def _concretize_chain_values(self, constraints=None, timeout=None, preserve_next_pc=False, append_shift=False):
         """
         concretize chain values with a timeout
         """
-        if self.next_pc_idx() is not None:
+        if self.next_pc_idx() is not None and append_shift:
             try:
-                return (
-                    self + self._rop.chain_builder.shift(self._p.arch.bytes)
-                )._concretize_chain_values(
-                    constraints=constraints,
-                    timeout=timeout,
-                    preserve_next_pc=preserve_next_pc,
-                )
+                # the following line is the final touch for chains ending with retn-style
+                # gadget to make sure that the next_pc is at the end of the chain
+                chain = self + self._builder.chain_builder.shift(self._p.arch.bytes)
+                values = chain._concretize_chain_values(
+                                    constraints=constraints,
+                                    timeout=timeout,
+                                    preserve_next_pc=preserve_next_pc,
+                                    append_shift=False,
+                                )
+                return values
             except RopException:
                 pass
         if timeout is None:
@@ -181,7 +184,7 @@ class RopChain:
         if base_addr is None:
             base_addr = self._p.loader.main_object.mapped_base
         test_state = self._blank_state.copy()
-        concrete_vals = self._concretize_chain_values(constraints, timeout=timeout)
+        concrete_vals = self._concretize_chain_values(constraints, timeout=timeout, append_shift=True)
         for value, rebased in reversed(concrete_vals):
             if rebased:
                 test_state.stack_push(value - self._p.loader.main_object.mapped_base + base_addr)
@@ -230,7 +233,7 @@ class RopChain:
             payload = ""
         payload += 'chain = b""\n'
 
-        concrete_vals = self._concretize_chain_values(constraints, timeout=timeout)
+        concrete_vals = self._concretize_chain_values(constraints, timeout=timeout, append_shift=True)
         for value, rebased in concrete_vals:
 
             instruction_code = ""
@@ -263,7 +266,7 @@ class RopChain:
         state = self._blank_state.copy()
         state.solver.reload_solver([]) # remove constraints
         state.regs.pc = self._values[0].concreted
-        concrete_vals = self._concretize_chain_values(timeout=timeout, preserve_next_pc=True)
+        concrete_vals = self._concretize_chain_values(timeout=timeout, preserve_next_pc=True, append_shift=False)
 
         # when the chain data includes symbolic values, we need to replace the concrete values
         # with the user's symbolic data
@@ -288,7 +291,7 @@ class RopChain:
                                                          allow_simprocedures=True)
 
     def copy(self):
-        cp = RopChain(self._p, self._rop)
+        cp = RopChain(self._p, self._builder)
         cp._gadgets = list(self._gadgets)
         cp._values = list(self._values)
         cp.payload_len = self.payload_len
