@@ -132,9 +132,9 @@ class GadgetFinder:
 
         with Pool(processes=processes, initializer=_set_global_gadget_analyzer, initargs=initargs) as pool:
             it = pool.imap_unordered(run_worker, iterable, chunksize=1)
-            for gadget in it:
-                if gadget is not None:
-                    gadgets.append(gadget)
+            for gs in it:
+                if gs:
+                    gadgets += gs
 
         return sorted(gadgets, key=lambda x: x.addr)
 

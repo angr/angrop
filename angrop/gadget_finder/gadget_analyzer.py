@@ -91,14 +91,14 @@ class GadgetAnalyzer:
             simgr.move(from_stash='active', to_stash='syscall', filter_func=lambda s: rop_utils.is_in_kernel(self.project, s))
 
         except (claripy.errors.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError):
-            return []
+            return [], []
         except (claripy.ClaripyFrontendError, angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e:
             l.warning("... claripy error: %s", e)
-            return []
+            return [], []
         except (angr.errors.AngrError, angr.errors.AngrRuntimeError, angr.errors.SimError):
-            return []
+            return [], []
         except RopTimeoutException:
-            return []
+            return [], []
 
         final_states = list(simgr.unconstrained)
         if "syscall" in simgr.stashes:
@@ -249,6 +249,8 @@ class GadgetAnalyzer:
         except angr.AngrError:
             return False
         except AttributeError:
+            return False
+        except KeyError:
             return False
 
         return True
