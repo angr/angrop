@@ -276,7 +276,7 @@ class GadgetAnalyzer:
             return False
 
         for target_block_addr in constant_jump_targets:
-            if self._can_reach_stopping_states(target_block_addr, max_steps-1):
+            if self._can_reach_stopping_states(target_block_addr, allow_conditional_branches, max_steps-1):
                 return True
         return False
 
