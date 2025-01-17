@@ -141,52 +141,6 @@ class RopGadget:
         accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)
         return any(x.is_symbolic_access() for x in accesses)
 
-    def reg_set_same_effect(self, other):
-        """
-        having the same register setting effect compared to the other gadget
-        """
-        if self.popped_regs != other.popped_regs:
-            return False
-        if self.concrete_regs != other.concrete_regs:
-            return False
-        if self.reg_dependencies != other.reg_dependencies:
-            return False
-        if self.transit_type != other.transit_type:
-            return False
-        return True
-
-    def reg_set_better_than(self, other):
-        """
-        whether this gadget is strictly better than the other in terms of register setting effect
-        """
-        if not self.reg_set_same_effect(other):
-            return False
-        if len(self.changed_regs) >= len(other.changed_regs) and \
-                self.stack_change <= other.stack_change and \
-                self.num_mem_access <= other.num_mem_access and \
-                self.isn_count <= other.isn_count:
-            return True
-        return False
-
-    def reg_move_same_effect(self, other):
-        """
-        having the same register moving effect compared to the other gadget
-        """
-        if set(self.reg_moves) != set(other.reg_moves):
-            return False
-        if self.reg_dependencies != other.reg_dependencies:
-            return False
-        return True
-
-    def reg_move_better_than(self, other):
-        if not self.reg_move_same_effect(other):
-            return False
-        if self.stack_change <= other.stack_change and \
-                self.num_mem_access <= other.num_mem_access and \
-                self.block_length <= other.block_length:
-            return True
-        return False
-
     def __str__(self):
         s = "Gadget %#x\n" % self.addr
         s += "Stack change: %#x\n" % self.stack_change

@@ -16,10 +16,9 @@ class Shifter(Builder):
         super().__init__(chain_builder)
 
         self.shift_gadgets = None
-        self.update()
 
     def update(self):
-        self.shift_gadgets = self._filter_gadgets(self.chain_builder.gadgets)
+        self.shift_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
 
     def verify_shift(self, chain, length, preserve_regs):
         arch_bytes = self.project.arch.bytes
@@ -55,14 +54,6 @@ class Shifter(Builder):
                 chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in chain._gadgets])
                 l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
                 return False
-        return True
-
-    @staticmethod
-    def same_effect(g1, g2):
-        if g1.stack_change != g2.stack_change:
-            return False
-        if g1.transit_type != g2.transit_type:
-            return False
         return True
 
     def shift(self, length, preserve_regs=None, next_pc_idx=-1):
@@ -133,12 +124,19 @@ class Shifter(Builder):
 
         raise RopException(f"Failed to create a ret-sled sp for {size:#x} bytes while preserving {preserve_regs}")
 
-    def better_than(self, g1, g2):
-        if not self.same_effect(g1, g2):
+    def _same_effect(self, g1, g2):
+        if g1.stack_change != g2.stack_change:
             return False
-        return g1.changed_regs.issubset(g2.changed_regs)
+        if g1.transit_type != g2.transit_type:
+            return False
+        if g1.changed_regs != g2.changed_regs: # needed for preserve_regs
+            return False
+        return True
 
-    def _filter_gadgets(self, gadgets):
+    def _better_than(self, g1, g2):
+        return False
+
+    def filter_gadgets(self, gadgets):
         """
         filter gadgets having the same effect
         """
@@ -151,19 +149,7 @@ class Shifter(Builder):
             and not x.has_conditional_branch
         ]
 
-        # now do the standard filtering
-        # gadgets = set(gadgets)
-        # skip = set({})
-        # while True:
-        #     to_remove = set({})
-        #     for g in gadgets-skip:
-        #         to_remove.update({x for x in gadgets-{g} if self.better_than(g, x)})
-        #         if to_remove:
-        #             break
-        #         skip.add(g)
-        #     if not to_remove:
-        #         break
-        #     gadgets -= to_remove
+        gadgets = self._filter_gadgets(gadgets)
 
         d = defaultdict(list)
         for g in gadgets:

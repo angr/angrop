@@ -25,10 +25,9 @@ class RegSetter(Builder):
         self.hard_chain_cache = None
         # Estimate of how difficult it is to set each register.
         self._reg_weights = None
-        self.update()
 
     def update(self):
-        self._reg_setting_gadgets = self.chain_builder.gadgets
+        self._reg_setting_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
         self.hard_chain_cache = {}
         reg_pops = Counter()
         for gadget in self._reg_setting_gadgets:
@@ -246,25 +245,6 @@ class RegSetter(Builder):
         chains = self._recursively_find_chains(gadgets, hard_chain, preserve_regs,
                                                set(registers.keys()), preserve_regs)
         return self._sort_chains(chains)
-
-    @staticmethod
-    def _filter_gadgets(gadgets):
-        """
-        filter gadgets having the same effect
-        """
-        gadgets = set(gadgets)
-        skip = set({})
-        while True:
-            to_remove = set({})
-            for g in gadgets-skip:
-                to_remove.update({x for x in gadgets-{g} if g.reg_set_better_than(x)})
-                if to_remove:
-                    break
-                skip.add(g)
-            if not to_remove:
-                break
-            gadgets -= to_remove
-        return gadgets
 
     @staticmethod
     def _tuple_to_gadgets(data, reg_tuple):
@@ -637,3 +617,61 @@ class RegSetter(Builder):
         remaining_regs |= gadget.constraint_regs
 
         return remaining_regs
+
+    def __filter_gadgets(self, gadgets):
+        d = defaultdict(list)
+        for g in gadgets:
+            key = (len(g.changed_regs), g.stack_change, g.num_mem_access, g.isn_count)
+            d[key].append(g)
+        if len(d) == 0:
+            return set()
+        if len(d) == 1:
+            return {gadgets.pop()}
+
+        keys = set(d.keys())
+        bests = set()
+        while keys:
+            k1 = keys.pop()
+            # check if nothing is better than k1
+            for k2 in keys:
+                # if k2 is better than k1
+                if all(k2[i] <= k1[i] for i in range(4)):
+                    break
+            else:
+                bests.add(k1)
+
+        gadgets = set()
+        for key, val in d.items():
+            if key not in bests:
+                continue
+            gadgets = gadgets.union(val)
+        return gadgets
+
+    def _same_effect(self, g1, g2):
+        if g1.popped_regs != g2.popped_regs:
+            return False
+        if g1.concrete_regs != g2.concrete_regs:
+            return False
+        if g1.reg_dependencies != g2.reg_dependencies:
+            return False
+        if g1.transit_type != g2.transit_type:
+            return False
+        return True
+
+    def _filter_gadgets(self, gadgets):
+        bests = set()
+        gadgets = set(gadgets)
+        while gadgets:
+            g0 = gadgets.pop()
+            equal_class = {g for g in gadgets if self._same_effect(g0, g)}
+            equal_class.add(g0)
+            bests = bests.union(self.__filter_gadgets(equal_class))
+
+            gadgets -= equal_class
+        return bests
+
+    def filter_gadgets(self, gadgets):
+        """
+        filter gadgets having the same effect
+        """
+        return self._filter_gadgets(gadgets)

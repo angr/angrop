@@ -1,6 +1,7 @@
 import struct
 from abc import abstractmethod
 from functools import cmp_to_key
+from collections import defaultdict
 
 import claripy
 
@@ -244,6 +245,51 @@ class Builder:
             return self.roparg_filler
         else:
             return claripy.BVS("filler", self.project.arch.bits)
+
+    @abstractmethod
+    def _same_effect(self, g1, g2):
+        raise NotImplementedError("_same_effect is not implemented!")
+
+    @abstractmethod
+    def _better_than(self, g1, g2):
+        raise NotImplementedError("_better_than is not implemented!")
+
+    def same_effect(self, g1, g2):
+        return self._same_effect(g1, g2)
+
+    def better_than(self, g1, g2):
+        if not self.same_effect(g1, g2):
+            return False
+        return self._better_than(g1, g2)
+
+    def __filter_gadgets(self, gadgets):
+        """
+        remove any gadgets that are strictly worse than others
+        FIXME: make all gadget filtering logic like what we do in reg_setter, which is correct and way more faster
+        """
+        gadgets = set(gadgets)
+        bests = set()
+        while gadgets:
+            g1 = gadgets.pop()
+            # check if nothing is better than g1
+            for g2 in gadgets:
+                if self._better_than(g2, g1):
+                    break
+            else:
+                bests.add(g1)
+        return bests
+
+    def _filter_gadgets(self, gadgets):
+        bests = set()
+        gadgets = set(gadgets)
+        while gadgets:
+            g0 = gadgets.pop()
+            equal_class = {g for g in gadgets if self._same_effect(g0, g)}
+            equal_class.add(g0)
+            bests = bests.union(self.__filter_gadgets(equal_class))
+
+            gadgets -= equal_class
+        return bests
 
     @abstractmethod
     def update(self):

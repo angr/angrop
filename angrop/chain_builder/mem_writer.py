@@ -19,7 +19,6 @@ class MemWriter(Builder):
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
         self._mem_write_gadgets = None
-        self.update()
 
     def update(self):
         self._mem_write_gadgets = self._get_all_mem_write_gadgets(self.chain_builder.gadgets)

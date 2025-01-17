@@ -43,7 +43,6 @@ class SysCaller(FuncCaller):
         super().__init__(chain_builder)
 
         self.syscall_gadgets = None
-        self.update()
 
     @staticmethod
     def supported_os(os):

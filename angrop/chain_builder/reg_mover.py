@@ -17,10 +17,9 @@ class RegMover(Builder):
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
         self._reg_moving_gadgets = None
-        self.update()
 
     def update(self):
-        self._reg_moving_gadgets = self._filter_gadgets(self.chain_builder.gadgets)
+        self._reg_moving_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
 
     def verify(self, chain, preserve_regs, registers):
         """
@@ -117,28 +116,13 @@ class RegMover(Builder):
 
         raise RopException("Couldn't move registers :(")
 
-    @staticmethod
-    def _filter_gadgets(gadgets):
+    def filter_gadgets(self, gadgets):
         """
         filter gadgets having the same effect
         """
-        gadgets = {g for g in gadgets if not g.has_conditional_branch}
-        # first: filter out gadgets that don't do register move
-        gadgets = set(x for x in gadgets if x.reg_moves)
-        # # second: remove gadgets that are strictly worse than some others
-        # skip = set({})
-        # while True:
-        #     to_remove = set({})
-        #     for g in gadgets-skip:
-        #         to_remove.update({x for x in gadgets-{g} if g.reg_move_better_than(x)})
-        #         if to_remove:
-        #             break
-        #         skip.add(g)
-        #     if not to_remove:
-        #         break
-        #     gadgets -= to_remove
-        # third: remove gadgets that only move from itself to itself, it is not helpful
-        # for exploitation
+        # first: filter out gadgets that don't do register move or have conditional branches
+        gadgets = {g for g in gadgets if not g.has_conditional_branch and g.reg_moves}
+        gadgets = self._filter_gadgets(gadgets)
         new_gadgets = set(x for x in gadgets if any(y.from_reg != y.to_reg for y in x.reg_moves))
         return new_gadgets
 
@@ -153,3 +137,20 @@ class RegMover(Builder):
             if moves.intersection(set(g.reg_moves)):
                 gadgets.add(g)
         return gadgets
+
+    def _same_effect(self, g1, g2):
+        """
+        having the same register moving effect compared to the other gadget
+        """
+        if set(g1.reg_moves) != set(g2.reg_moves):
+            return False
+        if g1.reg_dependencies != g2.reg_dependencies:
+            return False
+        return True
+
+    def _better_than(self, g1, g2):
+        if g1.stack_change <= g2.stack_change and \
+                g1.num_mem_access <= g2.num_mem_access and \
+                g1.isn_count <= g2.isn_count:
+            return True
+        return False
