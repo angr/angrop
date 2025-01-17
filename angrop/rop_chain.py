@@ -1,9 +1,13 @@
+import logging
+
 from . import rop_utils
 from .errors import RopException
 from .rop_gadget import RopGadget
 from .rop_value import RopValue
 
 CHAIN_TIMEOUT_DEFAULT = 3
+
+l = logging.getLogger("angrop.chain_builder.reg_setter")
 
 class RopChain:
     """
@@ -287,8 +291,15 @@ class RopChain:
                 sum(len(gadget.bbl_addrs) for gadget in self._gadgets),
                 2 * len(self._gadgets),
             )
-        return rop_utils.step_to_unconstrained_successor(self._p, state, max_steps=max_steps,
-                                                         allow_simprocedures=True)
+        try:
+            state = rop_utils.step_to_unconstrained_successor(self._p, state, max_steps=max_steps,
+                                                              allow_simprocedures=True)
+        except RopException as e:
+            code = self.payload_code(print_instructions=True)
+            l.error("The following chain fails to execute!")
+            l.error(code)
+            raise e
+        return state
 
     def copy(self):
         cp = RopChain(self._p, self._builder)

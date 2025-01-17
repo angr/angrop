@@ -197,6 +197,12 @@ def local_multiprocess_analyze_gadget_list():
     assert gadgets[0].addr == 0x4006d8
     assert gadgets[1].addr == 0x400864
 
+def test_bad_gadgets():
+    proj = angr.Project(os.path.join(tests_dir, "armel", "libc-2.31.so"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
+    g = rop.analyze_gadget(0x44cc95)
+    assert g is None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
