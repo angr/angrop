@@ -1,10 +1,8 @@
 import time
 import signal
-import threading
-import functools
+
 import angr
 import claripy
-import angr
 
 from .errors import RegNotFoundException, RopException
 from .rop_value import RopValue
@@ -30,83 +28,6 @@ def to_signed(value, size_bits=64):
     if value >= 2 ** (size_bits - 1):
         value -= 2 ** size_bits
     return value
-
-
-def print_gadget(gadget):
-    """
-    Print all available information about a ROP gadget
-    """
-    print(f"Gadget at {gadget.addr:#x}")
-    print(f"Block length: {gadget.block_length}")
-    print(f"Stack change: {gadget.stack_change:#x}")
-
-    # Transit info
-    print(f"\nTransit type: {gadget.transit_type}")
-    if gadget.jump_reg:
-        print(f"Jump register: {gadget.jump_reg}")
-    if gadget.pc_reg:
-        print(f"PC register: {gadget.pc_reg}")
-    if gadget.pc_offset is not None:
-        print(f"PC offset: {gadget.pc_offset:#x}")
-
-    # Register effects
-    print("\nRegister effects:")
-    print(f"Changed registers: {gadget.changed_regs}")
-    print(f"Popped registers: {gadget.popped_regs}")
-
-    # Register concrete values
-    if gadget.concrete_regs:
-        print("\nConcrete register values:")
-        for reg, val in gadget.concrete_regs.items():
-            print(f"  {reg}: {val:#x}")
-
-    # Register dependencies and controllers
-    if gadget.reg_dependencies:
-        print("\nRegister dependencies:")
-        for reg, deps in gadget.reg_dependencies.items():
-            controllers = gadget.reg_controllers.get(reg, [])
-            print(f"  {reg}: controls={controllers} depends={deps}")
-
-    # Register moves
-    if gadget.reg_moves:
-        print("\nRegister moves:")
-        for move in gadget.reg_moves:
-            print(f"  {move.from_reg} -> {move.to_reg} ({move.bits} bits)")
-
-    # Memory operations
-    if gadget.mem_reads:
-        print("\nMemory reads:")
-        for mem in gadget.mem_reads:
-            print_mem_access(mem, "read")
-
-    if gadget.mem_writes:
-        print("\nMemory writes:")
-        for mem in gadget.mem_writes:
-            print_mem_access(mem, "write")
-
-    if gadget.mem_changes:
-        print("\nMemory changes:")
-        for mem in gadget.mem_changes:
-            print_mem_access(mem, "change")
-            print(f"  Operation: {mem.op}")
-
-
-def print_mem_access(access, type_str):
-    """Print details about a memory access"""
-    if access.addr_constant is not None:
-        print(f"  Address: {access.addr_constant:#x}")
-    else:
-        print(f"  Address dependencies: {access.addr_dependencies}")
-        print(f"  Address controllers: {access.addr_controllers}")
-
-    if access.data_constant is not None:
-        print(f"  Data: {access.data_constant:#x}")
-    else:
-        print(f"  Data dependencies: {access.data_dependencies}")
-        print(f"  Data controllers: {access.data_controllers}")
-
-    print(f"  Address size: {access.addr_size} bits")
-    print(f"  Data size: {access.data_size} bits")
 
 
 def find_mem_access_control(mem_access_ast):
@@ -277,22 +198,23 @@ def _asts_must_be_equal(state, ast1, ast2):
     return True
 
 
-# Move class definition outside any function
-class SpecialMem(angr.storage.memory_mixins.SpecialFillerMixin, angr.storage.DefaultMemory):
-    """
-    Class to use angr's SpecialFillerMixin to replace uninitialized memory
-    """
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
 def fast_uninitialized_filler(name, addr, size, state):
     return state.solver.BVS("uninitialized" + hex(addr), size, explicit_name=True)
+
 
 def make_initial_state(project, stack_gsize, fast_mode=False):
     """
     :return: an initial state with a symbolic stack and good options for rop
     """
-    # Register the special memory class
+    # create a new plugin for memory
+    # the purpose of this plugin is to optimize away some slowness with the default uninitialized memory
+    class SpecialMem(angr.storage.memory_mixins.SpecialFillerMixin, angr.storage.DefaultMemory):
+        """
+        class to use angr's SpecialFillerMixin to replace uninitialized memory
+        """
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+
     angr.SimState.register_default("sym_memory", SpecialMem)
 
     remove_set = angr.options.resilience | angr.options.simplification
@@ -464,47 +386,24 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
     except (angr.errors.AngrError, angr.errors.SimError) as e:
         raise RopException("Does not get to a single unconstrained successor") from e
 
-
 def timeout(seconds_before_timeout):
-    """
-    A decorator that adds timeout functionality to a function.
-    Works on both Windows and Linux platforms.
-
-    :param seconds_before_timeout: Number of seconds to wait before timing out
-    :return: The decorated function result or raises RopException on timeout
-    """
-
-    def decorator(f):
-        @functools.wraps(f)
-        def wrapper(*args, **kwargs):
-            result = None
-            error = None
-            is_finished = False
-
-            def target():
-                nonlocal result, error, is_finished
-                try:
-                    result = f(*args, **kwargs)
-                except Exception as e:
-                    error = e
-                finally:
-                    is_finished = True
-
-            thread = threading.Thread(target=target)
-            thread.daemon = True  # Allow program to exit if thread is still running
-
-            thread.start()
-            thread.join(seconds_before_timeout)
-
-            if not is_finished:
-                pass
-                # raise RopException("[angrop] Timeout!")
-
-            if error is not None:
-                raise error
-
+    def decorate(f):
+        def handler(signum, frame):# pylint:disable=unused-argument
+            print("[angrop] Timeout")
+            raise RopException("[angrop] Timeout!")
+        def new_f(*args, **kwargs):
+            old = signal.signal(signal.SIGALRM, handler)
+            old_time_left = signal.alarm(seconds_before_timeout)
+            if 0 < old_time_left < seconds_before_timeout: # never lengthen existing timer
+                signal.alarm(old_time_left)
+            start_time = time.time()
+            try:
+                result = f(*args, **kwargs)
+            finally:
+                if old_time_left > 0: # deduct f's run time from the saved timer
+                    old_time_left -= int(time.time() - start_time)
+                signal.signal(signal.SIGALRM, old)
+                signal.alarm(old_time_left)
             return result
-
-        return wrapper
-
-    return decorator
+        return new_f
+    return decorate

@@ -124,7 +124,7 @@ class RopGadget:
         # when pc_offset==stack_change-arch_bytes, transit_type is basically ret
         self.pc_offset = None
 
-        # For memory-based jumps/calls
+        # For memory-based calls
         self.mem_target_regs = None    # registers and assignments used in memory address
         self.mem_load_reg = None       # register loaded from memory
 

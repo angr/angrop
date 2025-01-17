@@ -26,7 +26,6 @@ class FuncCaller(Builder):
         1. Address is within memory ranges
         2. Address points to readable memory
         3. Address is aligned
-        4. Address is not part of code or read-only sections
         """
         arch_bytes = self.project.arch.bytes
 
@@ -50,7 +49,7 @@ class FuncCaller(Builder):
     def _find_function_pointer_in_got_plt(self, func_addr):
         """
         Search if a func addr is in plt. If it's in plt, find func name and
-        translate it to GOT so that we can directly call/jmp to the memroy location pointed there.
+        translate it to GOT so that we can directly call/jmp to the location pointed there.
         """
         # Search GOT and PLT across all loaded objects
         func_name = None
@@ -72,7 +71,6 @@ class FuncCaller(Builder):
         # not in plt. We can search in other ways
         else:
             return None
-
 
     def _find_function_pointer(self, func_addr):
         """Find pointer to function, allowing for potential memory locations"""
@@ -99,7 +97,6 @@ class FuncCaller(Builder):
                         continue
 
         raise Exception("Could not find mem pointing to func in binary memory")
-
 
     def _func_call(self, func_gadget, cc, args, extra_regs=None, preserve_regs=None,
                    needs_return=True, **kwargs):
@@ -135,7 +132,7 @@ class FuncCaller(Builder):
         chain = self.chain_builder.set_regs(**registers)
 
         # In case we have a call from mem gadget, we need to set the memory in the gadget itself.
-        if len(chain._gadgets) > 0 and chain._gadgets[-1].transit_type == 'call_reg_from_mem':
+        if len(chain._gadgets) > 0 and chain._gadgets[-1].transit_type == 'call_from_mem':
             last_gadget = chain._gadgets[-1]
             # The address in memory where our desired ptr is located
             func_addr_in_mem = self._find_function_pointer(func_gadget.addr)
@@ -145,7 +142,7 @@ class FuncCaller(Builder):
                     # We need to change a value in the chain to control the call using mem access
                     controlled_register = rop_utils.get_ast_dependency(val.data)
                     if len(controlled_register) > 1:
-                        raise RopException("Can't handle this case") # not sure when this could happen
+                        raise RopException("Can't handle this case")  # not sure when this could happen
                     controlled_register = list(controlled_register)[0]
                     if last_gadget.mem_target_regs[controlled_register] == 0: # this is a value we want to zero out
                         chain._values[i] = RopValue(0, self.project)

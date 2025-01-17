@@ -56,7 +56,7 @@ def test_mipstake():
     result_state = test_rop.execute_chain(proj, chain, sleep_addr)
     assert result_state.solver.eval(result_state.registers.load('a0'), cast_to=int) == 1
     assert result_state.solver.eval(result_state.registers.load('a1'), cast_to=int) == 2
-    assert chain._gadgets[-1].transit_type == 'call_reg_from_mem'
+    assert chain._gadgets[-1].transit_type == 'call_from_mem'
 
 
 '''
@@ -102,7 +102,7 @@ def test_unexploitable():
     result_state = test_rop.execute_chain(proj, chain, sleep_addr)
     assert result_state.solver.eval(result_state.registers.load('rsi'), cast_to=int) == 0xdeadbeefdeadbeef
     assert result_state.solver.eval(result_state.registers.load('rdi'), cast_to=int) == 0x1
-    assert chain._gadgets[-1].transit_type == 'call_reg_from_mem'
+    assert chain._gadgets[-1].transit_type == 'call_from_mem'
 
 
 def run_all():
