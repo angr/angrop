@@ -633,13 +633,12 @@ class RegSetter(Builder):
         while keys:
             k1 = keys.pop()
             # check if nothing is better than k1
-            for k2 in keys:
+            for k2 in bests|keys:
                 # if k2 is better than k1
                 if all(k2[i] <= k1[i] for i in range(4)):
                     break
             else:
                 bests.add(k1)
-
         gadgets = set()
         for key, val in d.items():
             if key not in bests:

@@ -272,7 +272,7 @@ class Builder:
         while gadgets:
             g1 = gadgets.pop()
             # check if nothing is better than g1
-            for g2 in gadgets:
+            for g2 in bests|gadgets:
                 if self._better_than(g2, g1):
                     break
             else:
