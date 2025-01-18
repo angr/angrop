@@ -7,7 +7,7 @@ from angr.calling_conventions import SimRegArg, SimStackArg
 from .builder import Builder
 from .. import rop_utils
 from ..errors import RopException
-from ..rop_gadget import RopGadget
+from ..rop_gadget import FunctionGadget
 
 l = logging.getLogger(__name__)
 
@@ -95,6 +95,7 @@ class FuncCaller(Builder):
         :param needs_return: whether to continue the ROP after invoking the function
         :return: a RopChain which invokes the function with the arguments
         """
+        symbol = None
         # is it a symbol?
         if isinstance(address, str):
             symbol = address
@@ -110,7 +111,7 @@ class FuncCaller(Builder):
             self.project.arch.name,
             platform=self.project.simos.name if self.project.simos is not None else None,
         )(self.project.arch)
-        func_gadget = RopGadget(address)
+        func_gadget = FunctionGadget(address, symbol)
         func_gadget.stack_change = self.project.arch.bytes
         func_gadget.pc_offset = 0
         return self._func_call(func_gadget, cc, args, **kwargs)

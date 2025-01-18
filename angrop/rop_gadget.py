@@ -144,8 +144,11 @@ class RopGadget:
         accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)
         return any(x.is_symbolic_access() for x in accesses)
 
+    def dstr(self):
+        return "; ".join(addr_to_asmstring(self.project, addr) for addr in self.bbl_addrs)
+
     def pp(self):
-        print("; ".join(addr_to_asmstring(self.project, addr) for addr in self.bbl_addrs))
+        print(self.dstr())
 
     def __str__(self):
         s = "Gadget %#x\n" % self.addr
@@ -291,3 +294,16 @@ class SyscallGadget(RopGadget):
         new.makes_syscall = self.makes_syscall
         new.starts_with_syscall = self.starts_with_syscall
         return new
+
+class FunctionGadget(RopGadget):
+    """
+    a function call
+    """
+    def __init__(self, addr, symbol):
+        super().__init__(addr)
+        self.symbol = symbol
+
+    def dstr(self):
+        if self.symbol:
+            return f"<{self.symbol}>"
+        return f"<func_{self.addr:#x}>"

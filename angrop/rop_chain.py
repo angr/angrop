@@ -210,6 +210,12 @@ class RopChain:
         sp = test_state.regs.sp
         return test_state.memory.load(sp, self.payload_len)
 
+    def addr_to_asmstring(self, addr):
+        for g in self._gadgets:
+            if g.addr == addr:
+                return g.dstr()
+        return ""
+
     def find_symbol(self, addr):
         plt = self._p.loader.find_plt_stub_name(addr)
         if plt:
@@ -248,7 +254,7 @@ class RopChain:
                     if symbol:
                         instruction_code = f"\t# {symbol}"
                     else:
-                        asmstring = rop_utils.addr_to_asmstring(self._p, value)
+                        asmstring = self.addr_to_asmstring(value)
                         if asmstring != "":
                             instruction_code = "\t# " + asmstring
 
@@ -314,8 +320,20 @@ class RopChain:
     def __str__(self):
         return self.payload_code()
 
-    def print_gadget_asm(self):
-        for gadget in self._gadgets:
-            for addr in gadget.bbl_addrs:
-                self._p.factory.block(addr).pp()
-            print()
+    def dstr(self):
+        res = ''
+        for v in self._values:
+            if v.symbolic:
+                res += f"{v}\n"
+                continue
+            for g in self._gadgets:
+                if g.addr == v.concreted:
+                    res += f"{g.addr:#x}: {g.dstr()}\n"
+                    break
+            else:
+                res += f"{v.concreted:#x}\n"
+
+        return res
+
+    def pp(self):
+        print(self.dstr())
