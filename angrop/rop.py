@@ -143,11 +143,14 @@ class ROP(Analysis):
         return self.rop_gadgets
 
     def _get_cache_tuple(self):
-        return (self._all_gadgets, self._duplicates)
+        all_gadgets = [x for x in self._all_gadgets]
+        for g in all_gadgets: g.project = None
+        return (all_gadgets, self._duplicates)
 
     def _load_cache_tuple(self, tup):
         self._all_gadgets = tup[0]
         self._duplicates = tup[1]
+        for g in self._all_gadgets: g.project = self.project
         self._screen_gadgets()
 
     def save_gadgets(self, path):

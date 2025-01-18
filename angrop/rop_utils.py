@@ -11,9 +11,6 @@ def addr_to_asmstring(project, addr):
     block = project.factory.block(addr)
     return "; ".join(["%s %s" %(i.mnemonic, i.op_str) for i in block.capstone.insns])
 
-def gadget_to_asmstring(project, gadget):
-    return "; ".join(addr_to_asmstring(project, addr) for addr in gadget.bbl_addrs)
-
 
 def get_ast_dependency(ast):
     """

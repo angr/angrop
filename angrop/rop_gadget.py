@@ -1,3 +1,5 @@
+from .rop_utils import addr_to_asmstring
+
 class RopMemAccess:
     """Holds information about memory accesses
     Attributes:
@@ -93,6 +95,7 @@ class RopGadget:
     Gadget objects
     """
     def __init__(self, addr):
+        self.project = None
         self.addr = addr
         self.block_length = None
         self.stack_change = None
@@ -140,6 +143,9 @@ class RopGadget:
     def has_symbolic_access(self):
         accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)
         return any(x.is_symbolic_access() for x in accesses)
+
+    def pp(self):
+        print("; ".join(addr_to_asmstring(self.project, addr) for addr in self.bbl_addrs))
 
     def __str__(self):
         s = "Gadget %#x\n" % self.addr
@@ -198,7 +204,7 @@ class RopGadget:
         return "<Gadget %#x>" % self.addr
 
     def copy(self):
-        out = RopGadget(self.addr)
+        out = RopGadget(self.project, self.addr)
         out.addr = self.addr
         out.changed_regs = set(self.changed_regs)
         out.popped_regs = set(self.popped_regs)

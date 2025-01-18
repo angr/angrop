@@ -119,7 +119,10 @@ class GadgetFinder:
                                                                kernel_mode=self.kernel_mode, stack_gsize=self.stack_gsize)
 
     def analyze_gadget(self, addr):
-        return self.gadget_analyzer.analyze_gadget(addr)
+        g = self.gadget_analyzer.analyze_gadget(addr)
+        if g:
+            g.project = self.project
+        return g
 
     def analyze_gadget_list(self, addr_list, processes=4, show_progress=True):
         gadgets = []
@@ -136,6 +139,9 @@ class GadgetFinder:
                 if gs:
                     gadgets += gs
 
+        for g in gadgets:
+            g.project = self.project
+
         return sorted(gadgets, key=lambda x: x.addr)
 
     def get_duplicates(self):
@@ -145,7 +151,7 @@ class GadgetFinder:
         cache = self._cache
         return {k:v for k,v in cache.items() if len(v) >= 2}
 
-    def find_gadgets(self, processes=4, show_progress=True):
+    def find_gadgets(self, processes=16, show_progress=True):
         self._cache = {}
 
         initargs = (self.gadget_analyzer,)
@@ -167,6 +173,9 @@ class GadgetFinder:
                 )
             )
 
+        for g in gadgets:
+            g.project = self.project
+
         return sorted(gadgets, key=lambda x: x.addr), self.get_duplicates()
 
     def find_gadgets_single_threaded(self, show_progress=True):
@@ -177,6 +186,9 @@ class GadgetFinder:
 
         for addr in self._addresses_to_check_with_caching(show_progress):
             gadgets.extend(self.gadget_analyzer.analyze_gadget(addr, allow_conditional_branches=True))
+
+        for g in gadgets:
+            g.project = self.project
 
         return sorted(gadgets, key=lambda x: x.addr), self.get_duplicates()
 
