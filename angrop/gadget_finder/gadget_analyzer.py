@@ -249,14 +249,14 @@ class GadgetAnalyzer:
                 # control transfer for x86/64
                 last_insn = block.capstone.insns[-1]
                 if last_insn.mnemonic == 'call':
-                    return 'call_reg_from_mem'
+                    return 'call_from_mem'
 
             # For MIPS
             elif self.project.arch.name.startswith('MIPS'):
                 # control transfer for MIPS (Delay slot)
                 last_insn = block.capstone.insns[-2]
                 if last_insn.mnemonic == 'jalr':
-                    return 'call_reg_from_mem'
+                    return 'call_from_mem'
 
             # If we couldn't determine the type, return None
             return None
@@ -310,7 +310,7 @@ class GadgetAnalyzer:
         gadget.transit_type = transit_type
 
         # build gadgets for memory control gadgets.
-        if transit_type == 'call_reg_from_mem':
+        if transit_type == 'call_from_mem':
             # mem_load_reg is used when we have intermediate register. (mov rax, [rdx]; call rax )
             # In this case mem_load_reg = rax. mem_target_regs = rdx
             # Another example: call [rax+rdx]
@@ -353,7 +353,7 @@ class GadgetAnalyzer:
         if gadget.stack_change % (self.project.arch.bytes) != 0:
             l.debug("... uneven sp change")
             return None
-        if gadget.stack_change < 0 and gadget.transit_type != 'call_reg_from_mem':
+        if gadget.stack_change < 0 and gadget.transit_type != 'call_from_mem':
             l.debug("stack change is negative!!")
             #FIXME: technically, it can be negative, e.g. call instructions
             return None
