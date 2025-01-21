@@ -68,21 +68,10 @@ class RopChain:
         self._values.append(value)
         self.payload_len += self._p.arch.bytes
 
-    def add_gadget(self, gadget, append_addr_only=False):
-        # angrop was originally written with the assumption that gadget addresses
-        # appear in the chain in the same order in which the gadgets are executed.
-        # This is not always true when there are gadgets that end with a jump to
-        # an address from a register instead of the stack.
-        # For example, if the ROP chain has three gadgets A, B, and C where gadget
-        # B ends with a jump to some register, gadget A would have to load the
-        # address of gadget C into the register before jumping to gadget B.
-        # Therefore, the address of gadget C might need to be placed before the
-        # address of gadget B.
-        # The append_addr_only argument and the set_gadgets method below were added
-        # to support chains like this without breaking the existing API.
-        if not append_addr_only:
-            self._gadgets.append(gadget)
-
+    def _add_gadget_value(self, gadget):
+        """
+        create a RopValue for the gadget's address and add it to chain._values
+        """
         value = gadget.addr
         if self._pie:
             value -= self._p.loader.main_object.mapped_base
@@ -90,10 +79,19 @@ class RopChain:
         if self._pie:
             value._rebase = True
 
-        if append_addr_only or (idx := self.next_pc_idx()) is None:
+        if (idx := self.next_pc_idx()) is None:
             self.add_value(value)
         else:
             self._values[idx] = value
+
+    def add_gadget(self, gadget):
+        # angrop was originally written with the assumption that gadget addresses
+        # appear in the chain in the same order in which the gadgets are executed.
+        # This is not always true when there are gadgets that end with a jump to
+        # an address from a register instead of the stack.
+        # For example, when we do `ret` in aarch64
+        self._add_gadget_value(gadget)
+        self._gadgets.append(gadget)
 
     def set_gadgets(self, gadgets: list[RopGadget]):
         self._gadgets = gadgets

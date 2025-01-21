@@ -222,7 +222,7 @@ class Builder:
             if sym_var in stack_var_to_value:
                 val = stack_var_to_value[sym_var]
                 if isinstance(val, RopGadget):
-                    chain.add_gadget(val, append_addr_only=True)
+                    chain._add_gadget_value(val)
                 else:
                     # HACK: Because angrop appears to have originally been written
                     # with assumptions around x86 ret gadgets, the target of the final jump
