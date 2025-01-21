@@ -291,10 +291,7 @@ class RopChain:
         for value, _ in reversed(values[1:]):
             state.stack_push(value)
         if max_steps is None:
-            max_steps = max(
-                sum(len(gadget.bbl_addrs) for gadget in self._gadgets),
-                2 * len(self._gadgets),
-            )
+            max_steps = sum(len(gadget.bbl_addrs) for gadget in self._gadgets)
         try:
             state = rop_utils.step_to_unconstrained_successor(self._p, state, max_steps=max_steps,
                                                               allow_simprocedures=True)
@@ -320,17 +317,20 @@ class RopChain:
 
     def dstr(self):
         res = ''
+        bs = self._p.arch.bytes
+        prefix_len = bs*2+2
+        prefix = " "*prefix_len
         for v in self._values:
             if v.symbolic:
-                res += f"{v}\n"
+                res += prefix + f"  {v.ast}\n"
                 continue
             for g in self._gadgets:
                 if g.addr == v.concreted:
-                    res += f"{g.addr:#x}: {g.dstr()}\n"
+                    fmt = f"%#0{prefix_len}x"
+                    res += fmt % g.addr + f": {g.dstr()}\n"
                     break
             else:
-                res += f"{v.concreted:#x}\n"
-
+                res += prefix + f"  {v.concreted:#x}\n"
         return res
 
     def pp(self):

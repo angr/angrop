@@ -33,7 +33,7 @@ class Shifter(Builder):
             offset -= act.offset % self.project.arch.bytes
             reg_name = self.project.arch.translate_register_name(offset)
             if reg_name in preserve_regs:
-                chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in chain._gadgets])
+                chain_str = chain.dstr()
                 l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
                 return False
         return True
@@ -51,7 +51,7 @@ class Shifter(Builder):
             if reg_name == self.arch.stack_pointer:
                 continue
             if reg_name in preserve_regs:
-                chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in chain._gadgets])
+                chain_str = chain.dstr()
                 l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
                 return False
         return True

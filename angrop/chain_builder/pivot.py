@@ -102,8 +102,7 @@ class Pivot(Builder):
                 if len(variables) == 1 and variables.pop().startswith(f'reg_{reg}'):
                     return chain
                 else:
-                    insts = [str(self.project.factory.block(g.addr).capstone) for g in chain._gadgets]
-                    chain_str = '\n-----\n'.join(insts)
+                    chain_str = chain.dstr()
                     l.exception("Somehow angrop thinks\n%s\ncan be use for stack pivoting", chain_str)
             except Exception: # pylint: disable=broad-exception-caught
                 continue

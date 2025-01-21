@@ -203,16 +203,15 @@ class Builder:
             for offset in range(0, stack_change, bytes_per_pop):
                 sym_word = test_symbolic_state.stack_read(offset, bytes_per_pop)
                 # check if we can constrain val to be the roparg_filler
-                if test_symbolic_state.solver.satisfiable(
-                    (sym_word == self.roparg_filler,)
-                ):
+                if test_symbolic_state.solver.satisfiable([sym_word == self.roparg_filler]):
                     # constrain the val to be the roparg_filler
                     test_symbolic_state.add_constraints(sym_word == self.roparg_filler)
 
         # create the ropchain
-        chain = RopChain(
-            self.project, self, state=test_symbolic_state.copy(), badbytes=self.badbytes
-        )
+        chain = RopChain(self.project,
+                         self,
+                         state=test_symbolic_state.copy(),
+                         badbytes=self.badbytes)
 
         # iterate through the stack values that need to be in the chain
         for offset in range(-bytes_per_pop, stack_change, bytes_per_pop):

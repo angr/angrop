@@ -42,13 +42,7 @@ class RegSetter(Builder):
         given a potential chain, verify whether the chain can set the registers correctly by symbolically
         execute the chain
         """
-        chain_str = "\n-----\n".join(
-            "\n".join(
-                str(self.project.factory.block(addr).capstone)
-                for addr in g.bbl_addrs
-            )
-            for g in chain._gadgets
-        )
+        chain_str = chain.dstr()
         state = chain.exec()
         for act in state.history.actions.hardcopy:
             if act.type not in ("mem", "reg"):
@@ -63,14 +57,14 @@ class RegSetter(Builder):
                 offset -= act.offset % self.project.arch.bytes
                 reg_name = self.project.arch.translate_register_name(offset)
                 if reg_name in preserve_regs:
-                    l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation - 1.", chain_str)
+                    l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation - 1.\ntarget registers: %s", chain_str, registers)
                     return False
         for reg, val in registers.items():
             bv = getattr(state.regs, reg)
             if (val.symbolic != bv.symbolic) or state.solver.eval(bv != val.data):
-                l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation - 2.", chain_str)
+                l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation - 2.\ntarget registers: %s", chain_str, registers)
                 return False
-        # the next pc must come from the stack
+        # the next pc must come from the stack or just marked as the next_pc
         if len(state.regs.pc.variables) != 1:
             return False
         pc_var = set(state.regs.pc.variables).pop()
@@ -106,13 +100,7 @@ class RegSetter(Builder):
                 max_length=max_length,
             ),
         ):
-            chain_str = "\n-----\n".join(
-                "\n".join(
-                    str(self.project.factory.block(addr).capstone)
-                    for addr in g.bbl_addrs
-                )
-                for g in gadgets
-            )
+            chain_str = "\n".join(g.dstr() for g in gadgets)
             l.debug("building reg_setting chain with chain:\n%s", chain_str)
             stack_change = sum(x.stack_change for x in gadgets)
             try:

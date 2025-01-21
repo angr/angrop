@@ -26,11 +26,11 @@ class RegMover(Builder):
         given a potential chain, verify whether the chain can move the registers correctly by symbolically
         execute the chain
         """
+        chain_str = chain.dstr()
         state = chain.exec()
         for reg, val in registers.items():
             bv = getattr(state.regs, reg)
             if bv.depth != 1 or val.reg_name not in bv._encoded_name.decode():
-                chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in chain._gadgets])
                 l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
                 return False
             for act in state.history.actions.hardcopy:
@@ -103,7 +103,7 @@ class RegMover(Builder):
 
         # now see whether any of the chain candidates can work
         for gadgets in chains:
-            chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in gadgets])
+            chain_str = "\n".join(g.dstr() for g in gadgets)
             l.debug("building reg_setting chain with chain:\n%s", chain_str)
             stack_change = sum(x.stack_change for x in gadgets)
             try:
