@@ -140,9 +140,11 @@ class Builder:
         state = test_symbolic_state
 
         # Step through each gadget and constrain the ip.
+        # save the constraints into test_symbolic_state
         for gadget in gadgets:
             map_stack_var(state.ip, gadget)
             state.solver.add(state.ip == gadget.addr)
+            test_symbolic_state.solver.add(state.ip == gadget.addr)
             for addr in gadget.bbl_addrs[1:]:
                 succ = state.step()
                 succ_states = [
@@ -161,6 +163,9 @@ class Builder:
                     "Executing gadget doesn't result in a single unconstrained state"
                 )
             state = succ.unconstrained_successors[0]
+
+        if len(state.solver.eval_upto(state.ip, 2)) < 2:
+            raise RopException("The final pc is not unconstrained!")
 
         # Record the variable that controls the final ip.
         next_pc_val = rop_utils.cast_rop_value(
