@@ -80,8 +80,12 @@ class GadgetAnalyzer:
             simgr = self.project.factory.simulation_manager(init_state, save_unconstrained=True)
 
             def filter(state):
-                if state.ip.concrete and self.project.is_hooked(state.addr):
+                if not state.ip.concrete:
+                    return None
+                if self.project.is_hooked(state.addr):
                     # We don't want to go into SimProcedures.
+                    return simgr.DROP
+                if not self._block_make_sense(state.addr):
                     return simgr.DROP
                 if rop_utils.is_in_kernel(self.project, state):
                     return "syscall"
@@ -102,6 +106,7 @@ class GadgetAnalyzer:
 
         final_states = list(simgr.unconstrained)
         if "syscall" in simgr.stashes:
+            # for syscallgadget, the syscall number needs to be controlled, or there is no point
             cc = angr.SYSCALL_CC[self.project.arch.name]["default"](self.project.arch)
             sysnum_is_constrained = lambda s: not cc.syscall_num(s).symbolic or not rop_utils.fast_unconstrained_check(s, cc.syscall_num(s))
             simgr.move(from_stash='syscall', to_stash='deadended', filter_func=sysnum_is_constrained)
@@ -170,10 +175,6 @@ class GadgetAnalyzer:
     def _valid_state(self, init_state, final_state):
         if self._change_arch_state(init_state, final_state):
             return False
-        for addr in final_state.history.bbl_addrs:
-            b = final_state.project.factory.block(addr)
-            if not self.arch.block_make_sense(b):
-                return False
         return True
 
     def _change_arch_state(self, init_state, final_state):
