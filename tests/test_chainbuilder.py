@@ -414,6 +414,7 @@ def test_mipstake():
     assert result_state.solver.eval(result_state.registers.load('a0'), cast_to=int) == 1
     assert result_state.solver.eval(result_state.registers.load('a1'), cast_to=int) == 2
     assert chain._gadgets[-1].transit_type == 'call_from_mem'
+    assert True == False
 
 
 '''
