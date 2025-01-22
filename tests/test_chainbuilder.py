@@ -3,7 +3,6 @@ import os
 import angr
 
 import angrop.rop_utils
-import test_rop
 import angrop # pylint: disable=unused-import
 from angrop.rop_value import RopValue
 

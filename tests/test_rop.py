@@ -127,7 +127,9 @@ def test_rop_i386_cgc():
 
     # check gadgets
     tup = pickle.load(open(os.path.join(test_data_location, "0b32aa01_01_gadgets"), "rb"))
-    compare_gadgets(rop._all_gadgets, tup[0])
+    # removing gadgets with negative unsigned stack change
+    to_compare = [g for g in tup[0] if g.addr not in (0x8048431, 0x8048432, 0x8048433, 0x8048435, 0x8048437)]
+    compare_gadgets(rop._all_gadgets, to_compare)
 
     # test creating a rop chain
     chain = rop.set_regs(ebx=0x98765432, ecx=0x12345678)
