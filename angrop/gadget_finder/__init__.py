@@ -14,7 +14,7 @@ from angr.analyses.bindiff import UnmatchedStatementsException
 from . import gadget_analyzer
 from ..arch import get_arch
 from ..errors import RopException
-from ..arch import ARM, X86, AMD64
+from ..arch import ARM, X86, AMD64, AARCH64
 
 l = logging.getLogger(__name__)
 
@@ -53,8 +53,8 @@ class GadgetFinder:
         self.kernel_mode = kernel_mode
         self.stack_gsize = stack_gsize
 
-        if only_check_near_rets and not isinstance(self.arch, (X86, AMD64)):
-            l.warning("only_check_near_rets only makes sense for i386/amd64, setting it to False")
+        if only_check_near_rets and not isinstance(self.arch, (X86, AMD64, AARCH64)):
+            l.warning("only_check_near_rets only makes sense for i386/amd64/aarch64, setting it to False")
             self.only_check_near_rets = False
 
         # override parameters
@@ -362,7 +362,7 @@ class GadgetFinder:
         :return: all the locations in the binary with a ret instruction
         """
         if not self.arch.ret_insts:
-            raise RopException("Only have ret strings for i386 and x86_64")
+            raise RopException("Only have ret strings for i386/x86_64/aarch64")
         return self._get_locations_by_strings(self.arch.ret_insts)
 
     def _get_syscall_locations_by_string(self):

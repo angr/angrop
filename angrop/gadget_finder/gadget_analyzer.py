@@ -283,24 +283,6 @@ class GadgetAnalyzer:
                 return True
         return False
 
-    def _reach_unconstrained_or_syscall(self, addr):
-        init_state = self._state.copy()
-        init_state.ip = addr
-
-        # it will raise errors if angr fails to step the state
-        final_state = rop_utils.step_to_unconstrained_successor(self.project, state=init_state, stop_at_syscall=True)
-
-        if self.is_in_kernel(final_state):
-            state = final_state.copy()
-            try:
-                succ = self.project.factory.successors(state)
-                state = succ.flat_successors[0]
-                state2 = rop_utils.step_to_unconstrained_successor(self.project, state=state)
-            except Exception: # pylint: disable=broad-exception-caught
-                return init_state, final_state
-            return init_state, state2
-        return init_state, final_state
-
     def _try_stepping_past_syscall(self, state):
         try:
             return rop_utils.step_to_unconstrained_successor(self.project, state, max_steps=3)
@@ -350,6 +332,9 @@ class GadgetAnalyzer:
 
         # create the gadget
         if ctrl_type == 'syscall' or self._does_syscall(final_state):
+            # gadgets that do syscall and pivoting are too complicated
+            if self._does_pivot(final_state):
+                return None
             gadget = SyscallGadget(addr=addr)
             gadget.makes_syscall = self._does_syscall(final_state)
             gadget.starts_with_syscall = self._starts_with_syscall(addr)
@@ -663,7 +648,6 @@ class GadgetAnalyzer:
                 raise RopException("SP has multiple dependencies")
             if len(dependencies) == 0 and sp_change.symbolic:
                 raise RopException("SP change is uncontrolled")
-
             assert self.arch.base_pointer not in dependencies
             if len(dependencies) == 0 and not sp_change.symbolic:
                 stack_changes = [init_state.solver.eval(sp_change)]
@@ -678,6 +662,7 @@ class GadgetAnalyzer:
             gadget.stack_change = stack_changes[0]
 
         elif type(gadget) is PivotGadget:
+            # FIXME: step_to_unconstrained_successor is not compatible with conditional_branches
             final_state = rop_utils.step_to_unconstrained_successor(self.project, state=init_state, precise_action=True)
             dependencies = self._get_reg_dependencies(final_state, "sp")
             last_sp = None
