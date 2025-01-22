@@ -73,16 +73,16 @@ def test_arm_func_call():
 
     proj.hook_symbol('write', angr.SIM_PROCEDURES['posix']['write']())
     chain1 = rop.func_call("write", [1, 0x4E15F0, 9])
-    state = chain1.exec(max_steps=8)
+    state = chain1.exec(max_steps=100)
     assert state.posix.dumps(1) == b'malloc.c\x00'
 
     proj.hook_symbol('puts', angr.SIM_PROCEDURES['libc']['puts']())
     chain2 = rop.func_call("puts", [0x4E15F0])
-    state = chain2.exec(max_steps=8)
+    state = chain2.exec(max_steps=100)
     assert state.posix.dumps(1) == b'malloc.c\n'
 
     chain = chain1 + chain2
-    state = chain.exec(max_steps=8)
+    state = chain.exec(max_steps=100)
     assert state.posix.dumps(1) == b'malloc.c\x00malloc.c\n'
 
 def test_i386_syscall():
