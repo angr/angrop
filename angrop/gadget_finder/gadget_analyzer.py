@@ -88,10 +88,10 @@ class GadgetAnalyzer:
                 if self.project.is_hooked(state.addr):
                     # We don't want to go into SimProcedures.
                     return simgr.DROP
-                if not self._block_make_sense(state.addr):
-                    return simgr.DROP
                 if rop_utils.is_in_kernel(self.project, state):
                     return "syscall"
+                if not self._block_make_sense(state.addr):
+                    return simgr.DROP
                 return None
 
             simgr.run(n=2, filter_func=filter)
