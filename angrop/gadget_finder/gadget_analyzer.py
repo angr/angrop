@@ -102,6 +102,9 @@ class GadgetAnalyzer:
 
         final_states = list(simgr.unconstrained)
         if "syscall" in simgr.stashes:
+            cc = angr.SYSCALL_CC[self.project.arch.name]["default"](self.project.arch)
+            sysnum_is_constrained = lambda s: not cc.syscall_num(s).symbolic or not rop_utils.fast_unconstrained_check(s, cc.syscall_num(s))
+            simgr.move(from_stash='syscall', to_stash='deadended', filter_func=sysnum_is_constrained)
             final_states.extend(self._try_stepping_past_syscall(state) for state in simgr.syscall)
 
         bad_states = simgr.active + simgr.deadended
