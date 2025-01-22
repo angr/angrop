@@ -247,8 +247,10 @@ class GadgetFinder:
     def block_hash(self, block):# pylint:disable=no-self-use
         """
         a hash to uniquely identify a simple block
-        TODO: block.bytes is too primitive
         """
+        if block.vex.jumpkind == 'Ijk_Sys_syscall':
+            next_block = self.project.factory.block(block.addr+block.size)
+            return block.bytes + next_block.bytes
         return block.bytes
 
     def _get_executable_ranges(self):

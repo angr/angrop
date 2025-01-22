@@ -99,7 +99,6 @@ class AARCH64(ROPArch):
     def __init__(self, project, kernel_mode=False):
         super().__init__(project, kernel_mode=kernel_mode)
         self.ret_insts = {b'\xc0\x03_\xd6'}
-        self.max_block_size = self.alignment * 15
 
 class MIPS(ROPArch):
     def __init__(self, project, kernel_mode=False):
