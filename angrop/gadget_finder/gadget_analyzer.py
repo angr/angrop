@@ -144,13 +144,6 @@ class GadgetAnalyzer:
                 if not gadget:
                     continue
 
-                # Step 4: filter out bad gadgets
-                # too many mem accesses, it can only be done after gadget creation
-                # specifically, memory access analysis
-                if gadget.num_mem_access > self.arch.max_sym_mem_access:
-                    l.debug("... too many symbolic memory accesses")
-                    continue
-
                 l.debug("... Appending gadget!")
                 gadgets.append(gadget)
 
@@ -384,7 +377,9 @@ class GadgetAnalyzer:
 
         # check mem accesses
         l.debug("... analyzing mem accesses")
-        self._analyze_mem_access(final_state, init_state, gadget)
+        if not self._analyze_mem_access(final_state, init_state, gadget):
+            l.debug("... too many symbolic memory accesses")
+            return None
 
         for m_access in gadget.mem_writes + gadget.mem_reads + gadget.mem_changes:
             if not m_access.is_valid():
@@ -901,6 +896,9 @@ class GadgetAnalyzer:
             for m in d[addr]:
                 all_mem_actions.remove(m)
 
+        if len(all_mem_actions) + len(gadget.mem_changes) > self.arch.max_sym_mem_access:
+            return False
+
         # step 3: add all left memory actions to either read/write memory accesses stashes
         for a in all_mem_actions:
             mem_access = self._build_mem_access(a, gadget, init_state, final_state)
@@ -908,6 +906,7 @@ class GadgetAnalyzer:
                 gadget.mem_reads.append(mem_access)
             if a.action == "write":
                 gadget.mem_writes.append(mem_access)
+        return True
 
     def _starts_with_syscall(self, addr):
         """
