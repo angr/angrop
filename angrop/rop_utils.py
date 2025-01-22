@@ -29,45 +29,45 @@ def get_ast_dependency(ast):
     return dependencies
 
 
-def get_ast_controllers(test_state, ast, reg_deps):
+def get_ast_controllers(state, ast, reg_deps):
     """
     looks for registers that we can make symbolic then the ast can be "anything"
-    :param test_state: the input state
+    :param state: the input state
     :param ast: the ast of which we are trying to analyze controllers
     :param reg_deps: All registers which it depends on
     :return: A set of register names which can control the ast
     """
 
-    test_val = 0x4141414141414141 % (2 << test_state.arch.bits)
+    test_val = 0x4141414141414141 % (2 << state.arch.bits)
 
     controllers = []
     if not ast.symbolic:
         return controllers
 
     # make sure it can't be symbolic if all the registers are constrained
-    constrained_copy = test_state.copy()
+    constraints = []
     for reg in reg_deps:
-        if not constrained_copy.registers.load(reg).symbolic:
+        if not state.registers.load(reg).symbolic:
             continue
-        constrained_copy.add_constraints(constrained_copy.registers.load(reg) == test_val)
-    if len(constrained_copy.solver.eval_upto(ast, 2)) > 1:
+        constraints.append(state.registers.load(reg) == test_val)
+    if len(state.solver.eval_upto(ast, 2, extra_constraints=constraints)) > 1:
         return controllers
 
     for reg in reg_deps:
-        constrained_copy = test_state.copy()
+        extra_constraints = []
         for r in [a for a in reg_deps if a != reg]:
             # for bp and registers that might be set
-            if not constrained_copy.registers.load(r).symbolic:
+            if not state.registers.load(r).symbolic:
                 continue
-            constrained_copy.add_constraints(constrained_copy.registers.load(r) == test_val)
+            extra_constraints.append(state.registers.load(r) == test_val)
 
-        if unconstrained_check(constrained_copy, ast):
+        if unconstrained_check(state, ast, extra_constraints=extra_constraints):
             controllers.append(reg)
 
     return controllers
 
 
-def unconstrained_check(state, ast):
+def unconstrained_check(state, ast, extra_constraints=None):
     """
     Attempts to check if an ast is completely unconstrained
     :param state: the state to use
@@ -82,15 +82,17 @@ def unconstrained_check(state, ast):
     # chars need to be able to be different
     test_val_4 = int(("1001"*2 + "1010"*2 + "1011"*2 + "1100"*2 + "1101"*2 + "1110"*2 + "1110"*2 + "0001"*2), 2) \
         % (1 << size)
-    if not state.solver.satisfiable(extra_constraints=(ast == test_val_0,)):
+    extra = extra_constraints if extra_constraints is not None else []
+
+    if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_0]):
         return False
-    if not state.solver.satisfiable(extra_constraints=(ast == test_val_1,)):
+    if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_1]):
         return False
-    if not state.solver.satisfiable(extra_constraints=(ast == test_val_2,)):
+    if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_2]):
         return False
-    if not state.solver.satisfiable(extra_constraints=(ast == test_val_3,)):
+    if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_3]):
         return False
-    if not state.solver.satisfiable(extra_constraints=(ast == test_val_4,)):
+    if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_4]):
         return False
     return True
 

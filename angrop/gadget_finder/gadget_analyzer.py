@@ -609,7 +609,6 @@ class GadgetAnalyzer:
         # this is an annoying problem but this code should handle it
 
         # prefilter
-        # FIXME: this check is kinda weird, what if it is rax+rbx?
         if len(ast.variables) != 1 or not list(ast.variables)[0].startswith("symbolic_stack"):
             return False
 
@@ -617,12 +616,10 @@ class GadgetAnalyzer:
         if gadget_stack_change is not None:
             stack_bytes_length = min(max(gadget_stack_change, 0), stack_bytes_length)
         concrete_stack = claripy.BVV(b"B" * stack_bytes_length)
-        concrete_stack_s = initial_state.copy()
-        concrete_stack_s.add_constraints(
-            initial_state.memory.load(initial_state.regs.sp, stack_bytes_length) == concrete_stack)
+        const = initial_state.memory.load(initial_state.regs.sp, stack_bytes_length) == concrete_stack
         test_constraint = ast != test_val
         # stack must have set the register and it must be able to set the register to all 1's or all 0's
-        ans = not concrete_stack_s.solver.satisfiable(extra_constraints=(test_constraint,)) and \
+        ans = not initial_state.solver.satisfiable(extra_constraints=(const, test_constraint,)) and \
                 rop_utils.fast_unconstrained_check(initial_state, ast)
 
         return ans
