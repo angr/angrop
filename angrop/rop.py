@@ -159,6 +159,7 @@ class ROP(Analysis):
         """
         with open(path, "wb") as f:
             pickle.dump(self._get_cache_tuple(), f)
+        for g in self._all_gadgets: g.project = self.project
 
     def load_gadgets(self, path):
         """
