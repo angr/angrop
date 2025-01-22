@@ -129,12 +129,16 @@ class Shifter(Builder):
             return False
         if g1.transit_type != g2.transit_type:
             return False
-        if g1.changed_regs != g2.changed_regs: # needed for preserve_regs
-            return False
         return True
 
     def _better_than(self, g1, g2):
-        return False
+        if g1.num_mem_access > g2.num_mem_access:
+            return False
+        if not g1.changed_regs.issubset(g2.changed_regs):
+            return False
+        if g1.isn_count > g2.isn_count:
+            return False
+        return True
 
     def filter_gadgets(self, gadgets):
         """

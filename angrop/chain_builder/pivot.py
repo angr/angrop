@@ -123,7 +123,7 @@ class Pivot(Builder):
             return False
         if not g1.changed_regs.issubset(g2.changed_regs):
             return False
-        if g1.block_length > g2.block_length:
+        if g1.isn_count > g2.isn_count:
             return False
         return True
 
