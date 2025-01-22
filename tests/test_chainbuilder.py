@@ -68,6 +68,9 @@ def test_arm_func_call():
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
 
+    chain = rop.set_regs(lr=0x41414141)
+    assert sum(g.stack_change for g in chain._gadgets) <= 12
+
     proj.hook_symbol('write', angr.SIM_PROCEDURES['posix']['write']())
     chain1 = rop.func_call("write", [1, 0x4E15F0, 9])
     state = chain1.exec(max_steps=8)

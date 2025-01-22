@@ -52,7 +52,7 @@ class MemWriter(Builder):
             registers = dict((reg, 0x41) for reg in self.arch.reg_set)
             l.debug("getting reg data for mem writes")
             reg_setter = self.chain_builder._reg_setter
-            _, _, reg_data = reg_setter._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
+            _, _, reg_data = reg_setter.find_candidate_chains_graph_search(max_stack_change=0x50, **registers)
             l.debug("trying mem_write gadgets")
 
             # limit the maximum size of the chain
@@ -79,7 +79,7 @@ class MemWriter(Builder):
                 use_partial_controllers = True
                 l.warning("Trying to use partial controllers for memory write")
                 l.debug("getting reg data for mem writes")
-                _, _, reg_data = self.chain_builder._reg_setter._find_reg_setting_gadgets(max_stack_change=0x50,
+                _, _, reg_data = self.chain_builder._reg_setter.find_candidate_chains_graph_search(max_stack_change=0x50,
                                                                 use_partial_controllers=True,
                                                                 **registers)
                 l.debug("trying mem_write gadgets")

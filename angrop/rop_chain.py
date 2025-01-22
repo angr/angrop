@@ -68,10 +68,7 @@ class RopChain:
         self._values.append(value)
         self.payload_len += self._p.arch.bytes
 
-    def _add_gadget_value(self, gadget):
-        """
-        create a RopValue for the gadget's address and add it to chain._values
-        """
+    def add_gadget(self, gadget):
         value = gadget.addr
         if self._pie:
             value -= self._p.loader.main_object.mapped_base
@@ -84,13 +81,6 @@ class RopChain:
         else:
             self._values[idx] = value
 
-    def add_gadget(self, gadget):
-        # angrop was originally written with the assumption that gadget addresses
-        # appear in the chain in the same order in which the gadgets are executed.
-        # This is not always true when there are gadgets that end with a jump to
-        # an address from a register instead of the stack.
-        # For example, when we do `ret` in aarch64
-        self._add_gadget_value(gadget)
         self._gadgets.append(gadget)
 
     def set_gadgets(self, gadgets: list[RopGadget]):

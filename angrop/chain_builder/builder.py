@@ -226,15 +226,16 @@ class Builder:
             if sym_var in stack_var_to_value:
                 val = stack_var_to_value[sym_var]
                 if isinstance(val, RopGadget):
-                    chain._add_gadget_value(val)
+                    # this is special, we know this won't be "next_pc", so don't try
+                    # to take "next_pc"'s position
+                    value = RopValue(val.addr, self.project)
+                    value.rebase_analysis(chain=chain)
+                    chain.add_value(value)
                 else:
                     # HACK: Because angrop appears to have originally been written
                     # with assumptions around x86 ret gadgets, the target of the final jump
                     # is not included in the chain if it is the last value.
-                    if (
-                        offset == stack_change - bytes_per_pop
-                        and val is next_pc_val
-                    ):
+                    if offset == stack_change - bytes_per_pop and val is next_pc_val:
                         break
                     chain.add_value(val)
             else:

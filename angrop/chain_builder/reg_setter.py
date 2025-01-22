@@ -16,12 +16,9 @@ from ..errors import RopException
 l = logging.getLogger("angrop.chain_builder.reg_setter")
 
 class RegSetter(Builder):
-    """
-    TODO: get rid of Salls's code
-    """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
-        self._reg_setting_gadgets = None
+        self._reg_setting_gadgets = None # all the gadgets that can set registers
         self.hard_chain_cache = None
         # Estimate of how difficult it is to set each register.
         self._reg_weights = None
@@ -84,28 +81,13 @@ class RegSetter(Builder):
         for x in registers:
             registers[x] = rop_utils.cast_rop_value(registers[x], self.project)
 
-        for gadgets in itertools.chain(
-            self._find_all_candidate_chains(
-                self._find_relevant_gadgets(**registers),
-                preserve_regs.copy(),
-                **registers,
-            ),
-            self._backwards_recursive_search(
-                self._reg_setting_gadgets,
-                set(registers),
-                current_chain=[],
-                preserve_regs=preserve_regs,
-                modifiable_memory_range=modifiable_memory_range,
-                visited={},
-                max_length=max_length,
-            ),
-        ):
+        for gadgets in self.iterate_candidate_chains(modifiable_memory_range, preserve_regs, max_length, registers):
             chain_str = "\n".join(g.dstr() for g in gadgets)
             l.debug("building reg_setting chain with chain:\n%s", chain_str)
             stack_change = sum(x.stack_change for x in gadgets)
             try:
                 chain = self._build_reg_setting_chain(gadgets, modifiable_memory_range,
-                                                     registers, stack_change)
+                                                      registers, stack_change)
                 chain._concretize_chain_values(timeout=len(chain._values)*3)
                 if self.verify(chain, preserve_regs, registers):
                     #self._chain_cache[reg_tuple].append(gadgets)
@@ -115,124 +97,35 @@ class RegSetter(Builder):
 
         raise RopException("Couldn't set registers :(")
 
-    def _find_relevant_gadgets(self, **registers):
-        """
-        find gadgets that may pop/load/change requested registers
-        exclude gadgets that do symbolic memory access
-        """
-        gadgets = set({})
-        for g in self._reg_setting_gadgets:
-            if g.has_symbolic_access():
-                continue
-            for reg in registers:
-                if reg in g.popped_regs:
-                    gadgets.add(g)
-                if reg in g.changed_regs:
-                    gadgets.add(g)
-                if reg in g.reg_dependencies.keys():
-                    gadgets.add(g)
-                if reg in g.concrete_regs.keys():
-                    gadgets.add(g)
-        return gadgets
+    def iterate_candidate_chains(self, modifiable_memory_range, preserve_regs, max_length, registers):
+        # algorithm1
+        gadgets, _, _ = self.find_candidate_chains_graph_search(modifiable_memory_range=modifiable_memory_range,
+                                                                preserve_regs=preserve_regs.copy(),
+                                                                **registers)
+        if gadgets:
+            yield gadgets
 
-    def _recursively_find_chains(self, gadgets, chain, preserve_regs, todo_regs, hard_preserve_regs):
-        """
-        preserve_regs: soft preservation, can be overwritten as long as it gets back to control
-        hard_preserve_regs: cannot touch these regs at all
-        """
-        if not todo_regs:
-            return [chain]
+        # algorithm2
+        gadgets_list = self.find_candidate_chains_pop_only_bfs_search(
+                                    self._find_relevant_gadgets(**registers),
+                                    preserve_regs.copy(),
+                                    **registers)
+        for gadgets in gadgets_list:
+            yield gadgets
 
-        todo_list = []
-        for g in gadgets:
-            set_regs = g.popped_regs.intersection(todo_regs)
-            if not set_regs:
-                continue
-            if g.changed_regs.intersection(hard_preserve_regs):
-                continue
-            clobbered_regs = g.changed_regs.intersection(preserve_regs)
-            if clobbered_regs - set_regs:
-                continue
-            new_preserve = preserve_regs.copy()
-            new_preserve.update(set_regs)
-            new_chain = chain.copy()
-            new_chain.append(g)
-            todo_list.append((new_chain, new_preserve, todo_regs-set_regs, hard_preserve_regs))
+        # algorithm3
+        for gadgets in self.find_candidate_chains_backwards_recursive_search(
+                                    self._reg_setting_gadgets,
+                                    set(registers),
+                                    current_chain=[],
+                                    preserve_regs=preserve_regs.copy(),
+                                    modifiable_memory_range=modifiable_memory_range,
+                                    visited={},
+                                    max_length=max_length):
+            yield gadgets
+        return
 
-        res = []
-        for todo in todo_list:
-            res += self._recursively_find_chains(gadgets, *todo)
-        return res
-
-    @staticmethod
-    def _find_concrete_chains(gadgets, registers):
-        chains = []
-        for g in gadgets:
-            for reg, val in registers.items():
-                if reg in g.concrete_regs and g.concrete_regs[reg] == val:
-                    chains.append([g])
-        return chains
-
-    def _find_add_chain(self, gadgets, reg, val):
-        """
-        find one chain to set one single register to a specific value using concrete values only through add/dec
-        """
-        val = rop_utils.cast_rop_value(val, self.project)
-        concrete_setter_gadgets = [ x for x in gadgets if reg in x.concrete_regs ]
-        delta_gadgets = [ x for x in gadgets if len(x.reg_dependencies) == 1 and reg in x.reg_dependencies\
-                            and len(x.reg_dependencies[reg]) == 1 and reg in x.reg_dependencies[reg]]
-        for g1 in concrete_setter_gadgets:
-            for g2 in delta_gadgets:
-                try:
-                    chain = self._build_reg_setting_chain([g1, g2], False, # pylint:disable=too-many-function-args
-                                                         {reg: val}, g1.stack_change+g2.stack_change)
-                    state = chain.exec()
-                    bv = state.registers.load(reg)
-                    if bv.symbolic:
-                        continue
-                    if state.solver.eval(bv == val.data):
-                        return [g1, g2]
-                except Exception:# pylint:disable=broad-except
-                    pass
-        return None
-
-    def _find_all_candidate_chains(self, gadgets, preserve_regs, **registers):
-        """
-        1. find gadgets that set concrete values to the target values, such as xor eax, eax to set eax to 0
-        2. find all pop only chains by BFS search
-        TODO: handle moves
-        """
-        # get the list of regs that cannot be popped (call it hard_regs)
-        hard_regs = [reg for reg, val in registers.items() if self._word_contain_badbyte(val)]
-        if len(hard_regs) > 1:
-            l.error("too many registers contain bad bytes! bail out! %s", registers)
-            return []
-
-        # if hard_regs exists, try to use concrete values to craft the value
-        hard_chain = []
-        if hard_regs and not registers[hard_regs[0]].symbolic:
-            reg = hard_regs[0]
-            val = registers[reg].concreted
-            key = (reg, val)
-            if key in self.hard_chain_cache:
-                hard_chain = self.hard_chain_cache[key]
-            else:
-                hard_chains = self._find_concrete_chains(gadgets, {reg: val})
-                if hard_chains:
-                    hard_chain = hard_chains[0]
-                else:
-                    hard_chain = self._find_add_chain(gadgets, reg, val)
-                self.hard_chain_cache[key] = hard_chain # we cache the result even if it fails
-            if not hard_chain:
-                l.error("Fail to set register: %s to: %#x", reg, val)
-                return []
-            registers.pop(reg)
-
-        preserve_regs.update(hard_regs)
-        # use the original pop techniques to set other registers
-        chains = self._recursively_find_chains(gadgets, hard_chain, preserve_regs,
-                                               set(registers.keys()), preserve_regs)
-        return self._sort_chains(chains)
+    #### Chain Building Algorithm 1: fast but unreliable graph-based search ####
 
     @staticmethod
     def _tuple_to_gadgets(data, reg_tuple):
@@ -270,7 +163,7 @@ class RegSetter(Builder):
     # todo allow specify initial regs
     # todo memcopy(from_addr, to_addr, len)
     # todo handle "leave" then try to do a mem write on chess from codegate-finals
-    def _find_reg_setting_gadgets(self, modifiable_memory_range=None, use_partial_controllers=False,
+    def find_candidate_chains_graph_search(self, modifiable_memory_range=None, use_partial_controllers=False,
                                   max_stack_change=None, preserve_regs=None, **registers):
         """
         Finds a list of gadgets which set the desired registers
@@ -487,7 +380,130 @@ class RegSetter(Builder):
             return True
         return False
 
-    def _backwards_recursive_search(
+    #### Chain Building Algorithm 2: pop-only BFS search ####
+
+    def _find_relevant_gadgets(self, **registers):
+        """
+        find gadgets that may pop/load/change requested registers
+        exclude gadgets that do symbolic memory access
+        """
+        gadgets = set({})
+        for g in self._reg_setting_gadgets:
+            if g.has_symbolic_access():
+                continue
+            for reg in registers:
+                if reg in g.popped_regs:
+                    gadgets.add(g)
+                if reg in g.changed_regs:
+                    gadgets.add(g)
+                if reg in g.reg_dependencies.keys():
+                    gadgets.add(g)
+                if reg in g.concrete_regs.keys():
+                    gadgets.add(g)
+        return gadgets
+
+    @staticmethod
+    def _find_concrete_chains(gadgets, registers):
+        chains = []
+        for g in gadgets:
+            for reg, val in registers.items():
+                if reg in g.concrete_regs and g.concrete_regs[reg] == val:
+                    chains.append([g])
+        return chains
+
+    def find_candidate_chains_pop_only_bfs_search(self, gadgets, preserve_regs, **registers):
+        """
+        1. find gadgets that set concrete values to the target values, such as xor eax, eax to set eax to 0
+        2. find all pop only chains by BFS search
+        TODO: handle moves
+        """
+        # get the list of regs that cannot be popped (call it hard_regs)
+        hard_regs = [reg for reg, val in registers.items() if self._word_contain_badbyte(val)]
+        if len(hard_regs) > 1:
+            l.error("too many registers contain bad bytes! bail out! %s", registers)
+            return []
+
+        # if hard_regs exists, try to use concrete values to craft the value
+        hard_chain = []
+        if hard_regs and not registers[hard_regs[0]].symbolic:
+            reg = hard_regs[0]
+            val = registers[reg].concreted
+            key = (reg, val)
+            if key in self.hard_chain_cache:
+                hard_chain = self.hard_chain_cache[key]
+            else:
+                hard_chains = self._find_concrete_chains(gadgets, {reg: val})
+                if hard_chains:
+                    hard_chain = hard_chains[0]
+                else:
+                    hard_chain = self._find_add_chain(gadgets, reg, val)
+                self.hard_chain_cache[key] = hard_chain # we cache the result even if it fails
+            if not hard_chain:
+                l.error("Fail to set register: %s to: %#x", reg, val)
+                return []
+            registers.pop(reg)
+
+        preserve_regs.update(hard_regs)
+        # use the original pop techniques to set other registers
+        chains = self._recursively_find_chains(gadgets, hard_chain, preserve_regs,
+                                               set(registers.keys()), preserve_regs)
+        return self._sort_chains(chains)
+
+    def _find_add_chain(self, gadgets, reg, val):
+        """
+        find one chain to set one single register to a specific value using concrete values only through add/dec
+        """
+        val = rop_utils.cast_rop_value(val, self.project)
+        concrete_setter_gadgets = [ x for x in gadgets if reg in x.concrete_regs ]
+        delta_gadgets = [ x for x in gadgets if len(x.reg_dependencies) == 1 and reg in x.reg_dependencies\
+                            and len(x.reg_dependencies[reg]) == 1 and reg in x.reg_dependencies[reg]]
+        for g1 in concrete_setter_gadgets:
+            for g2 in delta_gadgets:
+                try:
+                    chain = self._build_reg_setting_chain([g1, g2], False, # pylint:disable=too-many-function-args
+                                                         {reg: val}, g1.stack_change+g2.stack_change)
+                    state = chain.exec()
+                    bv = state.registers.load(reg)
+                    if bv.symbolic:
+                        continue
+                    if state.solver.eval(bv == val.data):
+                        return [g1, g2]
+                except Exception:# pylint:disable=broad-except
+                    pass
+        return None
+
+    def _recursively_find_chains(self, gadgets, chain, preserve_regs, todo_regs, hard_preserve_regs):
+        """
+        preserve_regs: soft preservation, can be overwritten as long as it gets back to control
+        hard_preserve_regs: cannot touch these regs at all
+        """
+        if not todo_regs:
+            return [chain]
+
+        todo_list = []
+        for g in gadgets:
+            set_regs = g.popped_regs.intersection(todo_regs)
+            if not set_regs:
+                continue
+            if g.changed_regs.intersection(hard_preserve_regs):
+                continue
+            clobbered_regs = g.changed_regs.intersection(preserve_regs)
+            if clobbered_regs - set_regs:
+                continue
+            new_preserve = preserve_regs.copy()
+            new_preserve.update(set_regs)
+            new_chain = chain.copy()
+            new_chain.append(g)
+            todo_list.append((new_chain, new_preserve, todo_regs-set_regs, hard_preserve_regs))
+
+        res = []
+        for todo in todo_list:
+            res += self._recursively_find_chains(gadgets, *todo)
+        return res
+
+    #### Chain Building Algorithm 3: RiscyROP's backwards search ####
+
+    def find_candidate_chains_backwards_recursive_search(
         self,
         gadgets: Iterable[RopGadget],
         registers: set[str],
@@ -541,7 +557,7 @@ class RegSetter(Builder):
 
         for gadget, remaining_regs in potential_next_gadgets:
             current_chain.append(gadget)
-            yield from self._backwards_recursive_search(
+            yield from self.find_candidate_chains_backwards_recursive_search(
                 gadgets,
                 remaining_regs,
                 current_chain,
@@ -606,7 +622,13 @@ class RegSetter(Builder):
 
         return remaining_regs
 
-    def __filter_gadgets(self, gadgets):
+    #### Gadget Filtering ####
+
+    def _filter_gadgets(self, gadgets):
+        """
+        group gadgets by features and drop lesser groups
+        """
+        # gadget grouping
         d = defaultdict(list)
         for g in gadgets:
             key = (len(g.changed_regs), g.stack_change, g.num_mem_access, g.isn_count)
@@ -616,6 +638,7 @@ class RegSetter(Builder):
         if len(d) == 1:
             return {gadgets.pop()}
 
+        # only keep the best groups
         keys = set(d.keys())
         bests = set()
         while keys:
@@ -627,6 +650,8 @@ class RegSetter(Builder):
                     break
             else:
                 bests.add(k1)
+
+        # turn groups back to gadgets
         gadgets = set()
         for key, val in d.items():
             if key not in bests:
@@ -645,20 +670,17 @@ class RegSetter(Builder):
             return False
         return True
 
-    def _filter_gadgets(self, gadgets):
+    def filter_gadgets(self, gadgets):
+        """
+        process gadgets based their effects
+        """
         bests = set()
         gadgets = set(gadgets)
         while gadgets:
             g0 = gadgets.pop()
             equal_class = {g for g in gadgets if self._same_effect(g0, g)}
             equal_class.add(g0)
-            bests = bests.union(self.__filter_gadgets(equal_class))
+            bests = bests.union(self._filter_gadgets(equal_class))
 
             gadgets -= equal_class
         return bests
-
-    def filter_gadgets(self, gadgets):
-        """
-        filter gadgets having the same effect
-        """
-        return self._filter_gadgets(gadgets)
