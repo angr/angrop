@@ -26,6 +26,7 @@ class GadgetAnalyzer:
         self.project = project
         self.arch = get_arch(project, kernel_mode=kernel_mode) if arch is None else arch
         self._fast_mode = fast_mode
+        self._allow_conditional_branches = not self._fast_mode
 
         # initial state that others are based off, all analysis should copy the state first and work on
         # the copied state
@@ -40,7 +41,7 @@ class GadgetAnalyzer:
                                                     fast_mode=self._fast_mode)
         self._concrete_sp = self._state.solver.eval(self._state.regs.sp)
 
-    def analyze_gadget(self, addr, allow_conditional_branches=False):
+    def analyze_gadget(self, addr, allow_conditional_branches=None):
         """
         Find gadgets at the given address.
 
@@ -54,6 +55,8 @@ class GadgetAnalyzer:
         :param allow_conditional_branches: whether to allow gadgets with conditional branches
         :return: a list of RopGadget instances or a single RopGadget instance
         """
+        if allow_conditional_branches is None:
+            allow_conditional_branches = self._allow_conditional_branches
         try:
             gadgets = self._analyze_gadget(addr, allow_conditional_branches)
         except RopTimeoutException:

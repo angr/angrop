@@ -10,15 +10,13 @@ from .rop_gadget import RopGadget, PivotGadget, SyscallGadget
 
 l = logging.getLogger('angrop.rop')
 
-# todo what if we have mov eax, [rsp+0x20]; ret (cache would need to know where it is or at least a min/max)
-# todo what if we have pop eax; mov ebx, eax; need to encode that we cannot set them to different values
 class ROP(Analysis):
     """
     This class is a semantic aware rop gadget finder
     It is a work in progress, so don't be surprised if something doesn't quite work
 
     After calling find_gadgets(), find_gadgets_single_threaded() or load_gadgets(),
-    self.gadgets, self.stack_pivots, and self._duplicates is populated.
+    self.rop_gadgets, self.pivot_gadgets, self.syscall_gadgets are populated.
     Additionally, all public methods from ChainBuilder are copied into ROP.
     """
 
@@ -29,8 +27,9 @@ class ROP(Analysis):
         :param only_check_near_rets: If true we skip blocks that are not near rets
         :param max_block_size: limits the size of blocks considered, longer blocks are less likely to be good rop
                                gadgets so we limit the size we consider
-        :param fast_mode: if set to True sets options to run fast, if set to False sets options to find more gadgets
-                          if set to None makes a decision based on the size of the binary
+        :param fast_mode: True/False, if set to None makes a decision based on the size of the binary
+                          if True, skip gadgets with conditonal_branches, floating point operations, jumps
+                          allow smaller gadget size
         :param is_thumb:  execute ROP chain in thumb mode. Only makes difference on ARM architecture.
                           angrop does not switch mode within a rop chain
         :param kernel_mode: find kernel mode gadgets
