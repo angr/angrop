@@ -94,16 +94,28 @@ class ROP(Analysis):
         self.chain_builder.syscall_gadgets = self.syscall_gadgets
         self.chain_builder.update()
 
+    def analyze_addr(self, addr):
+        """
+        return a list of gadgets that starts from addr
+        this is possible because of conditional branches
+        """
+        gs = self.gadget_finder.analyze_gadget(addr, allow_conditional_branches=True)
+        if not gs:
+            return gs
+        self._all_gadgets += gs
+        self._screen_gadgets()
+        return gs
+
     def analyze_gadget(self, addr):
-        g = self.gadget_finder.analyze_gadget(addr)
+        """
+        return a gadget or None, it filters out gadgets containing conditional_branches
+        if you'd like those, use analyze_addr
+        """
+        g = self.gadget_finder.analyze_gadget(addr, allow_conditional_branches=False)
         if g is None:
             return g
 
-        if isinstance(g, list):
-            self._all_gadgets += g
-        else:
-            self._all_gadgets.append(g)
-
+        self._all_gadgets.append(g)
         self._screen_gadgets()
         return g
 

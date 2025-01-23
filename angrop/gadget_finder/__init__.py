@@ -1,8 +1,8 @@
 import re
 import logging
 import itertools
+from functools import partial
 from multiprocessing import Pool
-from collections import defaultdict
 
 import tqdm
 
@@ -36,8 +36,11 @@ def _set_global_gadget_analyzer(rop_gadget_analyzer):
     _global_gadget_analyzer = rop_gadget_analyzer
     _disable_loggers()
 
-def run_worker(addr):
-    res = _global_gadget_analyzer.analyze_gadget(addr)
+def run_worker(addr, allow_cond_branch=None):
+    if allow_cond_branch is None:
+        res = _global_gadget_analyzer.analyze_gadget(addr)
+    else:
+        res = _global_gadget_analyzer.analyze_gadget(addr, allow_conditional_branches=allow_cond_branch)
     if res is None:
         return []
     if isinstance(res, list):
@@ -123,8 +126,8 @@ class GadgetFinder:
         self._gadget_analyzer = gadget_analyzer.GadgetAnalyzer(self.project, self.fast_mode, arch=self.arch,
                                                                kernel_mode=self.kernel_mode, stack_gsize=self.stack_gsize)
 
-    def analyze_gadget(self, addr):
-        g = self.gadget_analyzer.analyze_gadget(addr)
+    def analyze_gadget(self, addr, allow_conditional_branches=None):
+        g = self.gadget_analyzer.analyze_gadget(addr, allow_conditional_branches=allow_conditional_branches)
         if isinstance(g, list):
             for x in g:
                 x.project = self.project
@@ -141,8 +144,9 @@ class GadgetFinder:
             iterable = tqdm.tqdm(iterable=iterable, smoothing=0, total=len(addr_list),
                                  desc="ROP", maxinterval=0.5, dynamic_ncols=True)
 
+        func = partial(run_worker, allow_cond_branch=False)
         with Pool(processes=processes, initializer=_set_global_gadget_analyzer, initargs=initargs) as pool:
-            it = pool.imap_unordered(run_worker, iterable, chunksize=1)
+            it = pool.imap_unordered(func, iterable, chunksize=1)
             for gs in it:
                 if gs:
                     gadgets += gs
