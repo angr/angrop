@@ -109,10 +109,6 @@ class GadgetAnalyzer:
 
         final_states = list(simgr.unconstrained)
         if "syscall" in simgr.stashes:
-            # for syscallgadget, the syscall number needs to be controlled, or there is no point
-            cc = angr.SYSCALL_CC[self.project.arch.name]["default"](self.project.arch)
-            sysnum_is_constrained = lambda s: not cc.syscall_num(s).symbolic or not rop_utils.fast_unconstrained_check(s, cc.syscall_num(s))
-            simgr.move(from_stash='syscall', to_stash='deadended', filter_func=sysnum_is_constrained)
             final_states.extend(self._try_stepping_past_syscall(state) for state in simgr.syscall)
 
         bad_states = simgr.active + simgr.deadended
@@ -349,7 +345,7 @@ class GadgetAnalyzer:
 
         # for jmp_reg gadget, record the jump target register
         if transit_type == "jmp_reg":
-            gadget.pc_reg = gadget.jump_reg = list(final_state.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
+            gadget.pc_reg = list(final_state.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
 
         # compute sp change
         l.debug("... computing sp change")

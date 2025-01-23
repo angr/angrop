@@ -610,11 +610,9 @@ class RegSetter(Builder):
             remaining_regs.add(new_reg)
 
         if gadget.transit_type == 'jmp_reg':
-            # I don't know what's the difference between these two so just error if they're different.
-            assert gadget.jump_reg == gadget.pc_reg
-            if gadget.jump_reg in remaining_regs:
+            if gadget.pc_reg in remaining_regs:
                 return None
-            remaining_regs.add(gadget.jump_reg)
+            remaining_regs.add(gadget.pc_reg)
 
         if not gadget.constraint_regs.isdisjoint(remaining_regs):
             return None

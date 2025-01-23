@@ -121,8 +121,6 @@ class RopGadget:
         # utilize gadgets like `call qword ptr [rax+rbx]` because we have the dependency information.
         # transition information, i.e. how to pass the control flow to the next gadget
         self.transit_type = None
-        # TODO: what's the difference between jump_reg and pc_reg?
-        self.jump_reg = None
         self.pc_reg = None
         # pc_offset is exclusively used when transit_type is "pop_pc",
         # when pc_offset==stack_change-arch_bytes, transit_type is basically ret
@@ -221,7 +219,6 @@ class RopGadget:
         out.reg_moves = list(self.reg_moves)
         out.block_length = self.block_length
         out.transit_type = self.transit_type
-        out.jump_reg = self.jump_reg
         out.pc_reg = self.pc_reg
         return out
 
