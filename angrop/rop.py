@@ -96,9 +96,15 @@ class ROP(Analysis):
 
     def analyze_gadget(self, addr):
         g = self.gadget_finder.analyze_gadget(addr)
-        if g:
+        if g is None:
+            return g
+
+        if isinstance(g, list):
+            self._all_gadgets += g
+        else:
             self._all_gadgets.append(g)
-            self._screen_gadgets()
+
+        self._screen_gadgets()
         return g
 
     def analyze_gadget_list(self, addr_list, processes=4, show_progress=True):

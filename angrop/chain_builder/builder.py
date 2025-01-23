@@ -103,6 +103,45 @@ class Builder:
                     return addr
         return None
 
+    def _ast_contains_stack_data(self, ast):
+        vs = ast.variables
+        return len(vs) == 1 and list(vs)[0].startswith('symbolic_stack_')
+
+    def _rebalance_ast(self, lhs, rhs):
+        """
+        we know that lhs (stack content with modification) == rhs (user ropvalue)
+        since user ropvalue may be symbolic, we need to present the stack content using the user ropvalue and store it
+        on stack so that users can eval on their own ropvalue and get the correct solves
+        TODO: currently, we only support add/sub
+        """
+        assert self._ast_contains_stack_data(lhs)
+        while lhs.depth != 1:
+            match lhs.op:
+                case "__add__" | "__sub__":
+                    arg0 = lhs.args[0]
+                    arg1 = lhs.args[1]
+                    flag = self._ast_contains_stack_data(arg0)
+                    op = lhs.op
+                    if flag:
+                        lhs = arg0
+                        other = arg1
+                    else:
+                        lhs = arg1
+                        other = arg0
+                    if op == "__add__":
+                        rhs -= other
+                    elif flag:
+                        rhs += other
+                    else:
+                        rhs = other - rhs
+                case "Reverse":
+                    lhs = lhs.args[0]
+                    rhs = claripy.Reverse(rhs)
+                case _:
+                    raise ValueError(f"{lhs.op} cannot be rebalanced at the moment. plz create an issue!")
+        assert self._ast_contains_stack_data(lhs)
+        return lhs, rhs
+
     @rop_utils.timeout(8)
     def _build_reg_setting_chain(
         self, gadgets, modifiable_memory_range, register_dict, stack_change
@@ -185,6 +224,14 @@ class Builder:
                     raise RopException("Register set to incorrect value")
             else:
                 state.solver.add(var == val.data)
+                lhs, rhs = self._rebalance_ast(var, val.data)
+                rhs = claripy.Reverse(rhs)
+                ropvalue = val.copy()
+                if val.rebase:
+                    ropvalue._value = rhs - ropvalue._code_base
+                else:
+                    ropvalue._value = rhs
+                map_stack_var(lhs, ropvalue)
 
         # Constrain memory access addresses.
         for action in state.history.actions:

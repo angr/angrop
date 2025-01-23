@@ -125,7 +125,10 @@ class GadgetFinder:
 
     def analyze_gadget(self, addr):
         g = self.gadget_analyzer.analyze_gadget(addr)
-        if g:
+        if isinstance(g, list):
+            for x in g:
+                x.project = self.project
+        elif g:
             g.project = self.project
         return g
 
@@ -156,7 +159,7 @@ class GadgetFinder:
         cache = self._cache
         return {k:v for k,v in cache.items() if len(v) >= 2}
 
-    def find_gadgets(self, processes=16, show_progress=True):
+    def find_gadgets(self, processes=4, show_progress=True):
         self._cache = {}
 
         initargs = (self.gadget_analyzer,)
