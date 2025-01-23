@@ -53,7 +53,7 @@ class MemWriter(Builder):
             for g in self._good_mem_write_gadgets:
                 yield g
 
-        possible_gadgets = self._mem_write_gadgets.copy() - self._good_mem_write_gadgets
+        possible_gadgets = {g for g in self._mem_write_gadgets.copy() if g.transit_type != 'jmp_reg'} - self._good_mem_write_gadgets
 
         # use the graph-search to gain a rough idea about (stack_change, register setting)
         registers = dict((reg, 0x41) for reg in self.arch.reg_set)
@@ -240,7 +240,22 @@ class MemWriter(Builder):
         chain.add_gadget(gadget)
 
         bytes_per_pop = self.project.arch.bytes
-        for _ in range(gadget.stack_change // bytes_per_pop - 1):
+        pc_offset = None
+        if gadget.transit_type == 'pop_pc':
+            pc_offset = gadget.pc_offset
+        elif gadget.transit_type == 'ret':
+            pc_offset = gadget.stack_change - 8
+        else:
+            raise ValueError(f"Unknown gadget transit_type: {gadget.transit_type}")
+
+        for idx in range(gadget.stack_change // bytes_per_pop):
+            if idx == pc_offset//8:
+                next_pc_val = rop_utils.cast_rop_value(
+                    chain._blank_state.solver.BVS("next_pc", self.project.arch.bits),
+                    self.project,
+                )
+                chain.add_value(next_pc_val)
+                continue
             chain.add_value(self._get_fill_val())
 
         # verify the write actually works
@@ -249,9 +264,9 @@ class MemWriter(Builder):
         if not state.solver.eval(sim_data == data):
             raise RopException("memory write fails")
 
-        # the next pc must come from the stack
+        # the next pc must be in our control
         if len(state.regs.pc.variables) != 1:
             raise RopException("must have only one pc variable")
-        if not set(state.regs.pc.variables).pop().startswith("symbolic_stack"):
-            raise RopException("the next pc not from the stack")
+        if not set(state.regs.pc.variables).pop().startswith("next_pc_"):
+            raise RopException("the next pc is not in our control!")
         return chain
