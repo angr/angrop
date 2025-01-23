@@ -137,14 +137,12 @@ class Builder:
 
         arch_bytes = self.project.arch.bytes
 
-        state = test_symbolic_state
+        state = test_symbolic_state.copy()
 
         # Step through each gadget and constrain the ip.
-        # save the constraints into test_symbolic_state
         for gadget in gadgets:
             map_stack_var(state.ip, gadget)
             state.solver.add(state.ip == gadget.addr)
-            test_symbolic_state.solver.add(state.ip == gadget.addr)
             for addr in gadget.bbl_addrs[1:]:
                 succ = state.step()
                 succ_states = [
@@ -186,8 +184,7 @@ class Builder:
                 if var.concrete_value != val.concreted:
                     raise RopException("Register set to incorrect value")
             else:
-                map_stack_var(var, val)
-                state.solver.add(var == val)
+                state.solver.add(var == val.data)
 
         # Constrain memory access addresses.
         for action in state.history.actions:
@@ -199,6 +196,7 @@ class Builder:
                 state.solver.add(action.addr.ast >= modifiable_memory_range[0])
                 state.solver.add(action.addr.ast < modifiable_memory_range[1])
 
+        # now import the constraints from the state that has reached the end of the ropchain
         test_symbolic_state.solver.add(*state.solver.constraints)
 
         bytes_per_pop = arch_bytes
