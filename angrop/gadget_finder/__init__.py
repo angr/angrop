@@ -112,7 +112,7 @@ class GadgetFinder:
             else:
                 self.fast_mode = False
         if self.fast_mode:
-            self.arch.max_block_size = 12
+            self.arch.max_block_size = self.arch.fast_mode_max_block_size
             self.arch.max_sym_mem_access = 1
             # Recalculate num addresses to check based on fast_mode settings
             num_to_check = self._num_addresses_to_check()
