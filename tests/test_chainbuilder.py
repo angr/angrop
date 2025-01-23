@@ -336,6 +336,22 @@ def test_shifter():
     state = chain.exec()
     assert state.regs.sp.concrete_value == init_sp + 0x40 + proj.arch.bytes
 
+    # aarch64
+    cache_path = os.path.join(CACHE_DIR, "aarch64_glibc_2.19")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "aarch64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=True, only_check_near_rets=False)
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    chain = rop.shift(0x10)
+    init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
+    state = chain.exec()
+    assert state.regs.sp.concrete_value == init_sp + 0x10 + proj.arch.bytes
+
 def test_retsled():
     # i386
     cache_path = os.path.join(CACHE_DIR, "i386_glibc_2.35")

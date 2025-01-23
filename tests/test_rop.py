@@ -112,6 +112,42 @@ def execute_chain(project, chain):
 
     return p.one_active
 
+def verify_execve_chain(chain):
+    state = chain._blank_state.copy()
+    proj = state.project
+    state.memory.store(state.regs.sp, chain.payload_str())
+    state.ip = state.stack_pop()
+
+    # step to the system call
+    simgr = proj.factory.simgr(state)
+    while simgr.active:
+        assert len(simgr.active) == 1
+        state = simgr.active[0]
+        obj = proj.loader.find_object_containing(state.ip.concrete_value)
+        if obj and obj.binary == 'cle##kernel':
+            break
+        simgr.step()
+
+    # verify the syscall arguments
+    state = simgr.active[0]
+    cc = angr.SYSCALL_CC[proj.arch.name]["default"](proj.arch)
+    assert cc.syscall_num(state).concrete_value == 0x3b
+    ptr = state.registers.load(cc.ARG_REGS[0])
+    assert state.solver.is_true(state.memory.load(ptr, 8) == b'/bin/sh\0')
+    assert state.registers.load(cc.ARG_REGS[1]).concrete_value == 0
+    assert state.registers.load(cc.ARG_REGS[2]).concrete_value == 0
+
+def test_roptest_mips():
+    proj = angr.Project(os.path.join(public_bin_location, "mipsel/darpa_ping"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.set_regs(s0=0x41414141, s1=0x42424242, v0=0x43434343)
+    result_state = execute_chain(proj, chain)
+    assert result_state.solver.eval(result_state.regs.s0) == 0x41414141
+    assert result_state.solver.eval(result_state.regs.s1) == 0x42424242
+    assert result_state.solver.eval(result_state.regs.v0) == 0x43434343
+
 
 def test_rop_x86_64():
     b = angr.Project(os.path.join(public_bin_location, "x86_64/datadep_test"), auto_load_libs=False)
@@ -202,34 +238,30 @@ def test_roptest_x86_64():
     r = p.analyses.ROP(only_check_near_rets=False)
     r.find_gadgets_single_threaded(show_progress=False)
     c = r.execve(path=b"/bin/sh")
+    verify_execve_chain(c)
 
-    state = p.factory.blank_state()
-    state.memory.store(state.regs.sp, c.payload_str())
-    state.ip = state.stack_pop()
+def test_roptest_aarch64():
+    cache_path = os.path.join(test_data_location, "aarch64_glibc_2.19")
+    proj = angr.Project(os.path.join(public_bin_location, "aarch64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=True, only_check_near_rets=False)
 
-    # Step to the syscall.
-    while state.block(num_inst=1).disassembly.insns[0].mnemonic != 'syscall':
-        succ = state.step()
-        assert len(succ.flat_successors) == 1
-        assert not succ.unconstrained_successors
-        state = succ.flat_successors[0]
+    rop.analyze_gadget(0x4b7ca8)
+    rop.analyze_gadget(0x4ebad4)
 
-    assert state.solver.is_true(state.memory.load(state.regs.rdi, 8) == b'/bin/sh\0')
-    assert state.regs.rsi.concrete_value == 0
-    assert state.regs.rdx.concrete_value == 0
-    assert state.regs.rax.concrete_value == 0x3b
+    chain = rop.set_regs(x0=0x41414141)
+    assert chain is not None
 
-def test_roptest_mips():
-    proj = angr.Project(os.path.join(public_bin_location, "mipsel/darpa_ping"), auto_load_libs=False)
-    rop = proj.analyses.ROP()
-    rop.find_gadgets_single_threaded(show_progress=False)
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
 
-    chain = rop.set_regs(s0=0x41414141, s1=0x42424242, v0=0x43434343)
-    result_state = execute_chain(proj, chain)
-    assert result_state.solver.eval(result_state.regs.s0) == 0x41414141
-    assert result_state.solver.eval(result_state.regs.s1) == 0x42424242
-    assert result_state.solver.eval(result_state.regs.v0) == 0x43434343
+    chain = rop.write_to_mem(0x41414140, b'AAAAAAA')
+    assert chain is not None
 
+    chain = rop.execve(path=b'/bin/sh')
+    verify_execve_chain(chain)
 
 def run_all():
     functions = globals()

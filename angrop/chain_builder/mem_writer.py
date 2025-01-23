@@ -43,6 +43,17 @@ class MemWriter(Builder):
                     possible_gadgets.add(g)
         return possible_gadgets
 
+    def _better_than(self, g1, g2):
+        if g1.stack_change > g2.stack_change:
+            return False
+        if g1.num_mem_access > g2.num_mem_access:
+            return False
+        if g1.isn_count > g2.isn_count:
+            return False
+        if not g1.changed_regs.issubset(g2.changed_regs):
+            return False
+        return True
+
     def _gen_mem_write_gadgets(self, string_data):
         # create a dict of bytes per write to gadgets
         # assume we need intersection of addr_dependencies and data_dependencies to be 0
@@ -71,7 +82,7 @@ class MemWriter(Builder):
             # vals[1]: stack_change to set those registers
             for regs, vals in reg_data.items():
                 reg_set_stack_change = vals[1]
-                if reg_set_stack_change >= best_stack_change:
+                if reg_set_stack_change > best_stack_change:
                     continue
                 for g in possible_gadgets:
                     mem_write = g.mem_writes[0]
@@ -84,6 +95,8 @@ class MemWriter(Builder):
                     if stack_change < best_stack_change:
                         best_gadget = g
                         best_stack_change = stack_change
+                    if stack_change == best_stack_change and self._better_than(g, best_gadget):
+                        best_gadget = g
 
             yield best_gadget
             possible_gadgets.remove(best_gadget)
@@ -244,7 +257,7 @@ class MemWriter(Builder):
         if gadget.transit_type == 'pop_pc':
             pc_offset = gadget.pc_offset
         elif gadget.transit_type == 'ret':
-            pc_offset = gadget.stack_change - 8
+            pc_offset = gadget.stack_change - bytes_per_pop
         else:
             raise ValueError(f"Unknown gadget transit_type: {gadget.transit_type}")
 

@@ -205,6 +205,18 @@ def test_gadget_filtering():
     rop.chain_builder.update()
     assert len(rop.chain_builder._reg_setter._reg_setting_gadgets) == 1
 
+def test_aarch64_svc():
+    proj = angr.Project(os.path.join(tests_dir, "aarch64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=True, only_check_near_rets=False)
+    g = rop.analyze_gadget(0x0000000000463820)
+    assert g is not None
+
+def test_aarch64_reg_setter():
+    proj = angr.Project(os.path.join(tests_dir, "aarch64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=True, only_check_near_rets=False)
+    g = rop.analyze_gadget(0x00000000004c29a0)
+    assert g is not None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
