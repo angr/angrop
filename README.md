@@ -19,6 +19,7 @@ Supported architectures:
 * x86/x64
 * ARM
 * MIPS
+* AARCH64
 
 It should be relatively easy to support other architectures that are supported by `angr`.
 If you'd like to use `angrop` on other architectures, please create an issue and we will look into it :)
@@ -137,8 +138,6 @@ Register dependencies:
 Allow strings to be passed as arguments to func_call(), which are then written to memory and referenced.
 
 Add a function for open, read, write (for ctf's)
-
-Allow using of angr objects such as BVV, BVS to make using symbolic values easy
 
 The segment analysis for finding executable addresses seems to break on non-elf binaries often, such as PE files, kernel modules.
 
