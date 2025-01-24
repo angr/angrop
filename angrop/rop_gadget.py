@@ -205,7 +205,8 @@ class RopGadget:
         return "<Gadget %#x>" % self.addr
 
     def copy(self):
-        out = RopGadget(self.project, self.addr)
+        out = RopGadget(self.addr)
+        out.project = self.project
         out.addr = self.addr
         out.changed_regs = set(self.changed_regs)
         out.popped_regs = set(self.popped_regs)

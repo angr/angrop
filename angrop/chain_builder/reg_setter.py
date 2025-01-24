@@ -16,6 +16,12 @@ from ..errors import RopException
 l = logging.getLogger("angrop.chain_builder.reg_setter")
 
 class RegSetter(Builder):
+    """
+    a chain builder that aims to set registers using different algorithms
+    1. algo1: graph-search, fast, not reliable
+    2. algo2: pop-only bfs search, fast, reliable, can generate chains to bypass bad-bytes
+    3. algo3: riscy-rop inspired backward search, slow, can utilize gadgets containing conditional branches
+    """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
         self._reg_setting_gadgets = None # all the gadgets that can set registers
@@ -54,12 +60,14 @@ class RegSetter(Builder):
                 offset -= act.offset % self.project.arch.bytes
                 reg_name = self.project.arch.translate_register_name(offset)
                 if reg_name in preserve_regs:
-                    l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation - 1.\ntarget registers: %s", chain_str, registers)
+                    l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-1.\nregisters: %s",
+                                chain_str, registers)
                     return False
         for reg, val in registers.items():
             bv = getattr(state.regs, reg)
             if (val.symbolic != bv.symbolic) or state.solver.eval(bv != val.data):
-                l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation - 2.\ntarget registers: %s", chain_str, registers)
+                l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-2.\nregisters: %s",
+                            chain_str, registers)
                 return False
         # the next pc must come from the stack or just marked as the next_pc
         if len(state.regs.pc.variables) != 1:
@@ -67,7 +75,7 @@ class RegSetter(Builder):
         pc_var = set(state.regs.pc.variables).pop()
         return pc_var.startswith("symbolic_stack") or pc_var.startswith("next_pc")
 
-    def run(self, modifiable_memory_range=None, use_partial_controllers=False,  preserve_regs=None, max_length=10, **registers):
+    def run(self, modifiable_memory_range=None, preserve_regs=None, max_length=10, **registers):
         if len(registers) == 0:
             return RopChain(self.project, None, badbytes=self.badbytes)
 
@@ -106,24 +114,20 @@ class RegSetter(Builder):
             yield gadgets
 
         # algorithm2
-        gadgets_list = self.find_candidate_chains_pop_only_bfs_search(
+        yield from self.find_candidate_chains_pop_only_bfs_search(
                                     self._find_relevant_gadgets(**registers),
                                     preserve_regs.copy(),
                                     **registers)
-        for gadgets in gadgets_list:
-            yield gadgets
 
         # algorithm3
-        for gadgets in self.find_candidate_chains_backwards_recursive_search(
+        yield from self.find_candidate_chains_backwards_recursive_search(
                                     self._reg_setting_gadgets,
                                     set(registers),
                                     current_chain=[],
                                     preserve_regs=preserve_regs.copy(),
                                     modifiable_memory_range=modifiable_memory_range,
                                     visited={},
-                                    max_length=max_length):
-            yield gadgets
-        return
+                                    max_length=max_length)
 
     #### Chain Building Algorithm 1: fast but unreliable graph-based search ####
 
@@ -137,6 +141,7 @@ class RegSetter(Builder):
             curr_tuple = reg_tuple
         else:
             gadgets_reverse = reg_tuple[2]
+            curr_tuple = ()
         while curr_tuple != ():
             gadgets_reverse.append(data[curr_tuple][2])
             curr_tuple = data[curr_tuple][0]
@@ -586,11 +591,11 @@ class RegSetter(Builder):
 
         for reg in registers:
             if reg in gadget.popped_regs:
-                vars = gadget.popped_reg_vars[reg]
-                if not vars.isdisjoint(stack_dependencies):
+                reg_vars = gadget.popped_reg_vars[reg]
+                if not reg_vars.isdisjoint(stack_dependencies):
                     # Two registers are popped from the same location on the stack.
                     return None
-                stack_dependencies |= vars
+                stack_dependencies |= reg_vars
                 continue
             new_reg = reg
             for reg_move in gadget.reg_moves:

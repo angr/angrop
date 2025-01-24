@@ -1,8 +1,9 @@
 import os
 
+import claripy
+
 import angr
 import angrop # pylint: disable=unused-import
-import claripy
 from angrop.rop_value import RopValue
 from angrop.errors import RopException
 

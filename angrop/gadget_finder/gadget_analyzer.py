@@ -82,7 +82,7 @@ class GadgetAnalyzer:
         try:
             simgr = self.project.factory.simulation_manager(init_state, save_unconstrained=True)
 
-            def filter(state):
+            def filter_func(state):
                 if not state.ip.concrete:
                     return None
                 if self.project.is_hooked(state.addr):
@@ -94,8 +94,9 @@ class GadgetAnalyzer:
                     return simgr.DROP
                 return None
 
-            simgr.run(n=2, filter_func=filter)
-            simgr.move(from_stash='active', to_stash='syscall', filter_func=lambda s: rop_utils.is_in_kernel(self.project, s))
+            simgr.run(n=2, filter_func=filter_func)
+            simgr.move(from_stash='active', to_stash='syscall',
+                       filter_func=lambda s: rop_utils.is_in_kernel(self.project, s))
 
         except (claripy.errors.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError):
             return [], []
@@ -282,7 +283,7 @@ class GadgetAnalyzer:
     def _try_stepping_past_syscall(self, state):
         try:
             return rop_utils.step_to_unconstrained_successor(self.project, state, max_steps=3)
-        except Exception:  # pylint: disable=broad-exception-caught
+        except Exception: # pylint:disable=broad-exception-caught
             return state
 
     def _identify_transit_type(self, final_state, ctrl_type):

@@ -61,10 +61,10 @@ class MemWriter(Builder):
 
         # generate from the cache first
         if self._good_mem_write_gadgets:
-            for g in self._good_mem_write_gadgets:
-                yield g
+            yield from self._good_mem_write_gadgets
 
-        possible_gadgets = {g for g in self._mem_write_gadgets.copy() if g.transit_type != 'jmp_reg'} - self._good_mem_write_gadgets
+        possible_gadgets = {g for g in self._mem_write_gadgets.copy() if g.transit_type != 'jmp_reg'}
+        possible_gadgets -= self._good_mem_write_gadgets # already yield these
 
         # use the graph-search to gain a rough idea about (stack_change, register setting)
         registers = dict((reg, 0x41) for reg in self.arch.reg_set)
@@ -98,8 +98,11 @@ class MemWriter(Builder):
                     if stack_change == best_stack_change and self._better_than(g, best_gadget):
                         best_gadget = g
 
-            yield best_gadget
-            possible_gadgets.remove(best_gadget)
+            if best_gadget:
+                possible_gadgets.remove(best_gadget)
+                yield best_gadget
+            else:
+                break
 
     @rop_utils.timeout(5)
     def _try_write_to_mem(self, gadget, use_partial_controllers, addr, string_data, fill_byte):
@@ -251,7 +254,8 @@ class MemWriter(Builder):
                     break
             reg_vals[reg] = var
 
-        chain = self._set_regs(use_partial_controllers=use_partial_controllers, **reg_vals)
+
+        chain = self._set_regs(**reg_vals)
         chain.add_gadget(gadget)
 
         bytes_per_pop = self.project.arch.bytes

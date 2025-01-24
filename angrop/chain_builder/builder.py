@@ -1,7 +1,6 @@
 import struct
 from abc import abstractmethod
 from functools import cmp_to_key
-from collections import defaultdict
 
 import claripy
 
@@ -103,7 +102,8 @@ class Builder:
                     return addr
         return None
 
-    def _ast_contains_stack_data(self, ast):
+    @staticmethod
+    def _ast_contains_stack_data(ast):
         vs = ast.variables
         return len(vs) == 1 and list(vs)[0].startswith('symbolic_stack_')
 
@@ -323,7 +323,7 @@ class Builder:
             g1 = gadgets.pop()
             # check if nothing is better than g1
             for g2 in bests|gadgets:
-                if self._better_than(g2, g1):
+                if self._better_than(g2, g1): #pylint: disable=arguments-out-of-order
                     break
             else:
                 bests.add(g1)

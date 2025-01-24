@@ -152,7 +152,7 @@ def _asts_must_be_equal(state, ast1, ast2):
     return True
 
 
-def fast_uninitialized_filler(name, addr, size, state):
+def fast_uninitialized_filler(_, addr, size, state):
     return state.solver.BVS("uninitialized" + hex(addr), size, explicit_name=True)
 
 

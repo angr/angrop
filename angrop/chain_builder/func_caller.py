@@ -69,7 +69,8 @@ class FuncCaller(Builder):
         # 1. handle stack arguments
         # 2. handle function return address to maintain the control flow
         if stack_arguments:
-            cleaner = self.chain_builder.shift((len(stack_arguments)+1)*arch_bytes, next_pc_idx=-1, preserve_regs=preserve_regs)
+            shift_bytes = (len(stack_arguments)+1)*arch_bytes
+            cleaner = self.chain_builder.shift(shift_bytes, next_pc_idx=-1, preserve_regs=preserve_regs)
             chain.add_gadget(cleaner._gadgets[0])
             for arg in stack_arguments:
                 chain.add_value(arg)
