@@ -251,12 +251,16 @@ class GadgetFinder:
                     continue
             yield a
 
-    def block_hash(self, block):# pylint:disable=no-self-use
+    def block_hash(self, block):
         """
         a hash to uniquely identify a simple block
         """
         if block.vex.jumpkind == 'Ijk_Sys_syscall':
-            next_block = self.project.factory.block(block.addr+block.size)
+            next_addr = block.addr + block.size
+            obj = self.project.loader.find_object_containing(next_addr)
+            if not obj:
+                return block.bytes
+            next_block = self.project.factory.block(next_addr)
             return block.bytes + next_block.bytes
         return block.bytes
 
