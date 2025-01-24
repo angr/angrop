@@ -30,7 +30,7 @@ class Pivot(Builder):
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
-        self._pivot_gadgets = None
+        self._pivot_gadgets: list = None # type: ignore
 
     def update(self):
         self._pivot_gadgets = self.filter_gadgets(self.chain_builder.pivot_gadgets)

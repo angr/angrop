@@ -1,3 +1,4 @@
+from angr import Project
 from .rop_utils import addr_to_asmstring
 
 class RopMemAccess:
@@ -95,10 +96,10 @@ class RopGadget:
     Gadget objects
     """
     def __init__(self, addr):
-        self.project = None
+        self.project: Project = None # type: ignore
         self.addr = addr
         self.block_length = None
-        self.stack_change = None
+        self.stack_change: int = None # type: ignore
 
         # register effect information
         self.changed_regs = set()
@@ -120,7 +121,7 @@ class RopGadget:
         # it is just a register. With the register setting framework, we will be able to
         # utilize gadgets like `call qword ptr [rax+rbx]` because we have the dependency information.
         # transition information, i.e. how to pass the control flow to the next gadget
-        self.transit_type = None
+        self.transit_type: str = None # type: ignore
         self.pc_reg = None
         # pc_offset is exclusively used when transit_type is "pop_pc",
         # when pc_offset==stack_change-arch_bytes, transit_type is basically ret
@@ -131,8 +132,8 @@ class RopGadget:
         # Registers that affect path constraints
         self.constraint_regs = set()
         # Instruction count to estimate complexity
-        self.isn_count = None
-        self.has_conditional_branch = None
+        self.isn_count: int = None # type: ignore
+        self.has_conditional_branch: bool = None # type: ignore
 
     @property
     def num_mem_access(self):
@@ -205,7 +206,7 @@ class RopGadget:
         return "<Gadget %#x>" % self.addr
 
     def copy(self):
-        out = RopGadget(self.addr)
+        out = self.__class__(self.addr)
         out.project = self.project
         out.addr = self.addr
         out.changed_regs = set(self.changed_regs)
@@ -255,6 +256,7 @@ class PivotGadget(RopGadget):
         return f"<PivotGadget {self.addr:#x}>"
 
     def copy(self):
+
         new = super().copy()
         new.stack_change_after_pivot = self.stack_change_after_pivot
         new.sp_reg_controllers = set(self.sp_reg_controllers)

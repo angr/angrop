@@ -1,6 +1,7 @@
 import pickle
 import inspect
 import logging
+from typing import cast
 
 from angr import Analysis, register_analysis
 
@@ -38,8 +39,9 @@ class ROP(Analysis):
         """
 
         # private list of RopGadget's
-        self._all_gadgets = [] # all types of gadgets
-        self._duplicates = None # all equivalent gadgets (with the same instructions)
+        self._all_gadgets: list[RopGadget] = [] # all types of gadgets
+        # all equivalent gadgets (with the same instructions)
+        self._duplicates: dict = None # type: ignore
 
         # public list of RopGadget's
         self.rop_gadgets = [] # gadgets used for ROP, like pop rax; ret
@@ -99,7 +101,8 @@ class ROP(Analysis):
         return a list of gadgets that starts from addr
         this is possible because of conditional branches
         """
-        gs = self.gadget_finder.analyze_gadget(addr, allow_conditional_branches=True)
+        res = self.gadget_finder.analyze_gadget(addr, allow_conditional_branches=True)
+        gs:list[RopGadget]|None = cast(list[RopGadget]|None, res)
         if not gs:
             return gs
         self._all_gadgets += gs
@@ -111,10 +114,10 @@ class ROP(Analysis):
         return a gadget or None, it filters out gadgets containing conditional_branches
         if you'd like those, use analyze_addr
         """
-        g = self.gadget_finder.analyze_gadget(addr, allow_conditional_branches=False)
+        res = self.gadget_finder.analyze_gadget(addr, allow_conditional_branches=False)
+        g = cast(RopGadget|None, res)
         if g is None:
             return g
-
         self._all_gadgets.append(g)
         self._screen_gadgets()
         return g

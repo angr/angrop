@@ -3,6 +3,7 @@ import signal
 
 import angr
 import claripy
+from angr.engines.successors import SimSuccessors
 
 from .errors import RegNotFoundException, RopException, RopTimeoutException
 from .rop_value import RopValue
@@ -12,7 +13,7 @@ def addr_to_asmstring(project, addr):
     return "; ".join(["%s %s" %(i.mnemonic, i.op_str) for i in block.capstone.insns])
 
 
-def get_ast_dependency(ast):
+def get_ast_dependency(ast) -> set:
     """
     ast must be created from a symbolic state where registers values are named "sreg_REG-"
     looks for registers that if we make the register symbolic then the ast becomes symbolic
@@ -29,7 +30,7 @@ def get_ast_dependency(ast):
     return dependencies
 
 
-def get_ast_controllers(state, ast, reg_deps):
+def get_ast_controllers(state, ast, reg_deps) -> set:
     """
     looks for registers that we can make symbolic then the ast can be "anything"
     :param state: the input state
@@ -40,7 +41,7 @@ def get_ast_controllers(state, ast, reg_deps):
 
     test_val = 0x4141414141414141 % (2 << state.arch.bits)
 
-    controllers = []
+    controllers = set()
     if not ast.symbolic:
         return controllers
 
@@ -62,7 +63,7 @@ def get_ast_controllers(state, ast, reg_deps):
             extra_constraints.append(state.registers.load(r) == test_val)
 
         if unconstrained_check(state, ast, extra_constraints=extra_constraints):
-            controllers.append(reg)
+            controllers.add(reg)
 
     return controllers
 
@@ -309,6 +310,7 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
         # nums
         state.options.add(angr.options.BYPASS_UNSUPPORTED_SYSCALL)
 
+        succ: SimSuccessors = None # type: ignore
         if not precise_action:
             succ = project.factory.successors(state)
             if stop_at_syscall and succ.flat_successors:

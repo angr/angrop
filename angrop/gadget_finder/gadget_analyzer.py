@@ -41,7 +41,7 @@ class GadgetAnalyzer:
                                                     fast_mode=self._fast_mode)
         self._concrete_sp = self._state.solver.eval(self._state.regs.sp)
 
-    def analyze_gadget(self, addr, allow_conditional_branches=None):
+    def analyze_gadget(self, addr, allow_conditional_branches=None) -> list[RopGadget] | RopGadget | None:
         """
         Find gadgets at the given address.
 
@@ -662,7 +662,7 @@ class GadgetAnalyzer:
             final_state = rop_utils.step_to_unconstrained_successor(self.project, state=init_state, precise_action=True)
             dependencies = self._get_reg_dependencies(final_state, "sp")
             last_sp = None
-            init_sym_sp = None
+            init_sym_sp: frozenset = None # type: ignore
             prev_act = None
             for act in final_state.history.actions:
                 if act.type == 'reg' and act.action == 'write' and act.storage == self.arch.stack_pointer:
@@ -676,6 +676,8 @@ class GadgetAnalyzer:
                 gadget.stack_change = (last_sp - init_state.regs.sp).concrete_value
             else:
                 gadget.stack_change = 0
+
+            assert init_sym_sp is not None, "there is no sybmolic sp, how does the pivoting work?"
 
             # if is popped from stack, we need to compensate for the popped sp value on the stack
             # if it is a pop, then sp comes from stack and the previous action must be a mem read

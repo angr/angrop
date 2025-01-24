@@ -42,16 +42,16 @@ class SysCaller(FuncCaller):
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
 
-        self.syscall_gadgets = None
+        self.syscall_gadgets: list = None # type: ignore
 
     @staticmethod
     def supported_os(os):
         return "unix" in os.lower()
 
     def update(self):
-        self.syscall_gadgets = self._filter_gadgets(self.chain_builder.syscall_gadgets)
+        self.syscall_gadgets = self.filter_gadgets(self.chain_builder.syscall_gadgets)
 
-    def _filter_gadgets(self, gadgets):
+    def filter_gadgets(self, gadgets) -> list: # pylint: disable=no-self-use
         return sorted(gadgets, key=functools.cmp_to_key(cmp))
 
     def _try_invoke_execve(self, path_addr):

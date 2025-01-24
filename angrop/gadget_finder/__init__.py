@@ -21,7 +21,7 @@ l = logging.getLogger(__name__)
 logging.getLogger('pyvex.lifting').setLevel("ERROR")
 
 
-_global_gadget_analyzer = None
+_global_gadget_analyzer: gadget_analyzer.GadgetAnalyzer = None # type: ignore
 
 # disable loggers in each worker
 def _disable_loggers():
@@ -71,13 +71,16 @@ class GadgetFinder:
         if max_sym_mem_access:
             self.arch.max_sym_mem_access = max_sym_mem_access
         if is_thumb:
-            self.arch.set_thumb()
+            assert isinstance(self.arch, ARM), "is_thumb is only compatible with ARM binaries!"
+            arch: ARM = self.arch
+            arch.set_thumb()
 
         # internal stuff
-        self._ret_locations = None
-        self._syscall_locations = None
-        self._cache = None # cache seen blocks, dict(block_hash => sets of addresses)
-        self._gadget_analyzer = None
+        self._ret_locations: list = None # type: ignore
+        self._syscall_locations: list = None # type: ignore
+        # cache seen blocks, dict(block_hash => sets of addresses)
+        self._cache: dict = None # type: ignore
+        self._gadget_analyzer: gadget_analyzer.GadgetAnalyzer = None # type: ignore
         self._executable_ranges = None
 
         # silence annoying loggers
@@ -197,7 +200,13 @@ class GadgetFinder:
         assert self.gadget_analyzer is not None
 
         for addr in self._addresses_to_check_with_caching(show_progress):
-            gadgets.extend(self.gadget_analyzer.analyze_gadget(addr))
+            res = self.gadget_analyzer.analyze_gadget(addr)
+            if res is None:
+                continue
+            if isinstance(res, list):
+                gadgets.extend(res)
+                continue
+            gadgets.append(res)
 
         for g in gadgets:
             g.project = self.project
