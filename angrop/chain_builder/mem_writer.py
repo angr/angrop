@@ -262,7 +262,7 @@ class MemWriter(Builder):
             raise ValueError(f"Unknown gadget transit_type: {gadget.transit_type}")
 
         for idx in range(gadget.stack_change // bytes_per_pop):
-            if idx == pc_offset//8:
+            if idx == pc_offset//bytes_per_pop:
                 next_pc_val = rop_utils.cast_rop_value(
                     chain._blank_state.solver.BVS("next_pc", self.project.arch.bits),
                     self.project,
