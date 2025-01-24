@@ -2,6 +2,7 @@ import os
 import angr
 import angrop  # pylint: disable=unused-import
 import pickle
+import claripy
 
 import logging
 l = logging.getLogger("angrop.tests.test_rop")
@@ -248,8 +249,11 @@ def test_roptest_aarch64():
     rop.analyze_gadget(0x4b7ca8)
     rop.analyze_gadget(0x4ebad4)
 
-    chain = rop.set_regs(x0=0x41414141)
+    data = claripy.BVS("data", 64)
+    chain = rop.set_regs(x0=data)
     assert chain is not None
+    chain._blank_state.solver.add(data == 0x41414141)
+    assert b'\xe1\x3eAA' in chain.payload_str()
 
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
