@@ -30,11 +30,10 @@ class Pivot(Builder):
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
-        self._pivot_gadgets = None
-        self.update()
+        self._pivot_gadgets: list = None # type: ignore
 
     def update(self):
-        self._pivot_gadgets = self._filter_gadgets(self.chain_builder.pivot_gadgets)
+        self._pivot_gadgets = self.filter_gadgets(self.chain_builder.pivot_gadgets)
 
     def pivot(self, thing):
         if thing.is_register:
@@ -103,16 +102,14 @@ class Pivot(Builder):
                 if len(variables) == 1 and variables.pop().startswith(f'reg_{reg}'):
                     return chain
                 else:
-                    insts = [str(self.project.factory.block(g.addr).capstone) for g in chain._gadgets]
-                    chain_str = '\n-----\n'.join(insts)
+                    chain_str = chain.dstr()
                     l.exception("Somehow angrop thinks\n%s\ncan be use for stack pivoting", chain_str)
             except Exception: # pylint: disable=broad-exception-caught
                 continue
 
         raise RopException(f"Fail to pivot the stack to {reg}!")
 
-    @staticmethod
-    def same_effect(g1, g2):
+    def _same_effect(self, g1, g2):
         if g1.sp_controllers != g2.sp_controllers:
             return False
         if g1.stack_change != g2.stack_change:
@@ -121,32 +118,16 @@ class Pivot(Builder):
             return False
         return True
 
-    def better_than(self, g1, g2):
-        if not self.same_effect(g1, g2):
-            return False
+    def _better_than(self, g1, g2):
         if g1.num_mem_access > g2.num_mem_access:
             return False
         if not g1.changed_regs.issubset(g2.changed_regs):
             return False
-        if g1.block_length > g2.block_length:
+        if g1.isn_count > g2.isn_count:
             return False
         return True
 
-    def _filter_gadgets(self, gadgets):
-        """
-        filter gadgets having the same effect
-        """
-        gadgets = set(gadgets)
-        skip = set({})
-        while True:
-            to_remove = set({})
-            for g in gadgets-skip:
-                to_remove.update({x for x in gadgets-{g} if self.better_than(g, x)})
-                if to_remove:
-                    break
-                skip.add(g)
-            if not to_remove:
-                break
-            gadgets -= to_remove
-        gadgets = sorted(gadgets, key=functools.cmp_to_key(cmp))
-        return gadgets
+    def filter_gadgets(self, gadgets):
+        gadgets = [x for x in gadgets if not x.has_conditional_branch]
+        gadgets = self._filter_gadgets(gadgets)
+        return sorted(gadgets, key=functools.cmp_to_key(cmp))

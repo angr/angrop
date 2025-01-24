@@ -1,8 +1,13 @@
+import logging
+
 from . import rop_utils
 from .errors import RopException
+from .rop_gadget import RopGadget
 from .rop_value import RopValue
 
 CHAIN_TIMEOUT_DEFAULT = 3
+
+l = logging.getLogger("angrop.chain_builder.reg_setter")
 
 class RopChain:
     """
@@ -10,12 +15,12 @@ class RopChain:
     """
     cls_timeout = CHAIN_TIMEOUT_DEFAULT
 
-    def __init__(self, project, rop, state=None, badbytes=None):
+    def __init__(self, project, builder, state=None, badbytes=None):
         """
         """
         self._p = project
         self._pie = self._p.loader.main_object.pic
-        self._rop = rop
+        self._builder = builder
 
         self._gadgets = []
         self._values = []
@@ -64,20 +69,21 @@ class RopChain:
         self.payload_len += self._p.arch.bytes
 
     def add_gadget(self, gadget):
-        self._gadgets.append(gadget)
-
         value = gadget.addr
         if self._pie:
             value -= self._p.loader.main_object.mapped_base
         value = RopValue(value, self._p)
-        if self._pie:
-            value._rebase = True
+        value._rebase = self._pie is True
 
-        idx = self.next_pc_idx()
-        if idx is None:
+        if (idx := self.next_pc_idx()) is None:
             self.add_value(value)
         else:
             self._values[idx] = value
+
+        self._gadgets.append(gadget)
+
+    def set_gadgets(self, gadgets: list[RopGadget]):
+        self._gadgets = gadgets
 
     def add_constraint(self, cons):
         """
@@ -132,12 +138,24 @@ class RopChain:
 
         return concrete_vals
 
-    def _concretize_chain_values(self, constraints=None, timeout=None, preserve_next_pc=False):
+    def _concretize_chain_values(self, constraints=None, timeout=None, preserve_next_pc=False, append_shift=False):
         """
         concretize chain values with a timeout
         """
-        if self.next_pc_idx() is not None:
-            return (self + self._rop.chain_builder.shift(self._p.arch.bytes))._concretize_chain_values(constraints=constraints, timeout=timeout, preserve_next_pc=preserve_next_pc)
+        if self.next_pc_idx() is not None and append_shift:
+            try:
+                # the following line is the final touch for chains ending with retn-style
+                # gadget to make sure that the next_pc is at the end of the chain
+                chain = self + self._builder.chain_builder.shift(self._p.arch.bytes)
+                values = chain._concretize_chain_values(
+                                    constraints=constraints,
+                                    timeout=timeout,
+                                    preserve_next_pc=preserve_next_pc,
+                                    append_shift=False,
+                                )
+                return values
+            except RopException:
+                pass
         if timeout is None:
             timeout = self._timeout
         values = rop_utils.timeout(timeout)(self.__concretize_chain_values)(constraints=constraints)
@@ -157,7 +175,7 @@ class RopChain:
         if base_addr is None:
             base_addr = self._p.loader.main_object.mapped_base
         test_state = self._blank_state.copy()
-        concrete_vals = self._concretize_chain_values(constraints, timeout=timeout)
+        concrete_vals = self._concretize_chain_values(constraints, timeout=timeout, append_shift=True)
         for value, rebased in reversed(concrete_vals):
             if rebased:
                 test_state.stack_push(value - self._p.loader.main_object.mapped_base + base_addr)
@@ -178,6 +196,12 @@ class RopChain:
 
         sp = test_state.regs.sp
         return test_state.memory.load(sp, self.payload_len)
+
+    def addr_to_asmstring(self, addr):
+        for g in self._gadgets:
+            if g.addr == addr:
+                return g.dstr()
+        return ""
 
     def find_symbol(self, addr):
         plt = self._p.loader.find_plt_stub_name(addr)
@@ -206,7 +230,7 @@ class RopChain:
             payload = ""
         payload += 'chain = b""\n'
 
-        concrete_vals = self._concretize_chain_values(constraints, timeout=timeout)
+        concrete_vals = self._concretize_chain_values(constraints, timeout=timeout, append_shift=True)
         for value, rebased in concrete_vals:
 
             instruction_code = ""
@@ -217,7 +241,7 @@ class RopChain:
                     if symbol:
                         instruction_code = f"\t# {symbol}"
                     else:
-                        asmstring = rop_utils.addr_to_asmstring(self._p, value)
+                        asmstring = self.addr_to_asmstring(value)
                         if asmstring != "":
                             instruction_code = "\t# " + asmstring
 
@@ -239,18 +263,36 @@ class RopChain:
         state = self._blank_state.copy()
         state.solver.reload_solver([]) # remove constraints
         state.regs.pc = self._values[0].concreted
-        concrete_vals = self._concretize_chain_values(timeout=timeout, preserve_next_pc=True)
+        concrete_vals = self._concretize_chain_values(timeout=timeout, preserve_next_pc=True, append_shift=False)
+
+        # when the chain data includes symbolic values, we need to replace the concrete values
+        # with the user's symbolic data
+        values = concrete_vals
+        for idx, val in enumerate(self._values):
+            if not val.symbolic:
+                continue
+            if all(var.startswith("symbolic_stack") for var in val.ast.variables):
+                continue
+            values[idx] = (val.data, val.rebase)
+
         # the assumption is that the first value in the chain is a code address
         # it sounds like a reasonable assumption to me. But I can be wrong.
-        for value, _ in reversed(concrete_vals[1:]):
+        for value, _ in reversed(values[1:]):
             state.stack_push(value)
         if max_steps is None:
-            max_steps = len(self._gadgets)*2
-        return rop_utils.step_to_unconstrained_successor(self._p, state, max_steps=max_steps,
-                                                         allow_simprocedures=True)
+            max_steps = sum(len(gadget.bbl_addrs) for gadget in self._gadgets)
+        try:
+            state = rop_utils.step_to_unconstrained_successor(self._p, state, max_steps=max_steps,
+                                                              allow_simprocedures=True)
+        except RopException as e:
+            code = self.payload_code(print_instructions=True)
+            l.error("The following chain fails to execute!")
+            l.error(code)
+            raise e
+        return state
 
     def copy(self):
-        cp = RopChain(self._p, self._rop)
+        cp = RopChain(self._p, self._builder)
         cp._gadgets = list(self._gadgets)
         cp._values = list(self._values)
         cp.payload_len = self.payload_len
@@ -261,3 +303,24 @@ class RopChain:
 
     def __str__(self):
         return self.payload_code()
+
+    def dstr(self):
+        res = ''
+        bs = self._p.arch.bytes
+        prefix_len = bs*2+2
+        prefix = " "*prefix_len
+        for v in self._values:
+            if v.symbolic:
+                res += prefix + f"  {v.ast}\n"
+                continue
+            for g in self._gadgets:
+                if g.addr == v.concreted:
+                    fmt = f"%#0{prefix_len}x"
+                    res += fmt % g.addr + f": {g.dstr()}\n"
+                    break
+            else:
+                res += prefix + f"  {v.concreted:#x}\n"
+        return res
+
+    def pp(self):
+        print(self.dstr())

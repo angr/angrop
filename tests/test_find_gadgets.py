@@ -155,6 +155,10 @@ def test_shift_gadget():
     assert all(gadget_exists(rop, x) for x in [0x454e75, 0x5622d5, 0x490058])
 
 def test_i386_syscall():
+    """
+    in 32-bit world, syscall instruction is only valid for AMD CPUs, we consider it invalid in angrop for
+    better portability, see https://github.com/angr/angrop/issues/104
+    """
     # pylint: disable=pointless-string-statement
     proj = angr.Project(os.path.join(tests_dir, "i386", "angrop_syscall_test"), auto_load_libs=False)
 
@@ -162,22 +166,13 @@ def test_i386_syscall():
     """
     804918c  int     0x80
     """
-    """
-    8049195  mov     esp, 0x804c038
-    804919a  ret
-    """
 
-    assert all(gadget_exists(rop, x) for x in [0x804918c, 0x8049195])
+    assert all(gadget_exists(rop, x) for x in [0x804918c])
 
     """
     8049189  syscall
     """
-
-    """
-    804918f  mov     esp, 0x804c020
-    8049194  ret
-    """
-    assert all(not gadget_exists(rop, x) for x in [0x8049189, 0x804918f])
+    assert all(not gadget_exists(rop, x) for x in [0x8049189])
 
 def test_gadget_timeout():
     # pylint: disable=pointless-string-statement
@@ -198,9 +193,29 @@ def local_multiprocess_analyze_gadget_list():
     0x4005d8            bad instruction
     """
     gadgets = rop.analyze_gadget_list([0x4006d8, 0x4005d8, 0x400864])
-    assert len(gadgets[1]) == 2
+    assert len(gadgets) == 2
     assert gadgets[0].addr == 0x4006d8
     assert gadgets[1].addr == 0x400864
+
+def test_gadget_filtering():
+    proj = angr.Project(os.path.join(tests_dir, "armel", "libc-2.31.so"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
+    rop.analyze_gadget(0x42bca5)
+    rop.analyze_gadget(0x42c3c1)
+    rop.chain_builder.update()
+    assert len(rop.chain_builder._reg_setter._reg_setting_gadgets) == 1
+
+def test_aarch64_svc():
+    proj = angr.Project(os.path.join(tests_dir, "aarch64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=True, only_check_near_rets=False)
+    g = rop.analyze_gadget(0x0000000000463820)
+    assert g is not None
+
+def test_aarch64_reg_setter():
+    proj = angr.Project(os.path.join(tests_dir, "aarch64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=True, only_check_near_rets=False)
+    g = rop.analyze_gadget(0x00000000004c29a0)
+    assert g is not None
 
 def run_all():
     functions = globals()

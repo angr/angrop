@@ -1,6 +1,7 @@
 import logging
 from collections import defaultdict
 
+from .. import rop_utils
 from .builder import Builder
 from ..rop_chain import RopChain
 from ..errors import RopException
@@ -15,10 +16,9 @@ class Shifter(Builder):
         super().__init__(chain_builder)
 
         self.shift_gadgets = None
-        self.update()
 
     def update(self):
-        self.shift_gadgets = self._filter_gadgets(self.chain_builder.gadgets)
+        self.shift_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
 
     def verify_shift(self, chain, length, preserve_regs):
         arch_bytes = self.project.arch.bytes
@@ -33,7 +33,7 @@ class Shifter(Builder):
             offset -= act.offset % self.project.arch.bytes
             reg_name = self.project.arch.translate_register_name(offset)
             if reg_name in preserve_regs:
-                chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in chain._gadgets])
+                chain_str = chain.dstr()
                 l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
                 return False
         return True
@@ -51,20 +51,17 @@ class Shifter(Builder):
             if reg_name == self.arch.stack_pointer:
                 continue
             if reg_name in preserve_regs:
-                chain_str = '\n-----\n'.join([str(self.project.factory.block(g.addr).capstone)for g in chain._gadgets])
+                chain_str = chain.dstr()
                 l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
                 return False
         return True
 
-    @staticmethod
-    def same_effect(g1, g2):
-        if g1.stack_change != g2.stack_change:
-            return False
-        if g1.transit_type != g2.transit_type:
-            return False
-        return True
-
-    def shift(self, length, preserve_regs=None):
+    def shift(self, length, preserve_regs=None, next_pc_idx=-1):
+        """
+        length:         how many bytes to shift
+        preserve_regs:  what registers not to clobber
+        next_pc_idx:    where is the next pc, e.g for ret, it is -1
+        """
         preserve_regs = set(preserve_regs) if preserve_regs else set()
         arch_bytes = self.project.arch.bytes
 
@@ -75,14 +72,31 @@ class Shifter(Builder):
             raise RopException("Encounter a shifting request that requires chaining multiple shifting gadgets " +
                                "together which is not support atm. Plz create an issue on GitHub " +
                                "so we can add the support!")
+        g_cnt = length // arch_bytes
+        next_pc_idx = (next_pc_idx % g_cnt + g_cnt) % g_cnt # support negative indexing
         for g in self.shift_gadgets[length]:
             if preserve_regs.intersection(g.changed_regs):
                 continue
+            if next_pc_idx == g_cnt-1:
+                if g.transit_type != 'ret':
+                    continue
+            else:
+                if g.transit_type != 'pop_pc':
+                    continue
+                if g.pc_offset != next_pc_idx*arch_bytes:
+                    continue
             try:
                 chain = RopChain(self.project, self.chain_builder)
                 chain.add_gadget(g)
-                for _ in range(g.stack_change//arch_bytes-1):
-                    chain.add_value(self._get_fill_val())
+                for idx in range(g_cnt):
+                    if idx != next_pc_idx:
+                        chain.add_value(self._get_fill_val())
+                    else:
+                        next_pc_val = rop_utils.cast_rop_value(
+                            chain._blank_state.solver.BVS("next_pc", self.project.arch.bits),
+                            self.project,
+                        )
+                        chain.add_value(next_pc_val)
                 if self.verify_shift(chain, length, preserve_regs):
                     return chain
             except RopException:
@@ -110,31 +124,36 @@ class Shifter(Builder):
 
         raise RopException(f"Failed to create a ret-sled sp for {size:#x} bytes while preserving {preserve_regs}")
 
-    def better_than(self, g1, g2):
-        if not self.same_effect(g1, g2):
+    def _same_effect(self, g1, g2):
+        if g1.stack_change != g2.stack_change:
             return False
-        return g1.changed_regs.issubset(g2.changed_regs)
+        if g1.transit_type != g2.transit_type:
+            return False
+        return True
 
-    def _filter_gadgets(self, gadgets):
+    def _better_than(self, g1, g2):
+        if g1.num_mem_access > g2.num_mem_access:
+            return False
+        if not g1.changed_regs.issubset(g2.changed_regs):
+            return False
+        if g1.isn_count > g2.isn_count:
+            return False
+        return True
+
+    def filter_gadgets(self, gadgets):
         """
         filter gadgets having the same effect
         """
         # we don't like gadgets with any memory accesses or jump gadgets
-        gadgets = [x for x in gadgets if x.num_mem_access == 0 and x.transit_type != 'jmp_reg']
+        gadgets = [
+            x
+            for x in gadgets
+            if x.num_mem_access == 0
+            and x.transit_type != "jmp_reg"
+            and not x.has_conditional_branch
+        ]
 
-        # now do the standard filtering
-        gadgets = set(gadgets)
-        skip = set({})
-        while True:
-            to_remove = set({})
-            for g in gadgets-skip:
-                to_remove.update({x for x in gadgets-{g} if self.better_than(g, x)})
-                if to_remove:
-                    break
-                skip.add(g)
-            if not to_remove:
-                break
-            gadgets -= to_remove
+        gadgets = self._filter_gadgets(gadgets)
 
         d = defaultdict(list)
         for g in gadgets:

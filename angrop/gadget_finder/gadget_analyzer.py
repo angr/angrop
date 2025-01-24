@@ -1,3 +1,4 @@
+import ctypes
 import logging
 from collections import defaultdict
 
@@ -8,7 +9,7 @@ import claripy
 from .. import rop_utils
 from ..arch import get_arch, X86
 from ..rop_gadget import RopGadget, RopMemAccess, RopRegMove, PivotGadget, SyscallGadget
-from ..errors import RopException, RegNotFoundException
+from ..errors import RopException, RegNotFoundException, RopTimeoutException
 
 l = logging.getLogger("angrop.gadget_analyzer")
 
@@ -25,6 +26,7 @@ class GadgetAnalyzer:
         self.project = project
         self.arch = get_arch(project, kernel_mode=kernel_mode) if arch is None else arch
         self._fast_mode = fast_mode
+        self._allow_conditional_branches = not self._fast_mode
 
         # initial state that others are based off, all analysis should copy the state first and work on
         # the copied state
@@ -39,71 +41,140 @@ class GadgetAnalyzer:
                                                     fast_mode=self._fast_mode)
         self._concrete_sp = self._state.solver.eval(self._state.regs.sp)
 
-    @rop_utils.timeout(3)
-    def analyze_gadget(self, addr):
+    def analyze_gadget(self, addr, allow_conditional_branches=None) -> list[RopGadget] | RopGadget | None:
         """
-        :param addr: address to analyze for a gadget
-        :return: a RopGadget instance
+        Find gadgets at the given address.
+
+        Support for gadgets with conditional branches can be enabled using the
+        allow_conditional_branches option, which is False by default for
+        compatibility with existing code that can't handle these gadgets.
+        Returns a list of gadgets when allow_conditional_branches is enabled,
+        and a single gadget or None when it is disabled.
+
+        :param addr: address to analyze for gadgets
+        :param allow_conditional_branches: whether to allow gadgets with conditional branches
+        :return: a list of RopGadget instances or a single RopGadget instance
         """
-        l.info("Analyzing 0x%x", addr)
-
-        # Step 1: first check if the block makes sense
-        if not self._block_make_sense(addr):
-            return None
-
+        if allow_conditional_branches is None:
+            allow_conditional_branches = self._allow_conditional_branches
         try:
-            # Step 2: make sure the gadget can lead to a *controlled* unconstrained state within 2 steps
-            # TODO: shall we make the step number configurable?
-            if not self._can_reach_unconstrained(addr):
-                l.debug("... cannot get to unconstrained successor according to static analysis")
+            gadgets = self._analyze_gadget(addr, allow_conditional_branches)
+        except RopTimeoutException:
+            return [] if allow_conditional_branches else None
+        if allow_conditional_branches:
+            return gadgets
+        else:
+            assert len(gadgets) <= 1
+            return (
+                gadgets[0]
+                if gadgets and not gadgets[0].has_conditional_branch
+                else None
+            )
+
+    def _step_to_gadget_stopping_states(self, init_state):
+        """
+        Currently, the following scenarios are considered as stopping states:
+        1. unconstrained (e.g. ret)
+        2. invokes syscall (e.g. syscall)
+
+        for gadgets invoking syscalls, we will try to step over it to find gadgets such as "syscall; ret"
+        """
+        try:
+            simgr = self.project.factory.simulation_manager(init_state, save_unconstrained=True)
+
+            def filter_func(state):
+                if not state.ip.concrete:
+                    return None
+                if self.project.is_hooked(state.addr):
+                    # We don't want to go into SimProcedures.
+                    return simgr.DROP
+                if rop_utils.is_in_kernel(self.project, state):
+                    return "syscall"
+                if not self._block_make_sense(state.addr):
+                    return simgr.DROP
                 return None
 
-            init_state, final_state = self._reach_unconstrained_or_syscall(addr)
+            simgr.run(n=2, filter_func=filter_func)
+            simgr.move(from_stash='active', to_stash='syscall',
+                       filter_func=lambda s: rop_utils.is_in_kernel(self.project, s))
 
-            if not self._valid_state(init_state, final_state):
-                return None
-
-            ctrl_type = self._check_for_control_type(init_state, final_state)
-            if not ctrl_type:
-                # for example, jump outside of the controllable region
-                l.debug("... cannot maintain the control flow hijacking primitive after executing the gadget")
-                return None
-
-            # Step 3: gadget effect analysis
-            l.debug("... analyzing rop potential of block")
-            gadget = self._create_gadget(addr, init_state, final_state, ctrl_type)
-            if not gadget:
-                return None
-
-            # Step 4: filter out bad gadgets
-            # too many mem accesses, it can only be done after gadget creation
-            # specifically, memory access analysis
-            if gadget.num_mem_access > self.arch.max_sym_mem_access:
-                l.debug("... too many symbolic memory accesses")
-                return None
-
-        except RopException as e:
-            l.debug("... %s", e)
-            return None
         except (claripy.errors.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError):
-            return None
+            return [], []
         except (claripy.ClaripyFrontendError, angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e:
             l.warning("... claripy error: %s", e)
-            return None
-        except Exception as e:# pylint:disable=broad-except
-            l.exception(e)
-            return None
+            return [], []
+        except (angr.errors.AngrError, angr.errors.AngrRuntimeError, angr.errors.SimError):
+            return [], []
+        except RopTimeoutException:
+            return [], []
 
-        l.debug("... Appending gadget!")
-        return gadget
+        final_states = list(simgr.unconstrained)
+        if "syscall" in simgr.stashes:
+            final_states.extend(self._try_stepping_past_syscall(state) for state in simgr.syscall)
+
+        bad_states = simgr.active + simgr.deadended
+
+        return final_states, bad_states
+
+    @rop_utils.timeout(3)
+    def _analyze_gadget(self, addr, allow_conditional_branches):
+        l.info("Analyzing 0x%x", addr)
+
+        # Step 1: first statically check if the block can reach stopping states
+        #         static analysis is much faster
+        if not self._can_reach_stopping_states(addr, allow_conditional_branches):
+            return []
+
+        # Step 2: get all potential successor states
+        init_state = self._state.copy()
+        init_state.ip = addr
+        final_states, bad_states = self._step_to_gadget_stopping_states(init_state)
+
+        if not allow_conditional_branches and (bad_states or len(final_states) != 1):
+            return []
+
+        gadgets = []
+
+        for final_state in final_states:
+            try:
+                if not self._valid_state(init_state, final_state):
+                    continue
+
+                ctrl_type = self._check_for_control_type(init_state, final_state)
+                if not ctrl_type:
+                    # for example, jump outside of the controllable region
+                    l.debug("... cannot maintain the control flow hijacking primitive after executing the gadget")
+                    continue
+
+                # Step 3: gadget effect analysis
+                l.debug("... analyzing rop potential of block")
+                gadget = self._create_gadget(addr, init_state, final_state, ctrl_type)
+                if not gadget:
+                    continue
+
+                l.debug("... Appending gadget!")
+                gadgets.append(gadget)
+
+            except RopTimeoutException:
+                return gadgets
+            except RopException as e:
+                l.debug("... %s", e)
+                continue
+            except (claripy.errors.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError):
+                continue
+            except (claripy.ClaripyFrontendError, angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e:
+                l.warning("... claripy error: %s", e)
+                continue
+            except (angr.errors.AngrError, angr.errors.AngrRuntimeError, angr.errors.SimError):
+                continue
+            except ctypes.ArgumentError as e:
+                continue
+
+        return gadgets
 
     def _valid_state(self, init_state, final_state):
         if self._change_arch_state(init_state, final_state):
             return False
-        for addr in final_state.history.bbl_addrs:
-            b = final_state.project.factory.block(addr)
-            if not self.arch.block_make_sense(b):
-                return False
         return True
 
     def _change_arch_state(self, init_state, final_state):
@@ -176,61 +247,44 @@ class GadgetAnalyzer:
             return False
         except AttributeError:
             return False
+        except KeyError:
+            return False
 
         return True
 
     def is_in_kernel(self, state):
-        ip = state.ip
-        if not ip.symbolic:
-            obj = self.project.loader.find_object_containing(ip.concrete_value)
-            if obj.binary == 'cle##kernel':
-                return True
-            return False
-        return False
+        return rop_utils.is_in_kernel(self.project, state)
 
-    def _can_reach_unconstrained(self, addr, max_steps=2):
+    def _can_reach_stopping_states(self, addr, allow_conditional_branches, max_steps=2):
         """
         Use static analysis to check whether the address can lead to unconstrained targets
         It is much faster than directly doing symbolic execution on the addr
         """
+        if not self._block_make_sense(addr):
+            return False
+
         b = self.project.factory.block(addr)
         constant_jump_targets = list(b.vex.constant_jump_targets)
 
         if not constant_jump_targets:
             return True
 
-        # we drop block that have more than 1 jump targets
-        # technically, this check make us miss some gadgets that have a branch that is never satisfiable
-        # but it is what we need to pay for performance
-        if len(constant_jump_targets) > 1:
+        if not allow_conditional_branches and len(constant_jump_targets) > 1:
             return False
 
         if max_steps == 0:
             return False
 
-        target_block_addr = constant_jump_targets[0]
-        if not self._block_make_sense(target_block_addr):
-            return False
+        for target_block_addr in constant_jump_targets:
+            if self._can_reach_stopping_states(target_block_addr, allow_conditional_branches, max_steps-1):
+                return True
+        return False
 
-        return self._can_reach_unconstrained(target_block_addr, max_steps-1)
-
-    def _reach_unconstrained_or_syscall(self, addr):
-        init_state = self._state.copy()
-        init_state.ip = addr
-
-        # it will raise errors if angr fails to step the state
-        final_state = rop_utils.step_to_unconstrained_successor(self.project, state=init_state, stop_at_syscall=True)
-
-        if self.is_in_kernel(final_state):
-            state = final_state.copy()
-            try:
-                succ = self.project.factory.successors(state)
-                state = succ.flat_successors[0]
-                state2 = rop_utils.step_to_unconstrained_successor(self.project, state=state)
-            except Exception: # pylint: disable=broad-exception-caught
-                return init_state, final_state
-            return init_state, state2
-        return init_state, final_state
+    def _try_stepping_past_syscall(self, state):
+        try:
+            return rop_utils.step_to_unconstrained_successor(self.project, state, max_steps=3)
+        except Exception: # pylint:disable=broad-exception-caught
+            return state
 
     def _identify_transit_type(self, final_state, ctrl_type):
         # FIXME: not always jump, could be call as well
@@ -275,6 +329,9 @@ class GadgetAnalyzer:
 
         # create the gadget
         if ctrl_type == 'syscall' or self._does_syscall(final_state):
+            # gadgets that do syscall and pivoting are too complicated
+            if self._does_pivot(final_state):
+                return None
             gadget = SyscallGadget(addr=addr)
             gadget.makes_syscall = self._does_syscall(final_state)
             gadget.starts_with_syscall = self._starts_with_syscall(addr)
@@ -289,21 +346,7 @@ class GadgetAnalyzer:
 
         # for jmp_reg gadget, record the jump target register
         if transit_type == "jmp_reg":
-            state = self._state.copy()
-            insns = self.project.factory.block(addr).capstone.insns
-            if state.project.arch.name.startswith("MIPS"):
-                idx = -2 # delayed slot
-            else:
-                idx = -1
-            if len(insns) < abs(idx):
-                return None
-            jump_inst_addr = insns[idx].address
-            state.ip = jump_inst_addr
-            succ = rop_utils.step_to_unconstrained_successor(self.project, state=state)
-            jump_reg = list(succ.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
-            pc_reg = list(final_state.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
-            gadget.pc_reg = pc_reg
-            gadget.jump_reg = jump_reg
+            gadget.pc_reg = list(final_state.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
 
         # compute sp change
         l.debug("... computing sp change")
@@ -320,6 +363,8 @@ class GadgetAnalyzer:
         if type(gadget) is not PivotGadget and transit_type in ['pop_pc', 'ret']:
             idx = list(final_state.ip.variables)[0].split('_')[2]
             gadget.pc_offset = int(idx) * self.project.arch.bytes
+            if gadget.pc_offset >= gadget.stack_change:
+                return None
 
         l.info("... checking for controlled regs")
         self._check_reg_changes(final_state, init_state, gadget)
@@ -336,12 +381,48 @@ class GadgetAnalyzer:
 
         # check mem accesses
         l.debug("... analyzing mem accesses")
-        self._analyze_mem_access(final_state, init_state, gadget)
+        if not self._analyze_mem_access(final_state, init_state, gadget):
+            l.debug("... too many symbolic memory accesses")
+            return None
 
         for m_access in gadget.mem_writes + gadget.mem_reads + gadget.mem_changes:
             if not m_access.is_valid():
                 l.debug("... mem access with no addr dependencies")
                 return None
+
+        # Store block address list for gadgets with conditional branches
+        gadget.bbl_addrs = list(final_state.history.bbl_addrs)
+        gadget.isn_count = sum(self.project.factory.block(addr).instructions for addr in gadget.bbl_addrs)
+
+        constraint_vars = {
+            var
+            for constraint in final_state.history.jump_guards
+            for var in constraint.variables
+        }
+
+        gadget.has_conditional_branch = len(constraint_vars) > 0
+
+        for action in final_state.history.actions:
+            if action.type == 'mem':
+                constraint_vars |= action.addr.variables
+
+        for var in constraint_vars:
+            if var.startswith("sreg_"):
+                gadget.constraint_regs.add(var.split('_', 1)[1].split('-', 1)[0])
+            elif not var.startswith("symbolic_stack_"):
+                l.debug("... constraint not controlled by registers and stack")
+                return None
+
+        gadget.popped_regs = {
+            reg
+            for reg in gadget.popped_regs
+            if final_state.registers.load(reg).variables.isdisjoint(constraint_vars)
+        }
+
+        gadget.popped_reg_vars = {
+            reg: final_state.registers.load(reg).variables
+            for reg in gadget.popped_regs
+        }
 
         return gadget
 
@@ -475,7 +556,11 @@ class GadgetAnalyzer:
             saved_ip_addr = None
             for act in final_state.history.actions:
                 if act.type == 'mem' and act.action == 'read':
-                    if act.size == self.project.arch.bits and not (act.data.ast == ip).symbolic:
+                    if (
+                        act.size == self.project.arch.bits
+                        and isinstance(act.data.ast, claripy.ast.BV)
+                        and not (act.data.ast == ip).symbolic
+                    ):
                         if init_state.solver.eval(act.data.ast == ip):
                             saved_ip_addr = act.addr.ast
                             break
@@ -528,7 +613,6 @@ class GadgetAnalyzer:
         # this is an annoying problem but this code should handle it
 
         # prefilter
-        # FIXME: this check is kinda weird, what if it is rax+rbx?
         if len(ast.variables) != 1 or not list(ast.variables)[0].startswith("symbolic_stack"):
             return False
 
@@ -536,12 +620,10 @@ class GadgetAnalyzer:
         if gadget_stack_change is not None:
             stack_bytes_length = min(max(gadget_stack_change, 0), stack_bytes_length)
         concrete_stack = claripy.BVV(b"B" * stack_bytes_length)
-        concrete_stack_s = initial_state.copy()
-        concrete_stack_s.add_constraints(
-            initial_state.memory.load(initial_state.regs.sp, stack_bytes_length) == concrete_stack)
+        const = initial_state.memory.load(initial_state.regs.sp, stack_bytes_length) == concrete_stack
         test_constraint = ast != test_val
         # stack must have set the register and it must be able to set the register to all 1's or all 0's
-        ans = not concrete_stack_s.solver.satisfiable(extra_constraints=(test_constraint,)) and \
+        ans = not initial_state.solver.satisfiable(extra_constraints=(const, test_constraint,)) and \
                 rop_utils.fast_unconstrained_check(initial_state, ast)
 
         return ans
@@ -562,7 +644,6 @@ class GadgetAnalyzer:
                 raise RopException("SP has multiple dependencies")
             if len(dependencies) == 0 and sp_change.symbolic:
                 raise RopException("SP change is uncontrolled")
-
             assert self.arch.base_pointer not in dependencies
             if len(dependencies) == 0 and not sp_change.symbolic:
                 stack_changes = [init_state.solver.eval(sp_change)]
@@ -577,10 +658,11 @@ class GadgetAnalyzer:
             gadget.stack_change = stack_changes[0]
 
         elif type(gadget) is PivotGadget:
+            # FIXME: step_to_unconstrained_successor is not compatible with conditional_branches
             final_state = rop_utils.step_to_unconstrained_successor(self.project, state=init_state, precise_action=True)
             dependencies = self._get_reg_dependencies(final_state, "sp")
             last_sp = None
-            init_sym_sp = None
+            init_sym_sp: frozenset = None # type: ignore
             prev_act = None
             for act in final_state.history.actions:
                 if act.type == 'reg' and act.action == 'write' and act.storage == self.arch.stack_pointer:
@@ -594,6 +676,8 @@ class GadgetAnalyzer:
                 gadget.stack_change = (last_sp - init_state.regs.sp).concrete_value
             else:
                 gadget.stack_change = 0
+
+            assert init_sym_sp is not None, "there is no sybmolic sp, how does the pivoting work?"
 
             # if is popped from stack, we need to compensate for the popped sp value on the stack
             # if it is a pop, then sp comes from stack and the previous action must be a mem read
@@ -815,6 +899,9 @@ class GadgetAnalyzer:
             for m in d[addr]:
                 all_mem_actions.remove(m)
 
+        if len(all_mem_actions) + len(gadget.mem_changes) > self.arch.max_sym_mem_access:
+            return False
+
         # step 3: add all left memory actions to either read/write memory accesses stashes
         for a in all_mem_actions:
             mem_access = self._build_mem_access(a, gadget, init_state, final_state)
@@ -822,6 +909,7 @@ class GadgetAnalyzer:
                 gadget.mem_reads.append(mem_access)
             if a.action == "write":
                 gadget.mem_writes.append(mem_access)
+        return True
 
     def _starts_with_syscall(self, addr):
         """

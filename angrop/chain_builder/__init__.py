@@ -135,13 +135,13 @@ class ChainBuilder:
             return None
         return self._sys_caller.execve(path=path, path_addr=path_addr)
 
-    def shift(self, length, preserve_regs=None):
+    def shift(self, length, preserve_regs=None, next_pc_idx=-1):
         """
         build a rop chain to shift the stack to a specific value
         :param length: the length of sp you want to shift
         :param preserve_regs: set of registers to preserve, e.g. ('eax', 'ebx')
         """
-        return self._shifter.shift(length, preserve_regs=preserve_regs)
+        return self._shifter.shift(length, preserve_regs=preserve_regs, next_pc_idx=next_pc_idx)
 
     def retsled(self, size, preserve_regs=None):
         """

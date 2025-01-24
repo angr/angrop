@@ -8,8 +8,9 @@ class ROPArch:
         self.kernel_mode = kernel_mode
         self.max_sym_mem_access = 4
         self.alignment = project.arch.instruction_alignment
-        self.max_block_size = self.alignment * 8
         self.reg_set = self._get_reg_set()
+        self.max_block_size = None
+        self.fast_mode_max_block_size = None
 
         a = project.arch
         self.stack_pointer = a.register_names[a.sp_offset]
@@ -36,7 +37,8 @@ class ROPArch:
 class X86(ROPArch):
     def __init__(self, project, kernel_mode=False):
         super().__init__(project, kernel_mode=kernel_mode)
-        self.max_block_size = 20 # X86 and AMD64 have alignment of 1, 8 bytes is certainly not good enough
+        self.max_block_size = 20
+        self.fast_mode_max_block_size = 12
         self.syscall_insts = {b"\xcd\x80"} # int 0x80
         self.ret_insts = {b"\xc2", b"\xc3", b"\xca", b"\xcb"}
         self.segment_regs = {"cs", "ds", "es", "fs", "gs", "ss"}
@@ -78,14 +80,20 @@ class ARM(ROPArch):
         super().__init__(project, kernel_mode=kernel_mode)
         self.is_thumb = False # by default, we don't use thumb mode
         self.alignment = self.project.arch.bytes
+        self.max_block_size = self.alignment * 8
+        self.fast_mode_max_block_size = self.alignment * 6
 
     def set_thumb(self):
         self.is_thumb = True
         self.alignment = 2
+        self.max_block_size = self.alignment * 8
+        self.fast_mode_max_block_size = self.alignment * 6
 
     def set_arm(self):
         self.is_thumb = False
         self.alignment = self.project.arch.bytes
+        self.max_block_size = self.alignment * 8
+        self.fast_mode_max_block_size = self.alignment * 6
 
     def block_make_sense(self, block):
         # disable conditional jumps, for now
@@ -94,11 +102,20 @@ class ARM(ROPArch):
             if insn.insn.mnemonic[-2:] in arm_conditional_postfix:
                 return False
         return True
-        
+
+class AARCH64(ROPArch):
+    def __init__(self, project, kernel_mode=False):
+        super().__init__(project, kernel_mode=kernel_mode)
+        self.ret_insts = {b'\xc0\x03_\xd6'}
+        self.max_block_size = self.alignment * 10
+        self.fast_mode_max_block_size = self.alignment * 6
+
 class MIPS(ROPArch):
     def __init__(self, project, kernel_mode=False):
         super().__init__(project, kernel_mode=kernel_mode)
         self.alignment = self.project.arch.bytes
+        self.max_block_size = self.alignment * 8
+        self.fast_mode_max_block_size = self.alignment * 6
 
 def get_arch(project, kernel_mode=False):
     name = project.arch.name
@@ -109,6 +126,8 @@ def get_arch(project, kernel_mode=False):
         return AMD64(project, kernel_mode=mode)
     elif name.startswith('ARM'):
         return ARM(project, kernel_mode=mode)
+    elif name == 'AARCH64':
+        return AARCH64(project, kernel_mode=mode)
     elif name.startswith('MIPS'):
         return MIPS(project, kernel_mode=mode)
     else:

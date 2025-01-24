@@ -2,6 +2,7 @@ import os
 import angr
 import angrop  # pylint: disable=unused-import
 import pickle
+import claripy
 
 import logging
 l = logging.getLogger("angrop.tests.test_rop")
@@ -72,7 +73,9 @@ def compare_gadgets(test_gadgets, known_gadgets):
     # check that each of the expected gadget addrs was found as a gadget
     # if it wasn't the best way to debug is to run:
     # angrop.gadget_analyzer.l.setLevel("DEBUG"); rop._gadget_analyzer.analyze_gadget(addr)
-    test_gadget_dict = {g.addr: g for g in test_gadgets}
+    test_gadget_dict = {}
+    for g in test_gadgets:
+        test_gadget_dict.setdefault(g.addr, []).append(g)
 
     found_addrs = set(g.addr for g in test_gadgets)
     for g in known_gadgets:
@@ -83,12 +86,24 @@ def compare_gadgets(test_gadgets, known_gadgets):
 
     # check gadgets
     for g in known_gadgets:
-        assert_gadgets_equal(g, test_gadget_dict[g.addr])
+        matching_gadgets = [
+            test_gadget
+            for test_gadget in test_gadget_dict[g.addr]
+            if test_gadget.bbl_addrs == g.bbl_addrs
+        ]
+        assert len(matching_gadgets) == 1
+        assert_gadgets_equal(g, matching_gadgets[0])
 
 
 def execute_chain(project, chain):
     s = project.factory.blank_state()
-    s.memory.store(s.regs.sp, chain.payload_str() + b"AAAAAAAAA")
+    s.memory.store(s.regs.sp, chain.payload_str())
+    goal_idx = chain.next_pc_idx()
+    s.memory.store(
+        s.regs.sp
+        + (chain.payload_len if goal_idx is None else goal_idx * project.arch.bytes),
+        b"A" * project.arch.bytes,
+    )
     s.ip = s.stack_pop()
     p = project.factory.simulation_manager(s)
     goal_addr = 0x4141414141414141 % (1 << project.arch.bits)
@@ -97,6 +112,42 @@ def execute_chain(project, chain):
         assert len(p.active) == 1
 
     return p.one_active
+
+def verify_execve_chain(chain):
+    state = chain._blank_state.copy()
+    proj = state.project
+    state.memory.store(state.regs.sp, chain.payload_str())
+    state.ip = state.stack_pop()
+
+    # step to the system call
+    simgr = proj.factory.simgr(state)
+    while simgr.active:
+        assert len(simgr.active) == 1
+        state = simgr.active[0]
+        obj = proj.loader.find_object_containing(state.ip.concrete_value)
+        if obj and obj.binary == 'cle##kernel':
+            break
+        simgr.step()
+
+    # verify the syscall arguments
+    state = simgr.active[0]
+    cc = angr.SYSCALL_CC[proj.arch.name]["default"](proj.arch)
+    assert cc.syscall_num(state).concrete_value == 0x3b
+    ptr = state.registers.load(cc.ARG_REGS[0])
+    assert state.solver.is_true(state.memory.load(ptr, 8) == b'/bin/sh\0')
+    assert state.registers.load(cc.ARG_REGS[1]).concrete_value == 0
+    assert state.registers.load(cc.ARG_REGS[2]).concrete_value == 0
+
+def test_roptest_mips():
+    proj = angr.Project(os.path.join(public_bin_location, "mipsel/darpa_ping"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.set_regs(s0=0x41414141, s1=0x42424242, v0=0x43434343)
+    result_state = execute_chain(proj, chain)
+    assert result_state.solver.eval(result_state.regs.s0) == 0x41414141
+    assert result_state.solver.eval(result_state.regs.s1) == 0x42424242
+    assert result_state.solver.eval(result_state.regs.v0) == 0x43434343
 
 
 def test_rop_x86_64():
@@ -188,35 +239,40 @@ def test_roptest_x86_64():
     r = p.analyses.ROP(only_check_near_rets=False)
     r.find_gadgets_single_threaded(show_progress=False)
     c = r.execve(path=b"/bin/sh")
+    verify_execve_chain(c)
 
-    # verifying this is a giant pain, partially because the binary is so tiny, and there's no code beyond the syscall
-    assert len(c._gadgets) == 8
+def test_roptest_aarch64():
+    cache_path = os.path.join(test_data_location, "aarch64_glibc_2.19")
+    proj = angr.Project(os.path.join(public_bin_location, "aarch64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=True, only_check_near_rets=False)
 
-    # verify the chain is valid
-    chain_addrs = [ g.addr for g in c._gadgets ]
-    assert chain_addrs[1] in [0x4000b2, 0x4000bd]
-    assert chain_addrs[5] in [0x4000b2, 0x4000bd]
-    chain_addrs[1] = 0x4000b2
-    chain_addrs[5] = 0x4000b2
-    assert chain_addrs == [ 0x4000b0, 0x4000b2, 0x4000b4, 0x4000b0, 0x4000bb, 0x4000b2, 0x4000bf, 0x4000c1 ]
+    rop.analyze_gadget(0x4b7ca8)
+    rop.analyze_gadget(0x4ebad4)
 
-def test_roptest_mips():
-    proj = angr.Project(os.path.join(public_bin_location, "mipsel/darpa_ping"), auto_load_libs=False)
-    rop = proj.analyses.ROP()
-    rop.find_gadgets_single_threaded(show_progress=False)
+    data = claripy.BVS("data", 64)
+    chain = rop.set_regs(x0=data)
+    assert chain is not None
+    chain._blank_state.solver.add(data == 0x41414141)
+    assert b'\xe1\x3eAA' in chain.payload_str()
 
-    chain = rop.set_regs(s0=0x41414141, s1=0x42424242, v0=0x43434343)
-    result_state = execute_chain(proj, chain)
-    assert result_state.solver.eval(result_state.regs.s0) == 0x41414141
-    assert result_state.solver.eval(result_state.regs.s1) == 0x42424242
-    assert result_state.solver.eval(result_state.regs.v0) == 0x43434343
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
 
+    chain = rop.write_to_mem(0x41414140, b'AAAAAAA')
+    assert chain is not None
+
+    chain = rop.execve(path=b'/bin/sh')
+    verify_execve_chain(chain)
 
 def run_all():
     functions = globals()
     all_functions = dict([x for x in functions.items() if x[0].startswith('test_')])
     for f in sorted(all_functions.keys()):
         if hasattr(all_functions[f], '__call__'):
+            print(f)
             all_functions[f]()
 
 

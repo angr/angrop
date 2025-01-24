@@ -40,7 +40,7 @@ def test_jump_gadget():
     jump_gadgets = [x for x in rop._all_gadgets if x.transit_type == "jmp_reg"]
     assert len(jump_gadgets) > 0
 
-    jump_regs = [x.jump_reg for x in jump_gadgets]
+    jump_regs = [x.pc_reg for x in jump_gadgets]
     assert 't9' in jump_regs
     assert 'ra' in jump_regs
 

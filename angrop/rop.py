@@ -1,6 +1,7 @@
 import pickle
 import inspect
 import logging
+from typing import cast
 
 from angr import Analysis, register_analysis
 
@@ -10,15 +11,13 @@ from .rop_gadget import RopGadget, PivotGadget, SyscallGadget
 
 l = logging.getLogger('angrop.rop')
 
-# todo what if we have mov eax, [rsp+0x20]; ret (cache would need to know where it is or at least a min/max)
-# todo what if we have pop eax; mov ebx, eax; need to encode that we cannot set them to different values
 class ROP(Analysis):
     """
     This class is a semantic aware rop gadget finder
     It is a work in progress, so don't be surprised if something doesn't quite work
 
     After calling find_gadgets(), find_gadgets_single_threaded() or load_gadgets(),
-    self.gadgets, self.stack_pivots, and self._duplicates is populated.
+    self.rop_gadgets, self.pivot_gadgets, self.syscall_gadgets are populated.
     Additionally, all public methods from ChainBuilder are copied into ROP.
     """
 
@@ -29,8 +28,9 @@ class ROP(Analysis):
         :param only_check_near_rets: If true we skip blocks that are not near rets
         :param max_block_size: limits the size of blocks considered, longer blocks are less likely to be good rop
                                gadgets so we limit the size we consider
-        :param fast_mode: if set to True sets options to run fast, if set to False sets options to find more gadgets
-                          if set to None makes a decision based on the size of the binary
+        :param fast_mode: True/False, if set to None makes a decision based on the size of the binary
+                          if True, skip gadgets with conditonal_branches, floating point operations, jumps
+                          allow smaller gadget size
         :param is_thumb:  execute ROP chain in thumb mode. Only makes difference on ARM architecture.
                           angrop does not switch mode within a rop chain
         :param kernel_mode: find kernel mode gadgets
@@ -39,8 +39,9 @@ class ROP(Analysis):
         """
 
         # private list of RopGadget's
-        self._all_gadgets = [] # all types of gadgets
-        self._duplicates = None # all equivalent gadgets (with the same instructions)
+        self._all_gadgets: list[RopGadget] = [] # all types of gadgets
+        # all equivalent gadgets (with the same instructions)
+        self._duplicates: dict = None # type: ignore
 
         # public list of RopGadget's
         self.rop_gadgets = [] # gadgets used for ROP, like pop rax; ret
@@ -95,11 +96,30 @@ class ROP(Analysis):
         self.chain_builder.syscall_gadgets = self.syscall_gadgets
         self.chain_builder.update()
 
+    def analyze_addr(self, addr):
+        """
+        return a list of gadgets that starts from addr
+        this is possible because of conditional branches
+        """
+        res = self.gadget_finder.analyze_gadget(addr, allow_conditional_branches=True)
+        gs:list[RopGadget]|None = cast(list[RopGadget]|None, res)
+        if not gs:
+            return gs
+        self._all_gadgets += gs
+        self._screen_gadgets()
+        return gs
+
     def analyze_gadget(self, addr):
-        g = self.gadget_finder.analyze_gadget(addr)
-        if g:
-            self._all_gadgets.append(g)
-            self._screen_gadgets()
+        """
+        return a gadget or None, it filters out gadgets containing conditional_branches
+        if you'd like those, use analyze_addr
+        """
+        res = self.gadget_finder.analyze_gadget(addr, allow_conditional_branches=False)
+        g = cast(RopGadget|None, res)
+        if g is None:
+            return g
+        self._all_gadgets.append(g)
+        self._screen_gadgets()
         return g
 
     def analyze_gadget_list(self, addr_list, processes=4, show_progress=True):
@@ -143,11 +163,16 @@ class ROP(Analysis):
         return self.rop_gadgets
 
     def _get_cache_tuple(self):
-        return (self._all_gadgets, self._duplicates)
+        all_gadgets = self._all_gadgets
+        for g in all_gadgets:
+            g.project = None
+        return (all_gadgets, self._duplicates)
 
     def _load_cache_tuple(self, tup):
         self._all_gadgets = tup[0]
         self._duplicates = tup[1]
+        for g in self._all_gadgets:
+            g.project = self.project
         self._screen_gadgets()
 
     def save_gadgets(self, path):
@@ -157,6 +182,8 @@ class ROP(Analysis):
         """
         with open(path, "wb") as f:
             pickle.dump(self._get_cache_tuple(), f)
+        for g in self._all_gadgets:
+            g.project = self.project
 
     def load_gadgets(self, path):
         """

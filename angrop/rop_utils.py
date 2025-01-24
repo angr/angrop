@@ -3,20 +3,17 @@ import signal
 
 import angr
 import claripy
+from angr.engines.successors import SimSuccessors
 
-from .errors import RegNotFoundException, RopException
+from .errors import RegNotFoundException, RopException, RopTimeoutException
 from .rop_value import RopValue
 
 def addr_to_asmstring(project, addr):
     block = project.factory.block(addr)
     return "; ".join(["%s %s" %(i.mnemonic, i.op_str) for i in block.capstone.insns])
 
-def gadget_to_asmstring(project, gadget):
-    if not gadget.block_length:
-        return ""
-    return addr_to_asmstring(project, gadget.addr)
 
-def get_ast_dependency(ast):
+def get_ast_dependency(ast) -> set:
     """
     ast must be created from a symbolic state where registers values are named "sreg_REG-"
     looks for registers that if we make the register symbolic then the ast becomes symbolic
@@ -33,45 +30,45 @@ def get_ast_dependency(ast):
     return dependencies
 
 
-def get_ast_controllers(test_state, ast, reg_deps):
+def get_ast_controllers(state, ast, reg_deps) -> set:
     """
     looks for registers that we can make symbolic then the ast can be "anything"
-    :param test_state: the input state
+    :param state: the input state
     :param ast: the ast of which we are trying to analyze controllers
     :param reg_deps: All registers which it depends on
     :return: A set of register names which can control the ast
     """
 
-    test_val = 0x4141414141414141 % (2 << test_state.arch.bits)
+    test_val = 0x4141414141414141 % (2 << state.arch.bits)
 
-    controllers = []
+    controllers = set()
     if not ast.symbolic:
         return controllers
 
     # make sure it can't be symbolic if all the registers are constrained
-    constrained_copy = test_state.copy()
+    constraints = []
     for reg in reg_deps:
-        if not constrained_copy.registers.load(reg).symbolic:
+        if not state.registers.load(reg).symbolic:
             continue
-        constrained_copy.add_constraints(constrained_copy.registers.load(reg) == test_val)
-    if len(constrained_copy.solver.eval_upto(ast, 2)) > 1:
+        constraints.append(state.registers.load(reg) == test_val)
+    if len(state.solver.eval_upto(ast, 2, extra_constraints=constraints)) > 1:
         return controllers
 
     for reg in reg_deps:
-        constrained_copy = test_state.copy()
+        extra_constraints = []
         for r in [a for a in reg_deps if a != reg]:
             # for bp and registers that might be set
-            if not constrained_copy.registers.load(r).symbolic:
+            if not state.registers.load(r).symbolic:
                 continue
-            constrained_copy.add_constraints(constrained_copy.registers.load(r) == test_val)
+            extra_constraints.append(state.registers.load(r) == test_val)
 
-        if unconstrained_check(constrained_copy, ast):
-            controllers.append(reg)
+        if unconstrained_check(state, ast, extra_constraints=extra_constraints):
+            controllers.add(reg)
 
     return controllers
 
 
-def unconstrained_check(state, ast):
+def unconstrained_check(state, ast, extra_constraints=None):
     """
     Attempts to check if an ast is completely unconstrained
     :param state: the state to use
@@ -86,15 +83,17 @@ def unconstrained_check(state, ast):
     # chars need to be able to be different
     test_val_4 = int(("1001"*2 + "1010"*2 + "1011"*2 + "1100"*2 + "1101"*2 + "1110"*2 + "1110"*2 + "0001"*2), 2) \
         % (1 << size)
-    if not state.solver.satisfiable(extra_constraints=(ast == test_val_0,)):
+    extra = extra_constraints if extra_constraints is not None else []
+
+    if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_0]):
         return False
-    if not state.solver.satisfiable(extra_constraints=(ast == test_val_1,)):
+    if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_1]):
         return False
-    if not state.solver.satisfiable(extra_constraints=(ast == test_val_2,)):
+    if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_2]):
         return False
-    if not state.solver.satisfiable(extra_constraints=(ast == test_val_3,)):
+    if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_3]):
         return False
-    if not state.solver.satisfiable(extra_constraints=(ast == test_val_4,)):
+    if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_4]):
         return False
     return True
 
@@ -154,7 +153,7 @@ def _asts_must_be_equal(state, ast1, ast2):
     return True
 
 
-def fast_uninitialized_filler(name, addr, size, state):
+def fast_uninitialized_filler(_, addr, size, state):
     return state.solver.BVS("uninitialized" + hex(addr), size, explicit_name=True)
 
 
@@ -311,6 +310,7 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
         # nums
         state.options.add(angr.options.BYPASS_UNSUPPORTED_SYSCALL)
 
+        succ: SimSuccessors = None # type: ignore
         if not precise_action:
             succ = project.factory.successors(state)
             if stop_at_syscall and succ.flat_successors:
@@ -345,8 +345,7 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
 def timeout(seconds_before_timeout):
     def decorate(f):
         def handler(signum, frame):# pylint:disable=unused-argument
-            print("[angrop] Timeout")
-            raise RopException("[angrop] Timeout!")
+            raise RopTimeoutException("[angrop] Timeout!")
         def new_f(*args, **kwargs):
             old = signal.signal(signal.SIGALRM, handler)
             old_time_left = signal.alarm(seconds_before_timeout)

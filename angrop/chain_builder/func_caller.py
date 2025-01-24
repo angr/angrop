@@ -7,7 +7,7 @@ from angr.calling_conventions import SimRegArg, SimStackArg
 from .builder import Builder
 from .. import rop_utils
 from ..errors import RopException
-from ..rop_gadget import RopGadget
+from ..rop_gadget import FunctionGadget
 
 l = logging.getLogger(__name__)
 
@@ -43,12 +43,15 @@ class FuncCaller(Builder):
             stack_arguments = args[len(cc.ARG_REGS):]
 
         # set register arguments
+        if needs_return and isinstance(cc.RETURN_ADDR, SimRegArg) and cc.RETURN_ADDR.reg_name != 'ip_at_syscall':
+            reg_name = cc.RETURN_ADDR.reg_name
+            preserve_regs.add(reg_name)
         registers = {} if extra_regs is None else extra_regs
         for arg, reg in zip(register_arguments, cc.ARG_REGS):
             registers[reg] = arg
         for reg in preserve_regs:
             registers.pop(reg, None)
-        chain = self.chain_builder.set_regs(**registers)
+        chain = self.chain_builder.set_regs(**registers, preserve_regs=preserve_regs)
 
         # invoke the function
         chain.add_gadget(func_gadget)
@@ -66,7 +69,8 @@ class FuncCaller(Builder):
         # 1. handle stack arguments
         # 2. handle function return address to maintain the control flow
         if stack_arguments:
-            cleaner = self.chain_builder.shift((len(stack_arguments)+1)*arch_bytes) # +1 for itself
+            shift_bytes = (len(stack_arguments)+1)*arch_bytes
+            cleaner = self.chain_builder.shift(shift_bytes, next_pc_idx=-1, preserve_regs=preserve_regs)
             chain.add_gadget(cleaner._gadgets[0])
             for arg in stack_arguments:
                 chain.add_value(arg)
@@ -92,6 +96,7 @@ class FuncCaller(Builder):
         :param needs_return: whether to continue the ROP after invoking the function
         :return: a RopChain which invokes the function with the arguments
         """
+        symbol = None
         # is it a symbol?
         if isinstance(address, str):
             symbol = address
@@ -107,7 +112,7 @@ class FuncCaller(Builder):
             self.project.arch.name,
             platform=self.project.simos.name if self.project.simos is not None else None,
         )(self.project.arch)
-        func_gadget = RopGadget(address)
+        func_gadget = FunctionGadget(address, symbol)
         func_gadget.stack_change = self.project.arch.bytes
         func_gadget.pc_offset = 0
         return self._func_call(func_gadget, cc, args, **kwargs)

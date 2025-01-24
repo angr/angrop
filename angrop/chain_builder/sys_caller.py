@@ -42,18 +42,16 @@ class SysCaller(FuncCaller):
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
 
-        self.syscall_gadgets = None
-        self.update()
+        self.syscall_gadgets: list = None # type: ignore
 
     @staticmethod
     def supported_os(os):
         return "unix" in os.lower()
 
     def update(self):
-        self.syscall_gadgets = self._filter_gadgets(self.chain_builder.syscall_gadgets)
+        self.syscall_gadgets = self.filter_gadgets(self.chain_builder.syscall_gadgets)
 
-    @staticmethod
-    def _filter_gadgets(gadgets):
+    def filter_gadgets(self, gadgets) -> list: # pylint: disable=no-self-use
         return sorted(gadgets, key=functools.cmp_to_key(cmp))
 
     def _try_invoke_execve(self, path_addr):
@@ -170,7 +168,7 @@ class SysCaller(FuncCaller):
             try:
                 return self._func_call(gadget, cc, args, extra_regs=extra_regs,
                                needs_return=needs_return, preserve_regs=preserve_regs, **kwargs)
-            except Exception: # pylint: disable=broad-exception-caught
+            except Exception: # pylint:disable=broad-exception-caught
                 continue
 
         raise RopException(f"Fail to invoke syscall {syscall_num} with arguments: {args}!")

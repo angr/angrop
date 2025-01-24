@@ -1,3 +1,6 @@
+from angr import Project
+from .rop_utils import addr_to_asmstring
+
 class RopMemAccess:
     """Holds information about memory accesses
     Attributes:
@@ -93,13 +96,17 @@ class RopGadget:
     Gadget objects
     """
     def __init__(self, addr):
+        self.project: Project = None # type: ignore
         self.addr = addr
         self.block_length = None
-        self.stack_change = None
+        self.stack_change: int = None # type: ignore
 
         # register effect information
         self.changed_regs = set()
         self.popped_regs = set()
+        # Stores the stack variables that each register depends on.
+        # Used to check for cases where two registers are popped from the same location.
+        self.popped_reg_vars = {}
         self.concrete_regs = {}
         self.reg_dependencies = {}  # like rax might depend on rbx, rcx
         self.reg_controllers = {}  # like rax might be able to be controlled by rbx (for any value of rcx)
@@ -114,13 +121,19 @@ class RopGadget:
         # it is just a register. With the register setting framework, we will be able to
         # utilize gadgets like `call qword ptr [rax+rbx]` because we have the dependency information.
         # transition information, i.e. how to pass the control flow to the next gadget
-        self.transit_type = None
-        # TODO: what's the difference between jump_reg and pc_reg?
-        self.jump_reg = None
+        self.transit_type: str = None # type: ignore
         self.pc_reg = None
         # pc_offset is exclusively used when transit_type is "pop_pc",
         # when pc_offset==stack_change-arch_bytes, transit_type is basically ret
         self.pc_offset = None
+
+        # List of basic block addresses for gadgets with conditional branches
+        self.bbl_addrs = []
+        # Registers that affect path constraints
+        self.constraint_regs = set()
+        # Instruction count to estimate complexity
+        self.isn_count: int = None # type: ignore
+        self.has_conditional_branch: bool = None # type: ignore
 
     @property
     def num_mem_access(self):
@@ -130,51 +143,11 @@ class RopGadget:
         accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)
         return any(x.is_symbolic_access() for x in accesses)
 
-    def reg_set_same_effect(self, other):
-        """
-        having the same register setting effect compared to the other gadget
-        """
-        if self.popped_regs != other.popped_regs:
-            return False
-        if self.concrete_regs != other.concrete_regs:
-            return False
-        if self.reg_dependencies != other.reg_dependencies:
-            return False
-        if self.transit_type != other.transit_type:
-            return False
-        return True
+    def dstr(self):
+        return "; ".join(addr_to_asmstring(self.project, addr) for addr in self.bbl_addrs)
 
-    def reg_set_better_than(self, other):
-        """
-        whether this gadget is strictly better than the other in terms of register setting effect
-        """
-        if not self.reg_set_same_effect(other):
-            return False
-        if len(self.changed_regs) >= len(other.changed_regs) and \
-                self.stack_change <= other.stack_change and \
-                self.num_mem_access <= other.num_mem_access and \
-                self.block_length <= other.block_length:
-            return True
-        return False
-
-    def reg_move_same_effect(self, other):
-        """
-        having the same register moving effect compared to the other gadget
-        """
-        if set(self.reg_moves) != set(other.reg_moves):
-            return False
-        if self.reg_dependencies != other.reg_dependencies:
-            return False
-        return True
-
-    def reg_move_better_than(self, other):
-        if not self.reg_move_same_effect(other):
-            return False
-        if self.stack_change <= other.stack_change and \
-                self.num_mem_access <= other.num_mem_access and \
-                self.block_length <= other.block_length:
-            return True
-        return False
+    def pp(self):
+        print(self.dstr())
 
     def __str__(self):
         s = "Gadget %#x\n" % self.addr
@@ -233,7 +206,8 @@ class RopGadget:
         return "<Gadget %#x>" % self.addr
 
     def copy(self):
-        out = RopGadget(self.addr)
+        out = self.__class__(self.addr)
+        out.project = self.project
         out.addr = self.addr
         out.changed_regs = set(self.changed_regs)
         out.popped_regs = set(self.popped_regs)
@@ -247,7 +221,6 @@ class RopGadget:
         out.reg_moves = list(self.reg_moves)
         out.block_length = self.block_length
         out.transit_type = self.transit_type
-        out.jump_reg = self.jump_reg
         out.pc_reg = self.pc_reg
         return out
 
@@ -283,6 +256,7 @@ class PivotGadget(RopGadget):
         return f"<PivotGadget {self.addr:#x}>"
 
     def copy(self):
+
         new = super().copy()
         new.stack_change_after_pivot = self.stack_change_after_pivot
         new.sp_reg_controllers = set(self.sp_reg_controllers)
@@ -320,3 +294,16 @@ class SyscallGadget(RopGadget):
         new.makes_syscall = self.makes_syscall
         new.starts_with_syscall = self.starts_with_syscall
         return new
+
+class FunctionGadget(RopGadget):
+    """
+    a function call
+    """
+    def __init__(self, addr, symbol):
+        super().__init__(addr)
+        self.symbol = symbol
+
+    def dstr(self):
+        if self.symbol:
+            return f"<{self.symbol}>"
+        return f"<func_{self.addr:#x}>"

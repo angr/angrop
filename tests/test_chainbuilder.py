@@ -1,11 +1,33 @@
 import os
 
+import claripy
+
 import angr
 import angrop # pylint: disable=unused-import
 from angrop.rop_value import RopValue
+from angrop.errors import RopException
 
 BIN_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "binaries")
 CACHE_DIR = os.path.join(BIN_DIR, 'tests_data', 'angrop_gadgets_cache')
+
+def test_symbolic_data():
+    cache_path = os.path.join(CACHE_DIR, "amd64_glibc_2.19")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    var1 = claripy.BVS("var1", proj.arch.bits)
+    var2 = claripy.BVS("var2", proj.arch.bits)
+    chain = rop.set_regs(rax=var1, rbx=var2)
+
+    state = chain.exec()
+    assert state.solver.satisfiable(extra_constraints=[state.regs.rax != var1]) is False
+    assert state.solver.satisfiable(extra_constraints=[state.regs.rbx != var2]) is False
 
 def test_x86_64_func_call():
     cache_path = os.path.join(CACHE_DIR, "1after909")
@@ -19,7 +41,7 @@ def test_x86_64_func_call():
         rop.save_gadgets(cache_path)
 
     chain = rop.func_call('puts', [0x402704]) + rop.func_call('puts', [0x402704])
-    state = chain.exec()
+    state = chain.exec(max_steps=8)
     assert state.posix.dumps(1) == b'Enter username: \nEnter username: \n'
 
 def test_i386_func_call():
@@ -47,18 +69,21 @@ def test_arm_func_call():
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
 
+    chain = rop.set_regs(lr=0x41414141)
+    assert sum(g.stack_change for g in chain._gadgets) <= 12
+
     proj.hook_symbol('write', angr.SIM_PROCEDURES['posix']['write']())
     chain1 = rop.func_call("write", [1, 0x4E15F0, 9])
-    state = chain1.exec()
+    state = chain1.exec(max_steps=100)
     assert state.posix.dumps(1) == b'malloc.c\x00'
 
     proj.hook_symbol('puts', angr.SIM_PROCEDURES['libc']['puts']())
     chain2 = rop.func_call("puts", [0x4E15F0])
-    state = chain2.exec()
+    state = chain2.exec(max_steps=100)
     assert state.posix.dumps(1) == b'malloc.c\n'
 
     chain = chain1 + chain2
-    state = chain.exec()
+    state = chain.exec(max_steps=100)
     assert state.posix.dumps(1) == b'malloc.c\x00malloc.c\n'
 
 def test_i386_syscall():
@@ -105,7 +130,7 @@ def test_preserve_regs():
     chain1 = rop.set_regs(rdi=0x402715)
     chain2 = rop.func_call('puts', [0x402704], preserve_regs=['rdi'])
     chain = chain1+chain2
-    state = chain.exec()
+    state = chain.exec(max_steps=5)
     assert state.posix.dumps(1) == b'Failed to parse username.\n'
 
 def test_i386_mem_write():
@@ -137,17 +162,17 @@ def test_ropvalue():
         rop.save_gadgets(cache_path)
 
     chain = rop.write_to_mem(0x800000, b"/bin/sh\x00")
-    assert sum(not x._rebase for x in chain._values) == 4 # 4 values
+    assert sum(x._rebase is False for x in chain._values) == 4 # 4 values
 
     value = RopValue(0x800000, proj)
     value._rebase = False
     chain = rop.write_to_mem(value, b"/bin/sh\x00")
-    assert sum(not x._rebase for x in chain._values) == 4 # 4 values
+    assert sum(x._rebase is False for x in chain._values) == 4 # 4 values
 
     value = RopValue(0x800000, proj)
     value.rebase_ptr()
     chain = rop.write_to_mem(value, b"/bin/sh\x00")
-    assert sum(not x._rebase for x in chain._values) == 2 # 2 values
+    assert sum(x._rebase is False for x in chain._values) == 2 # 4 values
 
 def test_reg_move():
     cache_path = os.path.join(CACHE_DIR, "bronze_ropchain")
@@ -312,6 +337,22 @@ def test_shifter():
     state = chain.exec()
     assert state.regs.sp.concrete_value == init_sp + 0x40 + proj.arch.bytes
 
+    # aarch64
+    cache_path = os.path.join(CACHE_DIR, "aarch64_glibc_2.19")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "aarch64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=True, only_check_near_rets=False)
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    chain = rop.shift(0x10)
+    init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
+    state = chain.exec()
+    assert state.regs.sp.concrete_value == init_sp + 0x10 + proj.arch.bytes
+
 def test_retsled():
     # i386
     cache_path = os.path.join(CACHE_DIR, "i386_glibc_2.35")
@@ -374,11 +415,119 @@ def test_pop_pc_syscall_chain():
     assert state.regs.rdi.concrete_value == 0x41414141
     assert 0 not in state.posix.fd
 
+def test_retn_i386_call_chain():
+    cache_path = os.path.join(CACHE_DIR, "bronze_ropchain")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "bronze_ropchain"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    # force to use 'retn 0xc' to clean up function arguments
+    g = rop.analyze_gadget(0x809d9fb)
+    rop._chain_builder._shifter.shift_gadgets = {g.stack_change: [g]}
+
+    rop.func_call('write', [1, 0x80AC5E8, 17], needs_return=False)
+
+    chain = None
+    try:
+        chain = rop.func_call('write', [1, 0x80AC5E8, 17])
+    except RopException:
+        pass
+    assert chain is None
+
+def test_aarch64_basic_reg_setting():
+    proj = angr.load_shellcode(
+        """
+        mov x0, x29
+        ldp x29, x30, [sp], #0x10
+        ret
+        """,
+        "aarch64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.set_regs(x0=0x41414141)
+    state = chain.exec()
+    assert state.regs.x0.concrete_value == 0x41414141
+
+def test_aarch64_jump_reg():
+    proj = angr.load_shellcode(
+        """
+        ldp x0, x4, [sp, #0x10]
+        ldp x29, x30, [sp], #0x20
+        ret
+        mov x1, x29
+        br x4
+        """,
+        "aarch64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.set_regs(x0=0x41414141, x1=0x42424242)
+    state = chain.exec()
+    assert state.regs.x0.concrete_value == 0x41414141
+    assert state.regs.x1.concrete_value == 0x42424242
+
+def test_aarch64_cond_branch():
+    proj = angr.load_shellcode(
+        """
+        ldp x0, x1, [sp, #0x10]
+        ldp x29, x30, [sp], #0x20
+        ret
+        ldr x2, [sp, #0x10]
+        add x0, x0, #0x42
+        cmp x0, x1
+        b.ne .ret
+        ldp x29, x30, [sp], #0x20
+        .ret:
+        ret
+        """,
+        "aarch64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.set_regs(x2=0x41414141)
+    state = chain.exec()
+    assert state.regs.x2.concrete_value == 0x41414141
+
+def test_aarch64_mem_access():
+    proj = angr.load_shellcode(
+        """
+        ldp x0, x1, [sp, #0x10]
+        str x1, [x1]
+        ldp x29, x30, [sp], #0x20
+        ret
+        """,
+        "aarch64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.set_regs(x0=0x41414141, modifiable_memory_range=(0x1000, 0x2000))
+    state = chain.exec()
+    assert state.regs.x0.concrete_value == 0x41414141
+    for action in state.history.actions:
+        if action.type == action.MEM and action.action == action.WRITE:
+            assert action.addr.ast.concrete_value >= 0x1000
+            assert action.addr.ast.concrete_value < 0x2000
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
     for f in sorted(all_functions.keys()):
         if hasattr(all_functions[f], '__call__'):
+            print(f)
             all_functions[f]()
 
 if __name__ == "__main__":

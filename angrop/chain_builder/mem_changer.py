@@ -18,7 +18,6 @@ class MemChanger(Builder):
         super().__init__(chain_builder)
         self._mem_change_gadgets = None
         self._mem_add_gadgets = None
-        self.update()
 
     def update(self):
         self._mem_change_gadgets = self._get_all_mem_change_gadgets(self.chain_builder.gadgets)
@@ -48,6 +47,8 @@ class MemChanger(Builder):
     def _get_all_mem_change_gadgets(gadgets):
         possible_gadgets = set()
         for g in gadgets:
+            if g.has_conditional_branch:
+                continue
             if len(g.mem_reads) + len(g.mem_writes) > 0 or len(g.mem_changes) != 1:
                 continue
             if g.stack_change <= 0:
@@ -95,7 +96,8 @@ class MemChanger(Builder):
         # get the data from trying to set all the registers
         registers = dict((reg, 0x41) for reg in self.chain_builder.arch.reg_set)
         l.debug("getting reg data for mem adds")
-        _, _, reg_data = self.chain_builder._reg_setter._find_reg_setting_gadgets(max_stack_change=0x50, **registers)
+        _, _, reg_data = self.chain_builder._reg_setter.find_candidate_chains_graph_search(max_stack_change=0x50,
+                                                                                           **registers)
         l.debug("trying mem_add gadgets")
 
         # filter out gadgets that certainly cannot be used for add_mem
