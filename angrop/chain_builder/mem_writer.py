@@ -244,8 +244,10 @@ class MemWriter(Builder):
                 var_names.remove(name)
                 if reg in var_names.pop():
                     var = RopValue(var, self.project)
+                    var._rebase = False
                     if addr_val._rebase:
                         var.rebase_ptr()
+                        var._rebase = True
                     break
             reg_vals[reg] = var
 

@@ -73,8 +73,7 @@ class RopChain:
         if self._pie:
             value -= self._p.loader.main_object.mapped_base
         value = RopValue(value, self._p)
-        if self._pie:
-            value._rebase = True
+        value._rebase = self._pie is True
 
         if (idx := self.next_pc_idx()) is None:
             self.add_value(value)

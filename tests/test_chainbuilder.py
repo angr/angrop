@@ -161,17 +161,17 @@ def test_ropvalue():
         rop.save_gadgets(cache_path)
 
     chain = rop.write_to_mem(0x800000, b"/bin/sh\x00")
-    assert sum(not x._rebase for x in chain._values) == 4 # 4 values
+    assert sum(x._rebase is False for x in chain._values) == 4 # 4 values
 
     value = RopValue(0x800000, proj)
     value._rebase = False
     chain = rop.write_to_mem(value, b"/bin/sh\x00")
-    assert sum(not x._rebase for x in chain._values) == 4 # 4 values
+    assert sum(x._rebase is False for x in chain._values) == 4 # 4 values
 
     value = RopValue(0x800000, proj)
     value.rebase_ptr()
     chain = rop.write_to_mem(value, b"/bin/sh\x00")
-    assert sum(not x._rebase for x in chain._values) == 2 # 2 values
+    assert sum(x._rebase is False for x in chain._values) == 2 # 4 values
 
 def test_reg_move():
     cache_path = os.path.join(CACHE_DIR, "bronze_ropchain")
