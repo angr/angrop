@@ -6,6 +6,7 @@ class RopMemAccess:
     Attributes:
         addr_dependencies (set): All the registers that affect the memory address.
         addr_controller (set): All the registers that can determine the symbolic memory access address by itself
+        addr_offset (int): Constant offset in the memory address relative to register(s)
         addr_stack_controller (set): all the controlled gadgets on the stack that can determine the address by itself
         data_dependencies (set): All the registers that affect the data written.
         data_controller (set): All the registers that can determine the symbolic data by itself
@@ -17,6 +18,7 @@ class RopMemAccess:
     def __init__(self):
         self.addr_dependencies = set()
         self.addr_controllers = set()
+        self.addr_offset: int | None = None
         self.addr_stack_controllers = set()
         self.data_dependencies = set()
         self.data_controllers = set()
