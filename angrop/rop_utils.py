@@ -68,6 +68,28 @@ def get_ast_controllers(state, ast, reg_deps) -> set:
     return controllers
 
 
+def get_ast_const_offset(state, ast, reg_deps) -> int:
+    """
+    Gets the constant offset for a memory access
+    :param state: the input state
+    :param ast: the ast of which we are trying to analyze controllers
+    :param reg_deps: All registers which it depends on
+    :return: Constant value
+    """
+    size = ast.size()
+    zero_val = claripy.BVV(0, size)
+
+    # Replace symbolic values with zero to get the constant value
+    # This is faster than eval with extra contraints
+    for reg in reg_deps:
+        reg_val = state.registers.load(reg)
+        ast = claripy.algorithm.replace(
+            expr=ast, old=reg_val, new=zero_val)
+
+    assert not ast.symbolic
+    return state.solver.eval(ast)
+
+
 def unconstrained_check(state, ast, extra_constraints=None):
     """
     Attempts to check if an ast is completely unconstrained

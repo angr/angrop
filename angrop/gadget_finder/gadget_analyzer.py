@@ -710,6 +710,8 @@ class GadgetAnalyzer:
             mem_access.addr_dependencies = rop_utils.get_ast_dependency(a.addr.ast)
             mem_access.addr_controllers = rop_utils.get_ast_controllers(init_state, a.addr.ast,
                                                                         mem_access.addr_dependencies)
+            mem_access.addr_offset = rop_utils.get_ast_const_offset(init_state, a.addr.ast,
+                                                                    mem_access.addr_dependencies)
         # case 3: the symbolic address comes from controlled stack
         elif all(x.startswith("symbolic_stack") for x in a.addr.ast.variables):
             mem_access.addr_stack_controllers = set(a.addr.ast.variables)

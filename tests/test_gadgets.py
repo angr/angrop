@@ -271,6 +271,14 @@ def test_syscall_gadget():
     assert not gadget.can_return
     assert len(gadget.concrete_regs) == 1 and gadget.concrete_regs.pop('rax') == 0x3b
 
+    gadget = rop.analyze_gadget(0x521cef)
+    assert type(gadget) == RopGadget
+    assert len(gadget.mem_writes) == 1
+    mem_write = gadget.mem_writes[0]
+    assert mem_write.addr_offset == 0x68
+    assert len(mem_write.addr_controllers) == 1 and 'rdx' in mem_write.addr_controllers
+    assert len(mem_write.data_controllers) == 1 and 'rcx' in mem_write.data_controllers
+
     gadget = rop.analyze_gadget(0x4c1437)
     assert type(gadget) == SyscallGadget
     assert gadget.stack_change == 0
