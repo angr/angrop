@@ -628,6 +628,12 @@ class GadgetAnalyzer:
 
         return ans
 
+    def _to_signed(self, value):
+        bits = self.project.arch.bits
+        if value >> (bits-1): # if the MSB is 1, this value is negative
+            value -= (1<<bits)
+        return value
+
     def _compute_sp_change(self, init_state, final_state, gadget):
         """
         Computes the change in the stack pointer for a gadget
@@ -655,7 +661,7 @@ class GadgetAnalyzer:
             if len(stack_changes) != 1:
                 raise RopException("SP change is symbolic")
 
-            gadget.stack_change = stack_changes[0]
+            gadget.stack_change = self._to_signed(stack_changes[0])
 
         elif type(gadget) is PivotGadget:
             # FIXME: step_to_unconstrained_successor is not compatible with conditional_branches
@@ -673,7 +679,7 @@ class GadgetAnalyzer:
                         break
                 prev_act = act
             if last_sp is not None:
-                gadget.stack_change = (last_sp - init_state.regs.sp).concrete_value
+                gadget.stack_change = self._to_signed((last_sp - init_state.regs.sp).concrete_value)
             else:
                 gadget.stack_change = 0
 
