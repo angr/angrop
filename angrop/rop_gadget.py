@@ -119,15 +119,16 @@ class RopGadget:
         self.mem_writes = []
         self.mem_changes = []
 
-        # TODO: pc shouldn't be treated differently from other registers
-        # it is just a register. With the register setting framework, we will be able to
-        # utilize gadgets like `call qword ptr [rax+rbx]` because we have the dependency information.
-        # transition information, i.e. how to pass the control flow to the next gadget
+        # gadget transition
+        # we now support the following gadget transitions
+        # 1. pop_pc:    ret, jmp [sp+X], pop pc,X,Y, retn), this type of gadgets are "self-contained"
+        # 2. jmp_reg:   jmp reg <- requires reg setting before using it (call falls here as well)
+        # 3. jmp_mem:   jmp [reg+X] <- requires mem setting before using it (call is here as well)
         self.transit_type: str = None # type: ignore
-        self.pc_reg = None
-        # pc_offset is exclusively used when transit_type is "pop_pc",
-        # when pc_offset==stack_change-arch_bytes, transit_type is basically ret
-        self.pc_offset = None
+
+        self.pc_offset = None # for pop_pc, ret is basically pc_offset == stack_change - arch.bytes
+        self.pc_reg = None # for jmp_reg, which register it jumps to
+        self.pc_target = None # for jmp_mem, where it jumps to
 
         # List of basic block addresses for gadgets with conditional branches
         self.bbl_addrs = []
@@ -274,6 +275,7 @@ class SyscallGadget(RopGadget):
     def __init__(self, addr):
         super().__init__(addr)
         self.makes_syscall = False
+        # TODO: starts_with_syscall should be removed, not useful at all
         self.starts_with_syscall = False
 
     def __str__(self):
