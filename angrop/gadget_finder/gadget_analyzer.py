@@ -316,9 +316,6 @@ class GadgetAnalyzer:
         else:
             gadget = RopGadget(addr=addr)
 
-        # FIXME this doesnt handle multiple steps
-        gadget.block_length = self.project.factory.block(addr).size
-
         # compute sp change
         l.debug("... computing sp change")
         self._compute_sp_change(init_state, final_state, gadget)

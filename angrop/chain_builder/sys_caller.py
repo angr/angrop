@@ -29,9 +29,9 @@ def cmp(g1, g2):
     if g1.stack_change > g2.stack_change:
         return 1
 
-    if g1.block_length < g2.block_length:
+    if g1.isn_count < g2.isn_count:
         return -1
-    if g1.block_length > g2.block_length:
+    if g1.isn_count > g2.isn_count:
         return 1
     return 0
 

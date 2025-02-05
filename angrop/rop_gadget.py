@@ -100,7 +100,6 @@ class RopGadget:
     def __init__(self, addr):
         self.project: Project = None # type: ignore
         self.addr = addr
-        self.block_length = None
         self.stack_change: int = None # type: ignore
 
         # register effect information
@@ -222,7 +221,6 @@ class RopGadget:
         out.mem_changes = list(self.mem_changes)
         out.mem_writes = list(self.mem_writes)
         out.reg_moves = list(self.reg_moves)
-        out.block_length = self.block_length
         out.transit_type = self.transit_type
         out.pc_reg = self.pc_reg
         return out
