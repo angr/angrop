@@ -310,7 +310,6 @@ class GadgetAnalyzer:
                 return None
             gadget = SyscallGadget(addr=addr)
             gadget.makes_syscall = self._does_syscall(final_state)
-            gadget.starts_with_syscall = self._starts_with_syscall(addr)
         elif ctrl_type == 'pivot' or self._does_pivot(final_state):
             gadget = PivotGadget(addr=addr)
         else:
@@ -592,6 +591,7 @@ class GadgetAnalyzer:
         # make sure the control after pivot is reasonable
 
         # find where the ip is read from
+        ip = final_state.ip
         saved_ip_addr = None
         for act in final_state.history.actions:
             if act.type == 'mem' and act.action == 'read':
@@ -907,14 +907,6 @@ class GadgetAnalyzer:
             if a.action == "write":
                 gadget.mem_writes.append(mem_access)
         return True
-
-    def _starts_with_syscall(self, addr):
-        """
-        checks if the path starts with a system call
-        :param addr: input path to check history of
-        """
-
-        return self.project.factory.block(addr, num_inst=1).vex.jumpkind.startswith("Ijk_Sys")
 
     def _windup_to_presyscall_state(self, final_state, init_state):
         """

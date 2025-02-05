@@ -273,15 +273,12 @@ class SyscallGadget(RopGadget):
     def __init__(self, addr):
         super().__init__(addr)
         self.makes_syscall = False
-        # TODO: starts_with_syscall should be removed, not useful at all
-        self.starts_with_syscall = False
 
     def __str__(self):
         s = f"SyscallGadget {self.addr:#x}\n"
         s += f"  stack change: {self.stack_change:#x}\n"
         s += f"  transit type: {self.transit_type}\n"
         s += f"  can return: {self.can_return}\n"
-        s += f"  starts_with_syscall: {self.starts_with_syscall}\n"
         return s
 
     def __repr__(self):
@@ -294,7 +291,6 @@ class SyscallGadget(RopGadget):
     def copy(self):
         new = super().copy()
         new.makes_syscall = self.makes_syscall
-        new.starts_with_syscall = self.starts_with_syscall
         return new
 
 class FunctionGadget(RopGadget):
