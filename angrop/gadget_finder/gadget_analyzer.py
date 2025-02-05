@@ -321,14 +321,11 @@ class GadgetAnalyzer:
         if (gadget.stack_change % self.project.arch.bytes) != 0:
             l.debug("... uneven sp change")
             return None
-        if gadget.stack_change < 0:
-            l.debug("stack change is negative!!")
-            #FIXME: technically, it can be negative, e.g. call instructions
-            return None
 
         # transit_type-based handling
         transit_type = self._control_to_transit_type(ctrl_type)
         gadget.transit_type = transit_type
+        arch_bits = self.project.arch.bits
         match transit_type:
             case 'pop_pc': # record pc_offset
                 idx = list(final_state.ip.variables)[0].split('_')[2]
@@ -339,7 +336,7 @@ class GadgetAnalyzer:
                 gadget.pc_reg = list(final_state.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
             case 'jmp_mem': # record pc_target
                 for a in reversed(final_state.history.actions):
-                    if a.type == 'mem' and a.action == 'read':
+                    if a.type == 'mem' and a.action == 'read' and a.size == arch_bits:
                         if (a.data.ast == final_state.ip).is_true():
                             gadget.pc_target = a.addr.ast
                             break
