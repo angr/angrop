@@ -120,8 +120,8 @@ class RegMover(Builder):
         """
         filter gadgets having the same effect
         """
-        # first: filter out gadgets that don't do register move or have conditional branches
-        gadgets = {g for g in gadgets if not g.has_conditional_branch and g.reg_moves}
+        # first: filter out gadgets that are not self-contained or don't do register move
+        gadgets = {g for g in gadgets if g.reg_moves and g.self_contained}
         gadgets = self._filter_gadgets(gadgets)
         new_gadgets = set(x for x in gadgets if any(y.from_reg != y.to_reg for y in x.reg_moves))
         return new_gadgets

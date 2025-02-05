@@ -331,7 +331,7 @@ class Builder:
 
     def _filter_gadgets(self, gadgets):
         bests = set()
-        gadgets = set(gadgets)
+        gadgets = set(g for g in gadgets if g.self_contained)
         while gadgets:
             g0 = gadgets.pop()
             equal_class = {g for g in gadgets if self._same_effect(g0, g)}

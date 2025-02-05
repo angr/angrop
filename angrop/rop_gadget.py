@@ -122,7 +122,7 @@ class RopGadget:
         # we now support the following gadget transitions
         # 1. pop_pc:    ret, jmp [sp+X], pop pc,X,Y, retn), this type of gadgets are "self-contained"
         # 2. jmp_reg:   jmp reg <- requires reg setting before using it (call falls here as well)
-        # 3. jmp_mem:   jmp [reg+X] <- requires mem setting before using it (call is here as well)
+        # 3. jmp_mem:   jmp [reg+X] <- requires mem setting before using it (call falls here as well)
         self.transit_type: str = None # type: ignore
 
         self.pc_offset = None # for pop_pc, ret is basically pc_offset == stack_change - arch.bytes
@@ -136,6 +136,15 @@ class RopGadget:
         # Instruction count to estimate complexity
         self.isn_count: int = None # type: ignore
         self.has_conditional_branch: bool = None # type: ignore
+
+    @property
+    def self_contained(self):
+        """
+        the gadget is useable by itself, doesn't rely on the existence of other gadgets
+        e.g. 'jmp_reg' gadgets requires another one setting the registers
+        (a gadget like mov rax, [rsp]; add rsp, 8; jmp rax will be considered pop_pc)
+        """
+        return (not self.has_conditional_branch) and self.transit_type == 'pop_pc'
 
     @property
     def num_mem_access(self):
