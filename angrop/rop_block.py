@@ -41,6 +41,7 @@ class RopBlock(RopChain):
             self.__class__.gadget_analyzer = GadgetAnalyzer(project, True, kernel_mode=False, arch=builder.arch)
 
     def __add__(self, other):
+        assert type(other) is RopBlock
         res = super().__add__(other)
         self._analyze_effect(res)
         return res

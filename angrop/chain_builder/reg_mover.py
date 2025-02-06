@@ -78,7 +78,11 @@ class RegMover(Builder):
             return False
         return True
 
-    def _recursively_find_chains(self, gadgets, chain, hard_preserve_regs, todo_moves):
+    def _recursively_find_chains(self, gadgets, chain, source_regs, hard_preserve_regs, todo_moves):
+        """
+        source_regs: registers that contain the original values of the source registers
+        """
+        # FIXME: what if the first gadget moves the second move.from_reg to another reg?
         if not todo_moves:
             return [chain]
 
@@ -89,11 +93,21 @@ class RegMover(Builder):
                 continue
             if g.changed_regs.intersection(hard_preserve_regs):
                 continue
+            new_source_regs = set()
+            for move in new_moves:
+                if move.from_reg in source_regs:
+                    new_source_regs.add(move.to_reg)
+            g_source_regs = source_regs.copy()
+            g_source_regs -= g.changed_regs
+            g_source_regs.update(new_source_regs)
+            new_todo_moves = todo_moves - new_moves
+            if any(m.from_reg not in g_source_regs for m in new_todo_moves):
+                continue
             new_preserve = hard_preserve_regs.copy()
             new_preserve.update({x.to_reg for x in new_moves})
             new_chain = chain.copy()
             new_chain.append(g)
-            todo_list.append((new_chain, new_preserve, todo_moves-new_moves))
+            todo_list.append((new_chain, g_source_regs, new_preserve, new_todo_moves))
 
         res = []
         for todo in todo_list:
@@ -114,14 +128,14 @@ class RegMover(Builder):
         for x in registers:
             registers[x] = rop_utils.cast_rop_value(registers[x], self.project)
 
-        # find all gadgets that are *directly* relevant to our moves
-        # TODO: we currently do not support chaining moves like mov eax, ecx; mov esp, eax; to set esp to ecx
+        # find all blocks that are relevant to our moves
         assert all(val.is_register for _, val in registers.items())
         moves = {RopRegMove(val.reg_name, reg, self.project.arch.bits) for reg, val in registers.items()}
         rop_blocks = self._find_relevant_blocks(moves)
 
         # use greedy algorithm to find a chain that can do all the moves
-        chains = self._recursively_find_chains(rop_blocks, [], preserve_regs.copy(), moves)
+        source_regs = {x.from_reg for x in moves}
+        chains = self._recursively_find_chains(rop_blocks, [], source_regs, preserve_regs.copy(), moves)
         chains = self._sort_chains(chains)
 
         # now see whether any of the chain candidates can work
