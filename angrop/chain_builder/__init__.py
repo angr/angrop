@@ -164,7 +164,7 @@ class ChainBuilder:
         self._reg_mover.update()
         self._mem_writer.update()
         self._mem_changer.update()
-        #self._func_caller.update()
+        self._func_caller.update()
         if self._sys_caller:
             self._sys_caller.update()
         self._pivot.update()

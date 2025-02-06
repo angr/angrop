@@ -158,4 +158,8 @@ class RopBlock(RopChain):
         RopBlock._analyze_effect(rb)
         return rb
 
+    def has_symbolic_access(self):
+        accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)
+        return any(x.is_symbolic_access() for x in accesses)
+
 from .gadget_finder.gadget_analyzer import GadgetAnalyzer

@@ -16,6 +16,32 @@ class FuncCaller(Builder):
     handle function calls by automatically detecting the target binary's
     calling convention
     """
+    def __init__(self, chain_builder):
+        super().__init__(chain_builder)
+        # invoke a function but cannot maintain the control flow afterwards (pop rdi; jmp rax)
+        self._func_jmp_gadgets = None
+        # invoke a function and still maintain the control flow afterwards (call rax; ret)
+        # TODO: currently not supported
+        self._func_call_gadgets = None
+        # record the calling convention
+        self._cc = angr.default_cc(
+                            self.project.arch.name,
+                            platform=self.project.simos.name if self.project.simos is not None else None,
+                        )(self.project.arch)
+
+    def update(self):
+        cc = self._cc
+        self._func_jmp_gadgets = set()
+        for g in self.chain_builder.gadgets:
+            if g.self_contained:
+                continue
+            if g.popped_regs.intersection(cc.ARG_REGS):
+                self._func_jmp_gadgets.add(g)
+                continue
+            for move in g.reg_moves:
+                if move.to_reg in cc.ARG_REGS:
+                    self._func_jmp_gadgets.add(g)
+                    break
 
     def _func_call(self, func_gadget, cc, args, extra_regs=None, preserve_regs=None,
                    needs_return=True, **kwargs):
@@ -108,11 +134,48 @@ class FuncCaller(Builder):
             else:
                 raise RopException("Symbol passed to func_call does not exist in the binary")
 
-        cc = angr.default_cc(
-            self.project.arch.name,
-            platform=self.project.simos.name if self.project.simos is not None else None,
-        )(self.project.arch)
+        # try to invoke the function using all self-contained gadgets
         func_gadget = FunctionGadget(address, symbol)
         func_gadget.stack_change = self.project.arch.bytes
         func_gadget.pc_offset = 0
-        return self._func_call(func_gadget, cc, args, **kwargs)
+        try:
+            return self._func_call(func_gadget, self._cc, args, **kwargs)
+        except RopException:
+            pass
+
+        # well, let's try non-self-contained gadgets, but this time, we don't guarantee returns
+        needs_return = kwargs.get("needs_return", None)
+        if needs_return:
+            raise RopException("fail to invoke function and return using all self-contained gadgets")
+        if needs_return is None:
+            s = symbol if symbol else hex(address)
+            l.warning(f"function {s} won't return!")
+
+        # try func_jmp_gadgets
+        registers = {self._cc.ARG_REGS[i]:args[i] for i in range(len(args))}
+        reg_names = set(registers.keys())
+        ptr_to_func = self._find_function_pointer(address)
+        print(hex(ptr_to_func))
+        for g in self._func_jmp_gadgets:
+            if g.popped_regs.intersection(reg_names):
+                raise NotImplementedError("do not support func_jmp_gadgets that have pops")
+
+            # build the new target registers
+            registers = registers.copy()
+            for move in g.reg_moves:
+                if move.to_reg in registers.keys():
+                    val = registers[move.to_reg]
+                    assert move.from_reg not in registers, "oops, overlapped moves not handled atm"
+                    del registers[move.to_reg]
+                    registers[move.from_reg] = val
+
+            if g.transit_type != 'jmp_mem':
+                raise NotImplementedError("currently only support jmp_mem type func_jmp_gadgets!")
+            print(g.pc_target)
+            #func_gadget.stack_change = self.project.arch.bytes
+            #func_gadget.pc_offset = 0
+            # try to invoke the function using the new target registers
+            try:
+                return self._func_call(g, self._cc, [], extra_regs=registers, **kwargs)
+            except RopException:
+                pass
