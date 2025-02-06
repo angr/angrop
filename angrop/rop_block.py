@@ -40,9 +40,13 @@ class RopBlock(RopChain):
         if self.gadget_analyzer is None:
             self.__class__.gadget_analyzer = GadgetAnalyzer(project, True, kernel_mode=False, arch=builder.arch)
 
-    def __add__(self, other):
+    def _chain_block(self, other):
         assert type(other) is RopBlock
         res = super().__add__(other)
+        return res
+
+    def __add__(self, other):
+        res = self._chain_block(other)
         self._analyze_effect(res)
         return res
 
@@ -143,6 +147,15 @@ class RopBlock(RopChain):
                 rb.add_value(next_pc_val)
 
         rb.set_gadgets([gadget])
+        return rb
+
+    @staticmethod
+    def from_gadget_list(gs, builder):
+        assert gs
+        rb = RopBlock.from_gadget(gs[0], builder)
+        for g in gs[1:]:
+            rb = rb._chain_block(RopBlock.from_gadget(g, builder))
+        RopBlock._analyze_effect(rb)
         return rb
 
 from .gadget_finder.gadget_analyzer import GadgetAnalyzer

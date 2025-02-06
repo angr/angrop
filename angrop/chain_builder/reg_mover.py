@@ -178,9 +178,7 @@ class RegMover(Builder):
             # now turn them into blocks
             for gs in block_gadgets:
                 assert gs
-                rb = RopBlock.from_gadget(gs[0], self)
-                for g in gs[1:]:
-                    rb += RopBlock.from_gadget(g, self)
+                rb = RopBlock.from_gadget_list(gs, self)
                 rop_blocks.add(rb)
         return rop_blocks
 
