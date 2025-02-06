@@ -1,10 +1,14 @@
 import logging
+import itertools
+from collections import defaultdict
 
+import networkx as nx
 from angr.errors import SimUnsatError
 
 from .builder import Builder
 from .. import rop_utils
 from ..rop_chain import RopChain
+from ..rop_block import RopBlock
 from ..errors import RopException
 from ..rop_gadget import RopRegMove
 
@@ -16,10 +20,29 @@ class RegMover(Builder):
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
-        self._reg_moving_gadgets = None
+        self._reg_moving_blocks = None
+        self._graph = None
 
     def update(self):
-        self._reg_moving_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
+        reg_moving_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
+        self._reg_moving_blocks = {g for g in reg_moving_gadgets if g.self_contained}
+        self._build_move_graph()
+
+    def advanced_update(self):
+        pass
+
+    def _build_move_graph(self):
+        self._graph = nx.DiGraph()
+        graph = self._graph
+        # each node is a register
+        graph.add_nodes_from(self.arch.reg_set)
+        # an edge means there is a move from the src register to the dst register
+        objects = defaultdict(set)
+        for block in self._reg_moving_blocks:
+            for move in block.reg_moves:
+                objects[(move.from_reg, move.to_reg)].add(block)
+        for key, val in objects.items():
+            graph.add_edge(key[0], key[1], block=val)
 
     def verify(self, chain, preserve_regs, registers):
         """
@@ -30,7 +53,7 @@ class RegMover(Builder):
         state = chain.exec()
         for reg, val in registers.items():
             bv = getattr(state.regs, reg)
-            if bv.depth != 1 or val.reg_name not in bv._encoded_name.decode():
+            if bv.depth != 1 or type(bv.args[0]) != str or val.reg_name not in bv._encoded_name.decode():
                 l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
                 return False
             for act in state.history.actions.hardcopy:
@@ -48,10 +71,10 @@ class RegMover(Builder):
                     if reg_name in preserve_regs:
                         l.exception("Somehow angrop thinks \n%s\n can be used for the chain generation.", chain_str)
                         return False
-        # the next pc must come from the stack
+        # the next pc must be "next_pc"
         if len(state.regs.pc.variables) != 1:
             return False
-        if not set(state.regs.pc.variables).pop().startswith("symbolic_stack"):
+        if not set(state.regs.pc.variables).pop().startswith("next_pc_"):
             return False
         return True
 
@@ -95,48 +118,67 @@ class RegMover(Builder):
         # TODO: we currently do not support chaining moves like mov eax, ecx; mov esp, eax; to set esp to ecx
         assert all(val.is_register for _, val in registers.items())
         moves = {RopRegMove(val.reg_name, reg, self.project.arch.bits) for reg, val in registers.items()}
-        gadgets = self._find_relevant_gadgets(moves)
+        rop_blocks = self._find_relevant_blocks(moves)
 
         # use greedy algorithm to find a chain that can do all the moves
-        chains = self._recursively_find_chains(gadgets, [], preserve_regs.copy(), moves)
+        chains = self._recursively_find_chains(rop_blocks, [], preserve_regs.copy(), moves)
         chains = self._sort_chains(chains)
 
         # now see whether any of the chain candidates can work
-        for gadgets in chains:
-            chain_str = "\n".join(g.dstr() for g in gadgets)
+        for rop_blocks in chains:
+            chain_str = "\n".join(g.dstr() for g in rop_blocks)
             l.debug("building reg_setting chain with chain:\n%s", chain_str)
-            stack_change = sum(x.stack_change for x in gadgets)
             try:
-                chain = self._build_reg_setting_chain(gadgets, None, registers, stack_change)
-                chain._concretize_chain_values()
-                if self.verify(chain, preserve_regs, registers):
-                    return chain
+                rb = rop_blocks[0]
+                for x in rop_blocks[1:]:
+                    rb += x
+                if self.verify(rb, preserve_regs, registers):
+                    return rb
             except (RopException, SimUnsatError):
                 pass
 
         raise RopException("Couldn't move registers :(")
 
+    def _find_relevant_blocks(self, target_moves):
+        """
+        find rop_blocks that may perform any of the requested moves
+        """
+        rop_blocks = set()
+
+        # handle moves using graph search, this allows gadget chaining
+        # to perform hard moves that requires multiple gadgets
+        graph = self._graph
+        for move in target_moves:
+            # only consider the shortest path
+            # TODO: we should use longer paths if the shortest one does work
+            paths = nx.all_shortest_paths(graph, source=move.from_reg, target=move.to_reg)
+            block_gadgets = []
+            for path in paths:
+                edges = zip(path, path[1:])
+                edge_block_list = []
+                for edge in edges:
+                    edge_blocks = graph.get_edge_data(edge[0], edge[1])['block']
+                    edge_block_list.append(edge_blocks)
+                block_gadgets += list(itertools.product(*edge_block_list))
+
+            # now turn them into blocks
+            for gs in block_gadgets:
+                assert gs
+                rb = RopBlock.from_gadget(gs[0], self)
+                for g in gs[1:]:
+                    rb += RopBlock.from_gadget(g, self)
+                rop_blocks.add(rb)
+        return rop_blocks
+
     def filter_gadgets(self, gadgets):
         """
         filter gadgets having the same effect
         """
-        # first: filter out gadgets that are not self-contained or don't do register move
-        gadgets = {g for g in gadgets if g.reg_moves and g.self_contained}
+        # first: filter out gadgets that don't do register move
+        gadgets = {g for g in gadgets if g.reg_moves and not g.has_conditional_branch}
         gadgets = self._filter_gadgets(gadgets)
         new_gadgets = set(x for x in gadgets if any(y.from_reg != y.to_reg for y in x.reg_moves))
         return new_gadgets
-
-    def _find_relevant_gadgets(self, moves):
-        """
-        find gadgets that may directly perform any of the requested moves
-        """
-        gadgets = set()
-        for g in self._reg_moving_gadgets:
-            if g.has_symbolic_access():
-                continue
-            if moves.intersection(set(g.reg_moves)):
-                gadgets.add(g)
-        return gadgets
 
     def _same_effect(self, g1, g2):
         """

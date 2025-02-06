@@ -292,7 +292,7 @@ class RopChain:
         return state
 
     def copy(self):
-        cp = RopChain(self._p, self._builder)
+        cp = self.__class__(self._p, self._builder)
         cp._gadgets = list(self._gadgets)
         cp._values = list(self._values)
         cp.payload_len = self.payload_len

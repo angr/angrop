@@ -9,6 +9,7 @@ import claripy
 from .. import rop_utils
 from ..arch import get_arch, X86
 from ..rop_gadget import RopGadget, RopMemAccess, RopRegMove, PivotGadget, SyscallGadget
+from ..rop_block import RopBlock
 from ..errors import RopException, RegNotFoundException, RopTimeoutException
 
 l = logging.getLogger("angrop.gadget_analyzer")
@@ -627,7 +628,7 @@ class GadgetAnalyzer:
         :param symbolic_state: the input symbolic state
         :param gadget: the gadget in which to store the sp change
         """
-        if type(gadget) in (RopGadget, SyscallGadget):
+        if type(gadget) in (RopGadget, SyscallGadget, RopBlock):
             dependencies = self._get_reg_dependencies(final_state, "sp")
             sp_change = final_state.regs.sp - init_state.regs.sp
 
@@ -656,8 +657,9 @@ class GadgetAnalyzer:
             last_sp = None
             init_sym_sp: frozenset = None # type: ignore
             prev_act = None
+            bits = self.project.arch.bits
             for act in final_state.history.actions:
-                if act.type == 'reg' and act.action == 'write' and act.storage == self.arch.stack_pointer:
+                if act.type == 'reg' and act.action == 'write' and act.size == bits and act.storage == self.arch.stack_pointer:
                     if not act.data.ast.symbolic:
                         last_sp = act.data.ast
                     else:
@@ -686,6 +688,8 @@ class GadgetAnalyzer:
             gadget.stack_change_after_pivot = sols[0]
             gadget.sp_reg_controllers = set(self._get_reg_controllers(init_state, final_state, 'sp', dependencies))
             gadget.sp_stack_controllers = {x for x in final_state.regs.sp.variables if x.startswith("symbolic_stack_")}
+        else:
+            raise NotImplementedError(f"Unknown gadget type {type(gadget)}")
 
     def _build_mem_access(self, a, gadget, init_state, final_state):
         """

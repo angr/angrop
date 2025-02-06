@@ -10,6 +10,7 @@ from angr.errors import SimUnsatError
 from .builder import Builder
 from .. import rop_utils
 from ..rop_chain import RopChain
+from ..rop_block import RopBlock
 from ..rop_gadget import RopGadget
 from ..errors import RopException
 
@@ -25,13 +26,15 @@ class RegSetter(Builder):
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
         self._reg_setting_gadgets = None # all the gadgets that can set registers
+        self._reg_setting_blocks = None # all rop blocks that can set registers
         self.hard_chain_cache = None
         # Estimate of how difficult it is to set each register.
         self._reg_weights = None
 
     def update(self):
         self._reg_setting_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
-        self.hard_chain_cache = {}
+        self._reg_setting_blocks = {RopBlock.from_gadget(g, self) for g in self._reg_setting_gadgets if g.self_contained}
+
         reg_pops = Counter()
         for gadget in self._reg_setting_gadgets:
             reg_pops.update(gadget.popped_regs)
@@ -39,6 +42,10 @@ class RegSetter(Builder):
             reg: 5 if reg_pops[reg] == 0 else 2 if reg_pops[reg] == 1 else 1
             for reg in self.arch.reg_set
         }
+
+        self.hard_chain_cache = {}
+
+        ## now we have a functional RegSetter, check whether we can do better
 
     def verify(self, chain, preserve_regs, registers):
         """
@@ -671,11 +678,13 @@ class RegSetter(Builder):
             return False
         if g1.transit_type != g2.transit_type:
             return False
+        if g1.has_conditional_branch != g2.has_conditional_branch:
+            return False
         return True
 
     def filter_gadgets(self, gadgets):
         """
-        process gadgets based their effects
+        process gadgets based on their effects
         """
         bests = set()
         gadgets = set(gadgets)

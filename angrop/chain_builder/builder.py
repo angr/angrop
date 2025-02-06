@@ -331,7 +331,7 @@ class Builder:
 
     def _filter_gadgets(self, gadgets):
         bests = set()
-        gadgets = set(g for g in gadgets if g.self_contained)
+        gadgets = set(gadgets)
         while gadgets:
             g0 = gadgets.pop()
             equal_class = {g for g in gadgets if self._same_effect(g0, g)}
@@ -343,4 +343,15 @@ class Builder:
 
     @abstractmethod
     def update(self):
+        """
+        update the builder based on current gadgets to bootstrap a functional builder
+        """
         raise NotImplementedError("each Builder class should have an `update` method!")
+
+    @abstractmethod
+    def advanced_update(self):
+        """
+        improve the capability of this builder using other builders
+        """
+        cls_name = self.__class__.__name__
+        raise NotImplementedError(f"`advanced_update` is not implemented for {cls_name}!")

@@ -170,5 +170,7 @@ class ChainBuilder:
         self._pivot.update()
         self._shifter.update()
 
+        self._reg_mover.advanced_update()
+
     # should also be able to do execve by providing writable memory
     # todo pass values to setregs as symbolic variables
