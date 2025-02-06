@@ -262,8 +262,6 @@ class MemWriter(Builder):
         pc_offset = None
         if gadget.transit_type == 'pop_pc':
             pc_offset = gadget.pc_offset
-        elif gadget.transit_type == 'ret':
-            pc_offset = gadget.stack_change - bytes_per_pop
         else:
             raise ValueError(f"Unknown gadget transit_type: {gadget.transit_type}")
 
