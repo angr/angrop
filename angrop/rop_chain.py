@@ -46,6 +46,7 @@ class RopChain:
         # add the other values and gadgets
         result._gadgets.extend(other._gadgets)
         idx = self.next_pc_idx()
+        assert idx is not None, "can't add to a chain that does not return!"
         result._payload_len = self._payload_len + other._payload_len
         result._values[idx] = other._values[0]
         result._values.extend(other._values[1:])
@@ -100,7 +101,8 @@ class RopChain:
         for idx, x in enumerate(self._values):
             if x.symbolic and any(y.startswith("next_pc_") for y in x.ast.variables):
                 return idx
-        raise RopException("every chain should have a next_pc value!")
+        # chains that don't return don't have next_pc value
+        return None
 
     def find_symbol(self, addr):
         plt = self._p.loader.find_plt_stub_name(addr)
