@@ -244,7 +244,8 @@ class FuncCaller(Builder):
             kwargs['needs_return'] = False
 
         # try func_jmp_gadgets
-        registers = {self._cc.ARG_REGS[i]:args[i] for i in range(len(args))}
+        register_args = args[:len(self._cc.ARG_REGS)]
+        registers = {self._cc.ARG_REGS[i]:register_args[i] for i in range(len(register_args))}
         reg_names = set(registers.keys())
         ptr_to_func = self._find_function_pointer(address)
         for g in self._func_jmp_gadgets:
