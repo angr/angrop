@@ -103,6 +103,74 @@ class RopChain:
                 return idx
         return None
 
+    def find_symbol(self, addr):
+        plt = self._p.loader.find_plt_stub_name(addr)
+        if plt:
+            return plt + '@plt'
+        symbol = self._p.loader.find_symbol(addr)
+        if symbol:
+            return symbol.name
+        return None
+
+    def exec(self, max_steps=None, timeout=None):
+        """
+        symbolically execute the ROP chain and return the final state
+        """
+        project = self._p
+        state = self._blank_state.copy()
+        state.solver.reload_solver([]) # remove constraints
+        concrete_vals = self._concretize_chain_values(timeout=timeout, preserve_next_pc=True, append_shift=False)
+
+        # when the chain data includes symbolic values, we need to replace the concrete values
+        # with the user's symbolic data
+        values = concrete_vals
+        for idx, val in enumerate(self._values):
+            if not val.symbolic:
+                continue
+            if all(var.startswith("symbolic_stack") for var in val.ast.variables):
+                continue
+            values[idx] = (val.data, val.rebase)
+
+        # now store all those values onto the stack
+        for idx, val in enumerate(values):
+            offset = idx*project.arch.bytes
+            state.memory.store(state.regs.sp+offset, val[0], project.arch.bytes, endness=project.arch.default_endness)
+        state.regs.pc = state.stack_pop()
+
+        # execute the chain using simgr
+        simgr = project.factory.simgr(state, save_unconstrained=True)
+        while simgr.active:
+            simgr.step()
+            if len(simgr.active + simgr.unconstrained) != 1:
+                code = self.payload_code(print_instructions=True)
+                l.error("The following chain fails to execute!")
+                l.error(code)
+                raise RopException("fail to execute")
+        return simgr.unconstrained[0]
+
+    def concrete_exec_til_addr(self, target_addr):
+        project = self._p
+        s = project.factory.blank_state()
+        s.memory.store(s.regs.sp, self.payload_str())
+        s.ip = s.stack_pop()
+        simgr = project.factory.simgr(s)
+        while simgr.one_active.addr != target_addr:
+            simgr.step()
+            state = simgr.active[0]
+            assert len(simgr.active) == 1
+        return simgr.one_active
+
+    def copy(self):
+        cp = self.__class__(self._p, self._builder)
+        cp._gadgets = list(self._gadgets)
+        cp._values = list(self._values)
+        cp._payload_len = self._payload_len
+        cp._blank_state = self._blank_state.copy()
+        cp.badbytes = self.badbytes.copy()
+
+        return cp
+
+    #### Solver Layer ####
     def __concretize_chain_values(self, constraints=None):
         """
         with the flexibilty of chains to have symbolic values, this helper function
@@ -168,6 +236,28 @@ class RopChain:
 
         return values
 
+    #### Presentation Layer ####
+    def addr_to_asmstring(self, addr):
+        for g in self._gadgets:
+            if g.addr == addr:
+                return g.dstr()
+        return ""
+
+    @property
+    def payload_len(self):
+        if self.next_pc_idx() == len(self._values) - 1:
+            return self._payload_len - self._p.arch.bytes
+        return self._payload_len
+
+    def payload_bv(self):
+        test_state = self._blank_state.copy()
+
+        for value in reversed(self._values):
+            test_state.stack_push(value.data)
+
+        sp = test_state.regs.sp
+        return test_state.memory.load(sp, self.payload_len)
+
     def payload_str(self, constraints=None, base_addr=None, timeout=None):
         """
         :param base_addr: the base address of the binary
@@ -189,37 +279,6 @@ class RopChain:
         if any(bytes([c]) in rop_str for c in self.badbytes):
             raise RopException()
         return rop_str
-
-    def payload_bv(self):
-
-        test_state = self._blank_state.copy()
-
-        for value in reversed(self._values):
-            test_state.stack_push(value.data)
-
-        sp = test_state.regs.sp
-        return test_state.memory.load(sp, self.payload_len)
-
-    @property
-    def payload_len(self):
-        if self.next_pc_idx() == len(self._values) - 1:
-            return self._payload_len - self._p.arch.bytes
-        return self._payload_len
-
-    def addr_to_asmstring(self, addr):
-        for g in self._gadgets:
-            if g.addr == addr:
-                return g.dstr()
-        return ""
-
-    def find_symbol(self, addr):
-        plt = self._p.loader.find_plt_stub_name(addr)
-        if plt:
-            return plt + '@plt'
-        symbol = self._p.loader.find_symbol(addr)
-        if symbol:
-            return symbol.name
-        return None
 
     def payload_code(self, constraints=None, print_instructions=True, timeout=None):
         """
@@ -266,64 +325,6 @@ class RopChain:
 
     def print_payload_code(self, constraints=None, print_instructions=True):
         print(self.payload_code(constraints=constraints, print_instructions=print_instructions))
-
-    def exec(self, max_steps=None, timeout=None):
-        """
-        symbolically execute the ROP chain and return the final state
-        """
-        project = self._p
-        state = self._blank_state.copy()
-        state.solver.reload_solver([]) # remove constraints
-        concrete_vals = self._concretize_chain_values(timeout=timeout, preserve_next_pc=True, append_shift=False)
-
-        # when the chain data includes symbolic values, we need to replace the concrete values
-        # with the user's symbolic data
-        values = concrete_vals
-        for idx, val in enumerate(self._values):
-            if not val.symbolic:
-                continue
-            if all(var.startswith("symbolic_stack") for var in val.ast.variables):
-                continue
-            values[idx] = (val.data, val.rebase)
-
-        # now store all those values onto the stack
-        for idx, val in enumerate(values):
-            offset = idx*project.arch.bytes
-            state.memory.store(state.regs.sp+offset, val[0], project.arch.bytes, endness=project.arch.default_endness)
-        state.regs.pc = state.stack_pop()
-
-        # execute the chain using simgr
-        simgr = project.factory.simgr(state, save_unconstrained=True)
-        while simgr.active:
-            simgr.step()
-            if len(simgr.active + simgr.unconstrained) != 1:
-                code = self.payload_code(print_instructions=True)
-                l.error("The following chain fails to execute!")
-                l.error(code)
-                raise RopException("fail to execute")
-        return simgr.unconstrained[0]
-
-    def concrete_exec_til_addr(self, target_addr):
-        project = self._p
-        s = project.factory.blank_state()
-        s.memory.store(s.regs.sp, self.payload_str())
-        s.ip = s.stack_pop()
-        simgr = project.factory.simgr(s)
-        while simgr.one_active.addr != target_addr:
-            simgr.step()
-            state = simgr.active[0]
-            assert len(simgr.active) == 1
-        return simgr.one_active
-
-    def copy(self):
-        cp = self.__class__(self._p, self._builder)
-        cp._gadgets = list(self._gadgets)
-        cp._values = list(self._values)
-        cp._payload_len = self._payload_len
-        cp._blank_state = self._blank_state.copy()
-        cp.badbytes = self.badbytes.copy()
-
-        return cp
 
     def __str__(self):
         return self.payload_code()
