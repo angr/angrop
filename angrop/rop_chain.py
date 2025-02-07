@@ -24,7 +24,7 @@ class RopChain:
 
         self._gadgets = []
         self._values = []
-        self.payload_len = 0
+        self._payload_len = 0
 
         # blank state used for solving
         self._blank_state = self._p.factory.blank_state() if state is None else state
@@ -36,21 +36,21 @@ class RopChain:
         # need to add the values from the other's stack and the constraints to the result state
         result = self.copy()
         o_state = other._blank_state
-        o_stack = o_state.memory.load(o_state.regs.sp, other.payload_len)
-        result._blank_state.memory.store(result._blank_state.regs.sp + self.payload_len, o_stack)
+        o_stack = o_state.memory.load(o_state.regs.sp, other._payload_len)
+        result._blank_state.memory.store(result._blank_state.regs.sp + self._payload_len, o_stack)
         result._blank_state.add_constraints(*o_state.solver.constraints)
         if not other._values:
             return result
         # add the other values and gadgets
         result._gadgets.extend(other._gadgets)
         idx = self.next_pc_idx()
-        result.payload_len = self.payload_len + other.payload_len
+        result._payload_len = self._payload_len + other._payload_len
         if idx is None:
             result._values.extend(other._values)
         else:
             result._values[idx] = other._values[0]
             result._values.extend(other._values[1:])
-            result.payload_len -= self._p.arch.bytes
+            result._payload_len -= self._p.arch.bytes
         return result
 
     def set_timeout(self, timeout):
@@ -66,7 +66,7 @@ class RopChain:
             value = RopValue(value, self._p)
             value.rebase_analysis(chain=self)
         self._values.append(value)
-        self.payload_len += self._p.arch.bytes
+        self._payload_len += self._p.arch.bytes
 
     def add_gadget(self, gadget):
         value = gadget.addr
@@ -185,7 +185,7 @@ class RopChain:
             else:
                 test_state.stack_push(value)
         sp = test_state.regs.sp
-        rop_str = test_state.solver.eval(test_state.memory.load(sp, self.payload_len), cast_to=bytes)
+        rop_str = test_state.solver.eval(test_state.memory.load(sp, self._payload_len), cast_to=bytes)
         if any(bytes([c]) in rop_str for c in self.badbytes):
             raise RopException()
         return rop_str
@@ -199,6 +199,12 @@ class RopChain:
 
         sp = test_state.regs.sp
         return test_state.memory.load(sp, self.payload_len)
+
+    @property
+    def payload_len(self):
+        if self.next_pc_idx() == len(self._values) - 1:
+            return self._payload_len - self._p.arch.bytes
+        return self._payload_len
 
     def addr_to_asmstring(self, addr):
         for g in self._gadgets:
@@ -319,7 +325,7 @@ class RopChain:
         cp = self.__class__(self._p, self._builder)
         cp._gadgets = list(self._gadgets)
         cp._values = list(self._values)
-        cp.payload_len = self.payload_len
+        cp._payload_len = self._payload_len
         cp._blank_state = self._blank_state.copy()
         cp.badbytes = self.badbytes.copy()
 

@@ -164,17 +164,17 @@ class RopBlock(RopChain):
 
     def copy(self):
         cp = super().copy()
+        cp.changed_regs = set(self.changed_regs)
+        cp.popped_regs = set(self.popped_regs)
+        cp.popped_reg_vars = dict(self.popped_reg_vars)
+        cp.concrete_regs = dict(self.concrete_regs)
+        cp.reg_dependencies = dict(self.reg_dependencies)
+        cp.reg_controllers = dict(self.reg_controllers)
         cp.stack_change = self.stack_change
-        cp.changed_regs = self.changed_regs
-        cp.popped_regs = self.popped_regs
-        cp.popped_reg_vars = self.popped_reg_vars
-        cp.concrete_regs = self.concrete_regs
-        cp.reg_dependencies = self.reg_dependencies
-        cp.reg_controllers = self.reg_controllers
-        cp.reg_moves = self.reg_moves
-        cp.mem_reads = self.mem_reads
-        cp.mem_writes = self.mem_writes
-        cp.mem_changes = self.mem_changes
+        cp.reg_moves = list(self.reg_moves)
+        cp.mem_reads = list(self.mem_reads)
+        cp.mem_writes = list(self.mem_writes)
+        cp.mem_changes = list(self.mem_changes)
         cp.isn_count = self.isn_count
         return cp
 
