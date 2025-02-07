@@ -165,6 +165,7 @@ class RopChain:
         if idx is None:
             return values
         values[idx] = (self._values[idx].ast, None)
+
         return values
 
     def payload_str(self, constraints=None, base_addr=None, timeout=None):
@@ -176,6 +177,8 @@ class RopChain:
             base_addr = self._p.loader.main_object.mapped_base
         test_state = self._blank_state.copy()
         concrete_vals = self._concretize_chain_values(constraints, timeout=timeout, append_shift=True)
+        if self.next_pc_idx() == len(self._values) - 1:
+            concrete_vals = concrete_vals[:-1]
         for value, rebased in reversed(concrete_vals):
             if rebased:
                 test_state.stack_push(value - self._p.loader.main_object.mapped_base + base_addr)
@@ -231,6 +234,8 @@ class RopChain:
         payload += 'chain = b""\n'
 
         concrete_vals = self._concretize_chain_values(constraints, timeout=timeout, append_shift=True)
+        if self.next_pc_idx() == len(self._values) - 1:
+            concrete_vals = concrete_vals[:-1]
         for value, rebased in concrete_vals:
 
             instruction_code = ""
