@@ -296,7 +296,7 @@ class SyscallGadget(RopGadget):
 
     @property
     def can_return(self):
-        return self.transit_type != 'syscall'
+        return self.transit_type is not None
 
     def copy(self):
         new = super().copy()
