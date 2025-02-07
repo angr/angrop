@@ -258,7 +258,7 @@ class Builder:
             else:
                 state.solver.add(var == val.data)
                 lhs, rhs = self._rebalance_ast(var, val.data)
-                if self.project.arch.default_endness == 'Iend_LE':
+                if self.project.arch.memory_endness == 'Iend_LE':
                     rhs = claripy.Reverse(rhs)
                 ropvalue = val.copy()
                 if val.rebase:

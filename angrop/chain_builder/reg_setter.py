@@ -195,7 +195,7 @@ class RegSetter(Builder):
             partial_controllers = self._get_sufficient_partial_controllers(registers)
 
         # filter reg setting gadgets
-        gadgets = set(self._reg_setting_gadgets)
+        gadgets = set(g for g in self._reg_setting_gadgets if g.self_contained)
         for s in partial_controllers.values():
             gadgets.update(s)
         gadgets = list(gadgets)

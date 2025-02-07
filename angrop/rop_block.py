@@ -100,7 +100,7 @@ class RopBlock(RopChain):
         state = self._blank_state.copy()
         for idx, val in enumerate(self._values):
             offset = idx*project.arch.bytes
-            state.memory.store(state.regs.sp+offset, val.data, project.arch.bytes, endness=project.arch.default_endness)
+            state.memory.store(state.regs.sp+offset, val.data, project.arch.bytes, endness=project.arch.memory_endness)
 
         state.ip = state.stack_pop()
 
@@ -139,7 +139,7 @@ class RopBlock(RopChain):
             state.solver.BVS("next_pc", project.arch.bits),
             project,
         )
-        state.memory.store(state.regs.sp + gadget.pc_offset, next_pc_val.ast)
+        state.memory.store(state.regs.sp + gadget.pc_offset, next_pc_val.ast, endness=project.arch.memory_endness)
         state.stack_pop()
         state.ip = gadget.addr
 

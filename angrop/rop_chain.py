@@ -47,12 +47,9 @@ class RopChain:
         result._gadgets.extend(other._gadgets)
         idx = self.next_pc_idx()
         result._payload_len = self._payload_len + other._payload_len
-        if idx is None:
-            result._values.extend(other._values)
-        else:
-            result._values[idx] = other._values[0]
-            result._values.extend(other._values[1:])
-            result._payload_len -= self._p.arch.bytes
+        result._values[idx] = other._values[0]
+        result._values.extend(other._values[1:])
+        result._payload_len -= self._p.arch.bytes
         return result
 
     def set_timeout(self, timeout):
@@ -103,7 +100,7 @@ class RopChain:
         for idx, x in enumerate(self._values):
             if x.symbolic and any(y.startswith("next_pc_") for y in x.ast.variables):
                 return idx
-        return None
+        raise RopException("every chain should have a next_pc value!")
 
     def find_symbol(self, addr):
         plt = self._p.loader.find_plt_stub_name(addr)
@@ -136,7 +133,7 @@ class RopChain:
         # now store all those values onto the stack
         for idx, val in enumerate(values):
             offset = idx*project.arch.bytes
-            state.memory.store(state.regs.sp+offset, val[0], project.arch.bytes, endness=project.arch.default_endness)
+            state.memory.store(state.regs.sp+offset, val[0], project.arch.bytes, endness=project.arch.memory_endness)
         state.regs.pc = state.stack_pop()
 
         # execute the chain using simgr
@@ -245,6 +242,19 @@ class RopChain:
                 return g.dstr()
         return ""
 
+    def _is_code_ptr(self, ptr):
+        """
+        try both sections and segments, some code is just mapped into
+        executable segments not sections
+        """
+        sec = self._p.loader.find_section_containing(ptr)
+        if sec and sec.is_executable:
+            return True
+        seg = self._p.loader.find_segment_containing(ptr)
+        if seg and seg.is_executable:
+            return True
+        return False
+
     @property
     def payload_len(self):
         if self.next_pc_idx() == len(self._values) - 1:
@@ -307,8 +317,7 @@ class RopChain:
 
             instruction_code = ""
             if print_instructions :
-                sec = self._p.loader.find_section_containing(value)
-                if sec and sec.is_executable:
+                if self._is_code_ptr(value):
                     symbol = self.find_symbol(value)
                     if symbol:
                         instruction_code = f"\t# {symbol}"
