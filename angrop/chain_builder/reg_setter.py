@@ -26,14 +26,12 @@ class RegSetter(Builder):
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
         self._reg_setting_gadgets = None # all the gadgets that can set registers
-        self._reg_setting_blocks = None # all rop blocks that can set registers
         self.hard_chain_cache = None
         # Estimate of how difficult it is to set each register.
         self._reg_weights = None
 
     def update(self):
         self._reg_setting_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
-        self._reg_setting_blocks = {RopBlock.from_gadget(g, self) for g in self._reg_setting_gadgets if g.self_contained}
 
         reg_pops = Counter()
         for gadget in self._reg_setting_gadgets:

@@ -13,6 +13,7 @@ class RopBlock(RopChain):
     """
 
     gadget_analyzer = None
+    sim_state = None
 
     def __init__(self, project, builder, state=None, badbytes=None):
         super().__init__(project, builder, state=state, badbytes=badbytes)
@@ -39,6 +40,20 @@ class RopBlock(RopChain):
 
         if self.gadget_analyzer is None:
             self.__class__.gadget_analyzer = GadgetAnalyzer(project, True, kernel_mode=False, arch=builder.arch)
+
+    @staticmethod
+    def new_sim_state(builder):
+        if RopBlock.sim_state:
+            return RopBlock.sim_state.copy()
+        arch = builder.arch
+        project = builder.project
+        state = rop_utils.make_symbolic_state(
+            builder.project,
+            arch.reg_set
+        )
+        rop_utils.make_reg_symbolic(state, arch.base_pointer)
+        RopBlock.sim_state = state
+        return state.copy()
 
     @property
     def num_mem_access(self):
@@ -117,22 +132,16 @@ class RopBlock(RopChain):
         assert gadget.transit_type == 'pop_pc'
 
         # build the block(chain) state first
-        arch = builder.arch
         project = builder.project
         bytes_per_pop = project.arch.bytes
-        state = rop_utils.make_symbolic_state(
-            builder.project,
-            arch.reg_set,
-            stack_gsize=gadget.stack_change // project.arch.bytes + 1,
-        )
-        rop_utils.make_reg_symbolic(state, arch.base_pointer)
-        state.ip = state.stack_pop()
-        state.solver.add(state.ip == gadget.addr)
+        state = RopBlock.new_sim_state(builder)
         next_pc_val = rop_utils.cast_rop_value(
             state.solver.BVS("next_pc", project.arch.bits),
             project,
         )
         state.memory.store(state.regs.sp + gadget.pc_offset, next_pc_val.ast)
+        state.stack_pop()
+        state.ip = gadget.addr
 
         # now build the block(chain)
         rb = RopBlock(project, builder, state=state, badbytes=builder.badbytes)
