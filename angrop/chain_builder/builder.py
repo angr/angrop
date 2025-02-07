@@ -110,6 +110,16 @@ class Builder:
     def _build_ast_constraints(self, ast):
         var_map = {}
 
+        # well, if this ast is just a symbolic value, just record itself
+        if ast.op == 'BVS':
+            name = ast.args[0]
+            bits = ast.args[1]
+            reg = name[5:].split('-')[0]
+            old_var = ast
+            new_var = claripy.BVS("sreg_" + reg + "-", bits)
+            var_map[reg] = (old_var, new_var)
+
+        #  if this ast is a tree, record all the children_asts
         for x in ast.children_asts():
             if x.op != 'BVS':
                 continue
@@ -248,7 +258,8 @@ class Builder:
             else:
                 state.solver.add(var == val.data)
                 lhs, rhs = self._rebalance_ast(var, val.data)
-                rhs = claripy.Reverse(rhs)
+                if self.project.arch.default_endness == 'Iend_LE':
+                    rhs = claripy.Reverse(rhs)
                 ropvalue = val.copy()
                 if val.rebase:
                     ropvalue._value = rhs - ropvalue._code_base
@@ -300,11 +311,6 @@ class Builder:
                     value.rebase_analysis(chain=chain)
                     chain.add_value(value)
                 else:
-                    # HACK: Because angrop appears to have originally been written
-                    # with assumptions around x86 ret gadgets, the target of the final jump
-                    # is not included in the chain if it is the last value.
-                    if offset == stack_change - bytes_per_pop and val is next_pc_val:
-                        break
                     chain.add_value(val)
             else:
                 chain.add_value(sym_word)

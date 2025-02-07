@@ -260,9 +260,9 @@ class RopChain:
         """
         symbolically execute the ROP chain and return the final state
         """
+        project = self._p
         state = self._blank_state.copy()
         state.solver.reload_solver([]) # remove constraints
-        state.regs.pc = self._values[0].concreted
         concrete_vals = self._concretize_chain_values(timeout=timeout, preserve_next_pc=True, append_shift=False)
 
         # when the chain data includes symbolic values, we need to replace the concrete values
@@ -275,21 +275,40 @@ class RopChain:
                 continue
             values[idx] = (val.data, val.rebase)
 
-        # the assumption is that the first value in the chain is a code address
-        # it sounds like a reasonable assumption to me. But I can be wrong.
-        for value, _ in reversed(values[1:]):
-            state.stack_push(value)
-        if max_steps is None:
-            max_steps = sum(len(gadget.bbl_addrs) for gadget in self._gadgets)
-        try:
-            state = rop_utils.step_to_unconstrained_successor(self._p, state, max_steps=max_steps,
-                                                              allow_simprocedures=True)
-        except RopException as e:
-            code = self.payload_code(print_instructions=True)
-            l.error("The following chain fails to execute!")
-            l.error(code)
-            raise e
-        return state
+        # now store all those values onto the stack
+        for idx, val in enumerate(values):
+            offset = idx*project.arch.bytes
+            state.memory.store(state.regs.sp+offset, val[0], project.arch.bytes, endness=project.arch.default_endness)
+        state.regs.pc = state.stack_pop()
+
+        # execute the chain using simgr
+        simgr = project.factory.simgr(state, save_unconstrained=True)
+        while simgr.active:
+            simgr.step()
+            if len(simgr.active + simgr.unconstrained) != 1:
+                code = self.payload_code(print_instructions=True)
+                l.error("The following chain fails to execute!")
+                l.error(code)
+                raise RopException("fail to execute")
+        return simgr.unconstrained[0]
+
+    def concrete_exec_til_addr(self, target_addr):
+        project = self._p
+        s = project.factory.blank_state()
+        s.memory.store(s.regs.sp, self.payload_str())
+        s.ip = s.stack_pop()
+        simgr = project.factory.simgr(s)
+        while simgr.one_active.addr != target_addr:
+            #print(simgr)
+            simgr.step()
+            state = simgr.active[0]
+            print(state.regs.s1)
+            print(state.regs.a0)
+            #print(simgr)
+            #if simgr.unconstrained:
+            #    print(simgr.unconstrained[0])
+            assert len(simgr.active) == 1
+        return simgr.one_active
 
     def copy(self):
         cp = self.__class__(self._p, self._builder)

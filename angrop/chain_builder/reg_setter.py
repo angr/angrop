@@ -76,11 +76,11 @@ class RegSetter(Builder):
                 l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-2.\nregisters: %s",
                             chain_str, registers)
                 return False
-        # the next pc must come from the stack or just marked as the next_pc
+        # the next pc must be marked as the next_pc
         if len(state.regs.pc.variables) != 1:
             return False
         pc_var = set(state.regs.pc.variables).pop()
-        return pc_var.startswith("symbolic_stack") or pc_var.startswith("next_pc")
+        return pc_var.startswith("next_pc")
 
     def run(self, modifiable_memory_range=None, preserve_regs=None, max_length=10, **registers):
         if len(registers) == 0:

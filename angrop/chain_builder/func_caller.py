@@ -241,6 +241,7 @@ class FuncCaller(Builder):
         if needs_return is None:
             s = symbol if symbol else hex(address)
             l.warning(f"function {s} won't return!")
+            kwargs['needs_return'] = False
 
         # try func_jmp_gadgets
         registers = {self._cc.ARG_REGS[i]:args[i] for i in range(len(args))}
@@ -269,3 +270,6 @@ class FuncCaller(Builder):
                                        jmp_mem_target=ptr_to_func, **kwargs)
             except RopException:
                 pass
+
+        s = symbol if symbol else hex(address)
+        raise RopException(f"fail to invoke function: {s}")
