@@ -40,6 +40,10 @@ class RopBlock(RopChain):
         if self.gadget_analyzer is None:
             self.__class__.gadget_analyzer = GadgetAnalyzer(project, True, kernel_mode=False, arch=builder.arch)
 
+    @property
+    def num_mem_access(self):
+        return len(self.mem_reads) + len(self.mem_writes) + len(self.mem_changes)
+
     def _chain_block(self, other):
         assert type(other) is RopBlock
         res = super().__add__(other)

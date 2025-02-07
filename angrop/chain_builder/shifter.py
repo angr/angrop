@@ -22,7 +22,7 @@ class Shifter(Builder):
 
     def verify_shift(self, chain, length, preserve_regs):
         arch_bytes = self.project.arch.bytes
-        init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * arch_bytes
+        init_sp = chain._blank_state.regs.sp.concrete_value
         state = chain.exec()
         if state.regs.sp.concrete_value != init_sp + length + arch_bytes:
             return False
@@ -77,14 +77,10 @@ class Shifter(Builder):
         for g in self.shift_gadgets[length]:
             if preserve_regs.intersection(g.changed_regs):
                 continue
-            if next_pc_idx == g_cnt-1:
-                if g.transit_type != 'ret':
-                    continue
-            else:
-                if g.transit_type != 'pop_pc':
-                    continue
-                if g.pc_offset != next_pc_idx*arch_bytes:
-                    continue
+            if g.transit_type != 'pop_pc':
+                continue
+            if g.pc_offset != next_pc_idx*arch_bytes:
+                continue
             try:
                 chain = RopChain(self.project, self.chain_builder)
                 chain.add_gadget(g)

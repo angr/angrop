@@ -292,7 +292,7 @@ def test_shifter():
         rop.save_gadgets(cache_path)
 
     chain = rop.shift(0x50, preserve_regs=['ebx'])
-    init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
+    init_sp = chain._blank_state.regs.sp.concrete_value
     state = chain.exec()
     assert state.regs.sp.concrete_value == init_sp + 0x50 + proj.arch.bytes
 
@@ -318,7 +318,7 @@ def test_shifter():
         rop.save_gadgets(cache_path)
 
     chain = rop.shift(0x40)
-    init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
+    init_sp = chain._blank_state.regs.sp.concrete_value
     state = chain.exec()
     assert state.regs.sp.concrete_value == init_sp + 0x40 + proj.arch.bytes
 
@@ -333,7 +333,7 @@ def test_shifter():
         rop.save_gadgets(cache_path)
 
     chain = rop.shift(0x40)
-    init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
+    init_sp = chain._blank_state.regs.sp.concrete_value
     state = chain.exec()
     assert state.regs.sp.concrete_value == init_sp + 0x40 + proj.arch.bytes
 
@@ -349,7 +349,7 @@ def test_shifter():
         rop.save_gadgets(cache_path)
 
     chain = rop.shift(0x10)
-    init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
+    init_sp = chain._blank_state.regs.sp.concrete_value
     state = chain.exec()
     assert state.regs.sp.concrete_value == init_sp + 0x10 + proj.arch.bytes
 
