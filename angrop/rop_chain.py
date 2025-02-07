@@ -310,14 +310,8 @@ class RopChain:
         s.ip = s.stack_pop()
         simgr = project.factory.simgr(s)
         while simgr.one_active.addr != target_addr:
-            #print(simgr)
             simgr.step()
             state = simgr.active[0]
-            print(state.regs.s1)
-            print(state.regs.a0)
-            #print(simgr)
-            #if simgr.unconstrained:
-            #    print(simgr.unconstrained[0])
             assert len(simgr.active) == 1
         return simgr.one_active
 
