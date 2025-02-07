@@ -24,6 +24,8 @@ class RopChain:
 
         self._gadgets = []
         self._values = []
+        # use self.payload_len in presentation layer, use self._payload in internal stuff
+        # because next_pc is an internal mechanism, we don't expose it to users
         self._payload_len = 0
 
         # blank state used for solving
@@ -275,7 +277,7 @@ class RopChain:
             else:
                 test_state.stack_push(value)
         sp = test_state.regs.sp
-        rop_str = test_state.solver.eval(test_state.memory.load(sp, self._payload_len), cast_to=bytes)
+        rop_str = test_state.solver.eval(test_state.memory.load(sp, self.payload_len), cast_to=bytes)
         if any(bytes([c]) in rop_str for c in self.badbytes):
             raise RopException()
         return rop_str
