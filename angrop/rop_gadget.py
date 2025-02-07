@@ -222,6 +222,7 @@ class RopGadget:
         out.addr = self.addr
         out.changed_regs = set(self.changed_regs)
         out.popped_regs = set(self.popped_regs)
+        out.popped_reg_vars = dict(self.popped_reg_vars)
         out.concrete_regs = dict(self.concrete_regs)
         out.reg_dependencies = dict(self.reg_dependencies)
         out.reg_controllers = dict(self.reg_controllers)

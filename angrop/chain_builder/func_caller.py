@@ -15,6 +15,7 @@ class FuncCaller(Builder):
     """
     handle function calls by automatically detecting the target binary's
     calling convention
+    thanks to @tomgond for a great portion of this class
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
@@ -43,8 +44,87 @@ class FuncCaller(Builder):
                     self._func_jmp_gadgets.add(g)
                     break
 
+    def _is_valid_pointer(self, addr):
+        """
+        Validate if an address is a legitimate pointer in the binary
+        Checks:
+        1. Address is within memory ranges
+        2. Address points to readable memory
+        3. Address is aligned
+        """
+        arch_bytes = self.project.arch.bytes
+
+        # Check basic alignment
+        if addr % arch_bytes != 0:
+            return False
+
+        # Check against memory ranges
+        if (addr < self.project.loader.min_addr or
+                addr >= self.project.loader.max_addr):
+            return False
+
+        # Check readable writable sections
+        for section in self.project.loader.main_object.sections:
+            if (section.is_readable and
+                    section.min_addr <= addr < section.max_addr):
+                return True
+
+        return False
+
+    def _find_function_pointer_in_got_plt(self, func_addr):
+        """
+        Search if a func addr is in plt. If it's in plt, find func name and
+        translate it to GOT so that we can directly call/jmp to the location pointed there.
+        """
+        # Search GOT and PLT across all loaded objects
+        func_name = None
+        for sym in self.project.loader.main_object.symbols:
+            if sym.rebased_addr == func_addr:
+                func_name = sym.name
+
+        for sym, val in self.project.loader.main_object.plt.items():
+            if val == func_addr:
+                func_name = sym
+        # addr is found in plt. we look for this symbol in got
+        if func_name:
+            func_got = self.project.loader.main_object.imports.get(func_name)
+            if func_got:
+                return func_got.rebased_addr
+            else:
+                # this is from plt but not in got somehow
+                return None
+        # not in plt. We can search in other ways
+        else:
+            return None
+
+    def _find_function_pointer(self, func_addr):
+        """Find pointer to function, allowing for potential memory locations"""
+        # Existing GOT/PLT search logic first
+        got_ptr = self._find_function_pointer_in_got_plt(func_addr)
+        if got_ptr is not None:
+            return got_ptr
+
+        # Broader search strategy
+        for obj in self.project.loader.all_objects:
+            for section in obj.sections:
+                if not section.is_readable:
+                    continue
+
+                # Scan section for potential pointers
+                for offset in range(0, section.max_addr - section.min_addr, self.project.arch.bytes):
+                    potential_ptr = section.min_addr + offset
+                    try:
+                        ptr_value = self.project.loader.memory.unpack_word(potential_ptr)
+                        if (ptr_value == func_addr and
+                                self._is_valid_pointer(potential_ptr)):
+                            return potential_ptr
+                    except:
+                        continue
+
+        raise Exception("Could not find mem pointing to func in binary memory")
+
     def _func_call(self, func_gadget, cc, args, extra_regs=None, preserve_regs=None,
-                   needs_return=True, **kwargs):
+                   needs_return=True, jmp_mem_target=None, **kwargs):
         """
         func_gadget: the address of the function to invoke
         cc: calling convention
@@ -77,7 +157,18 @@ class FuncCaller(Builder):
             registers[reg] = arg
         for reg in preserve_regs:
             registers.pop(reg, None)
-        chain = self.chain_builder.set_regs(**registers, preserve_regs=preserve_regs)
+
+        # if this is a simple function call, just set the registers and invoke it
+        if not jmp_mem_target:
+            chain = self.chain_builder.set_regs(**registers, preserve_regs=preserve_regs)
+        else:
+            # this is a jmp_mem function call, we need to constrain the jmp_mem target
+            rop_values, constraints = self._build_ast_constraints(func_gadget.pc_target)
+            registers.update(rop_values)
+            chain = self.chain_builder.set_regs(**registers, preserve_regs=preserve_regs)
+            state = chain._blank_state
+            state.solver.add(claripy.And(*constraints))
+            state.solver.add(jmp_mem_target == func_gadget.pc_target)
 
         # invoke the function
         chain.add_gadget(func_gadget)
@@ -155,7 +246,6 @@ class FuncCaller(Builder):
         registers = {self._cc.ARG_REGS[i]:args[i] for i in range(len(args))}
         reg_names = set(registers.keys())
         ptr_to_func = self._find_function_pointer(address)
-        print(hex(ptr_to_func))
         for g in self._func_jmp_gadgets:
             if g.popped_regs.intersection(reg_names):
                 raise NotImplementedError("do not support func_jmp_gadgets that have pops")
@@ -171,11 +261,11 @@ class FuncCaller(Builder):
 
             if g.transit_type != 'jmp_mem':
                 raise NotImplementedError("currently only support jmp_mem type func_jmp_gadgets!")
-            print(g.pc_target)
             #func_gadget.stack_change = self.project.arch.bytes
             #func_gadget.pc_offset = 0
             # try to invoke the function using the new target registers
             try:
-                return self._func_call(g, self._cc, [], extra_regs=registers, **kwargs)
+                return self._func_call(g, self._cc, [], extra_regs=registers,
+                                       jmp_mem_target=ptr_to_func, **kwargs)
             except RopException:
                 pass

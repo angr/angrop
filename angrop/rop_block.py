@@ -162,4 +162,20 @@ class RopBlock(RopChain):
         accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)
         return any(x.is_symbolic_access() for x in accesses)
 
+    def copy(self):
+        cp = super().copy()
+        cp.stack_change = self.stack_change
+        cp.changed_regs = self.changed_regs
+        cp.popped_regs = self.popped_regs
+        cp.popped_reg_vars = self.popped_reg_vars
+        cp.concrete_regs = self.concrete_regs
+        cp.reg_dependencies = self.reg_dependencies
+        cp.reg_controllers = self.reg_controllers
+        cp.reg_moves = self.reg_moves
+        cp.mem_reads = self.mem_reads
+        cp.mem_writes = self.mem_writes
+        cp.mem_changes = self.mem_changes
+        cp.isn_count = self.isn_count
+        return cp
+
 from .gadget_finder.gadget_analyzer import GadgetAnalyzer

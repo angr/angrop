@@ -107,6 +107,29 @@ class Builder:
         vs = ast.variables
         return len(vs) == 1 and list(vs)[0].startswith('symbolic_stack_')
 
+    def _build_ast_constraints(self, ast):
+        var_map = {}
+
+        for x in ast.children_asts():
+            if x.op != 'BVS':
+                continue
+            name = x.args[0]
+            bits = x.args[1]
+            if not name.startswith("sreg_"):
+                raise NotImplementedError(f"cannot rebuild ast: {ast}")
+            reg = name[5:].split('-')[0]
+            old_var = x
+            if reg not in var_map:
+                reg = name[5:].split('-')[0]
+                new_var = claripy.BVS("sreg_" + reg + "-", bits)
+                var_map[reg] = (old_var, new_var)
+
+        consts = []
+        for old, new in var_map.values():
+            consts.append(old == new)
+        rop_values = {x:RopValue(y[1], self.project) for x,y in var_map.items()}
+        return rop_values, consts
+
     def _rebalance_ast(self, lhs, rhs):
         """
         we know that lhs (stack content with modification) == rhs (user ropvalue)

@@ -598,7 +598,7 @@ class RegSetter(Builder):
 
         for reg in registers:
             if reg in gadget.popped_regs:
-                reg_vars = gadget.popped_reg_vars[reg]
+                reg_vars = gadget.popped_reg_vars[reg] if reg in gadget.popped_reg_vars else set()
                 if not reg_vars.isdisjoint(stack_dependencies):
                     # Two registers are popped from the same location on the stack.
                     return None
