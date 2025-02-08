@@ -44,7 +44,7 @@ class RopBlock(RopChain):
 
     @staticmethod
     def new_sim_state(builder):
-        if RopBlock.sim_state:
+        if RopBlock.sim_state and RopBlock.sim_state.project == builder.project:
             return RopBlock.sim_state.copy()
         arch = builder.arch
         project = builder.project
