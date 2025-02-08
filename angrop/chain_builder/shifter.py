@@ -125,6 +125,8 @@ class Shifter(Builder):
             return False
         if g1.transit_type != g2.transit_type:
             return False
+        if g1.pc_offset != g2.pc_offset:
+            return False
         return True
 
     def _better_than(self, g1, g2):

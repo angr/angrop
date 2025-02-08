@@ -1,5 +1,7 @@
 import logging
 
+import claripy
+
 from . import rop_utils
 from .errors import RopException
 from .rop_gadget import RopGadget
@@ -46,11 +48,14 @@ class RopChain:
         # add the other values and gadgets
         result._gadgets.extend(other._gadgets)
         idx = self.next_pc_idx()
-        assert idx is not None, "can't add to a chain that does not return!"
+        assert idx is not None or not self._values, "can't add to a chain that does not return!"
         result._payload_len = self._payload_len + other._payload_len
-        result._values[idx] = other._values[0]
-        result._values.extend(other._values[1:])
-        result._payload_len -= self._p.arch.bytes
+        if idx is not None:
+            result._values[idx] = other._values[0]
+            result._values.extend(other._values[1:])
+            result._payload_len -= self._p.arch.bytes
+        else:
+            result._values.extend(other._values)
         return result
 
     def set_timeout(self, timeout):

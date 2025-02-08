@@ -187,10 +187,14 @@ class FuncCaller(Builder):
         # 2. handle function return address to maintain the control flow
         if stack_arguments:
             shift_bytes = (len(stack_arguments)+1)*arch_bytes
+            # TODO: currently, we only shift stack only for the minimal
+            # but if this shift fails, we should try larger shifts
             cleaner = self.chain_builder.shift(shift_bytes, next_pc_idx=-1, preserve_regs=preserve_regs)
             chain.add_gadget(cleaner._gadgets[0])
             for arg in stack_arguments:
                 chain.add_value(arg)
+            next_pc = claripy.BVS("next_pc", self.project.arch.bits)
+            chain.add_value(next_pc)
 
         # handle return address
         if not isinstance(cc.RETURN_ADDR, (SimStackArg, SimRegArg)):
