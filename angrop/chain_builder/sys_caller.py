@@ -14,11 +14,6 @@ def cmp(g1, g2):
     if not g1.can_return and g2.can_return:
         return 1
 
-    if g1.starts_with_syscall and not g2.starts_with_syscall:
-        return -1
-    if not g1.starts_with_syscall and g2.starts_with_syscall:
-        return 1
-
     if g1.num_mem_access < g2.num_mem_access:
         return -1
     if g1.num_mem_access > g2.num_mem_access:
@@ -29,9 +24,9 @@ def cmp(g1, g2):
     if g1.stack_change > g2.stack_change:
         return 1
 
-    if g1.block_length < g2.block_length:
+    if g1.isn_count < g2.isn_count:
         return -1
-    if g1.block_length > g2.block_length:
+    if g1.isn_count > g2.isn_count:
         return 1
     return 0
 

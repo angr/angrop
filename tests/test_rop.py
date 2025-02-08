@@ -143,11 +143,11 @@ def test_roptest_mips():
     rop = proj.analyses.ROP()
     rop.find_gadgets_single_threaded(show_progress=False)
 
-    chain = rop.set_regs(s0=0x41414141, s1=0x42424242, v0=0x43434343)
+    chain = rop.set_regs(s0=0x41414142, s1=0x42424243, v0=0x43434344)
     result_state = execute_chain(proj, chain)
-    assert result_state.solver.eval(result_state.regs.s0) == 0x41414141
-    assert result_state.solver.eval(result_state.regs.s1) == 0x42424242
-    assert result_state.solver.eval(result_state.regs.v0) == 0x43434343
+    assert result_state.solver.eval(result_state.regs.s0) == 0x41414142
+    assert result_state.solver.eval(result_state.regs.s1) == 0x42424243
+    assert result_state.solver.eval(result_state.regs.v0) == 0x43434344
 
 
 def test_rop_x86_64():

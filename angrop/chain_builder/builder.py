@@ -107,6 +107,39 @@ class Builder:
         vs = ast.variables
         return len(vs) == 1 and list(vs)[0].startswith('symbolic_stack_')
 
+    def _build_ast_constraints(self, ast):
+        var_map = {}
+
+        # well, if this ast is just a symbolic value, just record itself
+        if ast.op == 'BVS':
+            name = ast.args[0]
+            bits = ast.args[1]
+            reg = name[5:].split('-')[0]
+            old_var = ast
+            new_var = claripy.BVS("sreg_" + reg + "-", bits)
+            var_map[reg] = (old_var, new_var)
+
+        #  if this ast is a tree, record all the children_asts
+        for x in ast.children_asts():
+            if x.op != 'BVS':
+                continue
+            name = x.args[0]
+            bits = x.args[1]
+            if not name.startswith("sreg_"):
+                raise NotImplementedError(f"cannot rebuild ast: {ast}")
+            reg = name[5:].split('-')[0]
+            old_var = x
+            if reg not in var_map:
+                reg = name[5:].split('-')[0]
+                new_var = claripy.BVS("sreg_" + reg + "-", bits)
+                var_map[reg] = (old_var, new_var)
+
+        consts = []
+        for old, new in var_map.values():
+            consts.append(old == new)
+        rop_values = {x:RopValue(y[1], self.project) for x,y in var_map.items()}
+        return rop_values, consts
+
     def _rebalance_ast(self, lhs, rhs):
         """
         we know that lhs (stack content with modification) == rhs (user ropvalue)
@@ -225,7 +258,8 @@ class Builder:
             else:
                 state.solver.add(var == val.data)
                 lhs, rhs = self._rebalance_ast(var, val.data)
-                rhs = claripy.Reverse(rhs)
+                if self.project.arch.memory_endness == 'Iend_LE':
+                    rhs = claripy.Reverse(rhs)
                 ropvalue = val.copy()
                 if val.rebase:
                     ropvalue._value = rhs - ropvalue._code_base
@@ -277,11 +311,6 @@ class Builder:
                     value.rebase_analysis(chain=chain)
                     chain.add_value(value)
                 else:
-                    # HACK: Because angrop appears to have originally been written
-                    # with assumptions around x86 ret gadgets, the target of the final jump
-                    # is not included in the chain if it is the last value.
-                    if offset == stack_change - bytes_per_pop and val is next_pc_val:
-                        break
                     chain.add_value(val)
             else:
                 chain.add_value(sym_word)
@@ -343,4 +372,15 @@ class Builder:
 
     @abstractmethod
     def update(self):
+        """
+        update the builder based on current gadgets to bootstrap a functional builder
+        """
         raise NotImplementedError("each Builder class should have an `update` method!")
+
+    @abstractmethod
+    def advanced_update(self):
+        """
+        improve the capability of this builder using other builders
+        """
+        cls_name = self.__class__.__name__
+        raise NotImplementedError(f"`advanced_update` is not implemented for {cls_name}!")

@@ -10,6 +10,7 @@ from angr.errors import SimUnsatError
 from .builder import Builder
 from .. import rop_utils
 from ..rop_chain import RopChain
+from ..rop_block import RopBlock
 from ..rop_gadget import RopGadget
 from ..errors import RopException
 
@@ -31,7 +32,7 @@ class RegSetter(Builder):
 
     def update(self):
         self._reg_setting_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
-        self.hard_chain_cache = {}
+
         reg_pops = Counter()
         for gadget in self._reg_setting_gadgets:
             reg_pops.update(gadget.popped_regs)
@@ -39,6 +40,10 @@ class RegSetter(Builder):
             reg: 5 if reg_pops[reg] == 0 else 2 if reg_pops[reg] == 1 else 1
             for reg in self.arch.reg_set
         }
+
+        self.hard_chain_cache = {}
+
+        ## now we have a functional RegSetter, check whether we can do better
 
     def verify(self, chain, preserve_regs, registers):
         """
@@ -69,11 +74,11 @@ class RegSetter(Builder):
                 l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-2.\nregisters: %s",
                             chain_str, registers)
                 return False
-        # the next pc must come from the stack or just marked as the next_pc
+        # the next pc must be marked as the next_pc
         if len(state.regs.pc.variables) != 1:
             return False
         pc_var = set(state.regs.pc.variables).pop()
-        return pc_var.startswith("symbolic_stack") or pc_var.startswith("next_pc")
+        return pc_var.startswith("next_pc")
 
     def run(self, modifiable_memory_range=None, preserve_regs=None, max_length=10, **registers):
         if len(registers) == 0:
@@ -190,7 +195,7 @@ class RegSetter(Builder):
             partial_controllers = self._get_sufficient_partial_controllers(registers)
 
         # filter reg setting gadgets
-        gadgets = set(self._reg_setting_gadgets)
+        gadgets = set(g for g in self._reg_setting_gadgets if g.self_contained)
         for s in partial_controllers.values():
             gadgets.update(s)
         gadgets = list(gadgets)
@@ -591,7 +596,7 @@ class RegSetter(Builder):
 
         for reg in registers:
             if reg in gadget.popped_regs:
-                reg_vars = gadget.popped_reg_vars[reg]
+                reg_vars = gadget.popped_reg_vars[reg] if reg in gadget.popped_reg_vars else set()
                 if not reg_vars.isdisjoint(stack_dependencies):
                     # Two registers are popped from the same location on the stack.
                     return None
@@ -671,11 +676,13 @@ class RegSetter(Builder):
             return False
         if g1.transit_type != g2.transit_type:
             return False
+        if g1.has_conditional_branch != g2.has_conditional_branch:
+            return False
         return True
 
     def filter_gadgets(self, gadgets):
         """
-        process gadgets based their effects
+        process gadgets based on their effects
         """
         bests = set()
         gadgets = set(gadgets)

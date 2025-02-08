@@ -292,7 +292,7 @@ def test_shifter():
         rop.save_gadgets(cache_path)
 
     chain = rop.shift(0x50, preserve_regs=['ebx'])
-    init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
+    init_sp = chain._blank_state.regs.sp.concrete_value
     state = chain.exec()
     assert state.regs.sp.concrete_value == init_sp + 0x50 + proj.arch.bytes
 
@@ -318,7 +318,7 @@ def test_shifter():
         rop.save_gadgets(cache_path)
 
     chain = rop.shift(0x40)
-    init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
+    init_sp = chain._blank_state.regs.sp.concrete_value
     state = chain.exec()
     assert state.regs.sp.concrete_value == init_sp + 0x40 + proj.arch.bytes
 
@@ -333,7 +333,7 @@ def test_shifter():
         rop.save_gadgets(cache_path)
 
     chain = rop.shift(0x40)
-    init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
+    init_sp = chain._blank_state.regs.sp.concrete_value
     state = chain.exec()
     assert state.regs.sp.concrete_value == init_sp + 0x40 + proj.arch.bytes
 
@@ -349,7 +349,7 @@ def test_shifter():
         rop.save_gadgets(cache_path)
 
     chain = rop.shift(0x10)
-    init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
+    init_sp = chain._blank_state.regs.sp.concrete_value
     state = chain.exec()
     assert state.regs.sp.concrete_value == init_sp + 0x10 + proj.arch.bytes
 
@@ -521,6 +521,36 @@ def test_aarch64_mem_access():
         if action.type == action.MEM and action.action == action.WRITE:
             assert action.addr.ast.concrete_value >= 0x1000
             assert action.addr.ast.concrete_value < 0x2000
+
+def test_mipstake():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "mips", "mipstake"), auto_load_libs=True, arch="mips")
+    rop = proj.analyses.ROP(max_block_size=40)
+    g = rop.analyze_gadget(0x400E64) # lw $ra, 0x34($sp); lw $s5, 0x30($sp); lw $s4, 0x2c($sp); lw $s3, 0x28($sp); lw $s2, 0x24($sp); lw $s1, 0x20($sp); lw $s0, 0x1c($sp); jr $ra; addiu $sp, $sp, 0x38
+    assert g is not None
+
+    g = rop.analyze_gadget(0x400E40) # lw $t9, ($s1); addiu $s0, $s0, 1; move $a0, $s3; move $a1, $s4; jalr $t9; move $a2, $s5
+    assert g is not None
+    chain = rop.func_call("sleep", [0x41414141, 0x42424242, 0x43434343])
+    sleep_addr = proj.loader.main_object.imports['sleep'].value
+    state = chain.concrete_exec_til_addr(sleep_addr)
+    assert state.regs.a0.concrete_value == 0x41414141
+    assert state.regs.a1.concrete_value == 0x42424242
+    assert state.regs.a2.concrete_value == 0x43434343
+
+def test_unexploitable():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "unexploitable"), auto_load_libs=False)
+    rop = proj.analyses.ROP(max_block_size=40, fast_mode=False, only_check_near_rets=False)
+    g = rop.analyze_gadget(0x4005D0) # mov rdx, r15; mov rsi, r14; mov edi, r13d; call qword ptr [r12 + rbx*8]
+    assert g is not None
+    g = rop.analyze_gadget(0x4005E6) # mov rbx, qword ptr [rsp + 8]; mov rbp, qword ptr [rsp + 0x10]; mov r12, qword ptr [rsp + 0x18]; mov r13, qword ptr [rsp + 0x20]; mov r14, qword ptr [rsp + 0x28]; mov r15, qword ptr [rsp + 0x30]; add rsp, 0x38; ret
+    assert g is not None
+    chain = rop.func_call("sleep", [0x41414141, 0x4242424242424242, 0x4343434343434343])
+
+    sleep_addr = proj.loader.main_object.imports['sleep'].value
+    state = chain.concrete_exec_til_addr(sleep_addr)
+    assert state.regs.rdi.concrete_value == 0x41414141
+    assert state.regs.rsi.concrete_value == 0x4242424242424242
+    assert state.regs.rdx.concrete_value == 0x4343434343434343
 
 def run_all():
     functions = globals()

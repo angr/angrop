@@ -22,7 +22,7 @@ class Shifter(Builder):
 
     def verify_shift(self, chain, length, preserve_regs):
         arch_bytes = self.project.arch.bytes
-        init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * arch_bytes
+        init_sp = chain._blank_state.regs.sp.concrete_value
         state = chain.exec()
         if state.regs.sp.concrete_value != init_sp + length + arch_bytes:
             return False
@@ -77,14 +77,10 @@ class Shifter(Builder):
         for g in self.shift_gadgets[length]:
             if preserve_regs.intersection(g.changed_regs):
                 continue
-            if next_pc_idx == g_cnt-1:
-                if g.transit_type != 'ret':
-                    continue
-            else:
-                if g.transit_type != 'pop_pc':
-                    continue
-                if g.pc_offset != next_pc_idx*arch_bytes:
-                    continue
+            if g.transit_type != 'pop_pc':
+                continue
+            if g.pc_offset != next_pc_idx*arch_bytes:
+                continue
             try:
                 chain = RopChain(self.project, self.chain_builder)
                 chain.add_gadget(g)
@@ -129,6 +125,8 @@ class Shifter(Builder):
             return False
         if g1.transit_type != g2.transit_type:
             return False
+        if g1.pc_offset != g2.pc_offset:
+            return False
         return True
 
     def _better_than(self, g1, g2):
@@ -144,13 +142,12 @@ class Shifter(Builder):
         """
         filter gadgets having the same effect
         """
-        # we don't like gadgets with any memory accesses or jump gadgets
+        # we don't like gadgets with any memory accesses
         gadgets = [
             x
             for x in gadgets
             if x.num_mem_access == 0
-            and x.transit_type != "jmp_reg"
-            and not x.has_conditional_branch
+            and x.self_contained
         ]
 
         gadgets = self._filter_gadgets(gadgets)

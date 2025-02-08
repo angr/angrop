@@ -32,7 +32,7 @@ class MemWriter(Builder):
     def _get_all_mem_write_gadgets(gadgets):
         possible_gadgets = set()
         for g in gadgets:
-            if g.has_conditional_branch:
+            if not g.self_contained:
                 continue
             if len(g.mem_reads) + len(g.mem_changes) > 0 or len(g.mem_writes) != 1:
                 continue
@@ -262,8 +262,6 @@ class MemWriter(Builder):
         pc_offset = None
         if gadget.transit_type == 'pop_pc':
             pc_offset = gadget.pc_offset
-        elif gadget.transit_type == 'ret':
-            pc_offset = gadget.stack_change - bytes_per_pop
         else:
             raise ValueError(f"Unknown gadget transit_type: {gadget.transit_type}")
 
