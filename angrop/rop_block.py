@@ -1,5 +1,6 @@
 from .rop_chain import RopChain
 from .rop_value import RopValue
+from .rop_gadget import RopGadget
 from . import rop_utils
 
 class RopBlock(RopChain):
@@ -49,7 +50,8 @@ class RopBlock(RopChain):
         project = builder.project
         state = rop_utils.make_symbolic_state(
             builder.project,
-            arch.reg_set
+            arch.reg_set,
+            stack_gsize=80*3 # this is a rop_block, we need to allow more gadgets
         )
         rop_utils.make_reg_symbolic(state, arch.base_pointer)
         RopBlock.sim_state = state
@@ -78,15 +80,24 @@ class RopBlock(RopChain):
         # stack change
         ga._compute_sp_change(init_state, final_state, rb)
 
+        # clear the effects
+        rb.changed_regs = set()
+        rb.popped_regs = set()
+        rb.popped_reg_vars = {}
+        rb.concrete_regs = {}
+        rb.reg_dependencies = {}
+        rb.reg_controllers = {}
+        rb.reg_moves = []
+        rb.mem_reads = []
+        rb.mem_writes = []
+        rb.mem_changes = []
+
         # reg effect
         ga._check_reg_changes(final_state, init_state, rb)
-        reg_reads = ga._get_reg_reads(final_state)
         ga._check_reg_change_dependencies(init_state, final_state, rb)
-        ga._check_reg_movers(init_state, final_state, reg_reads, rb)
+        ga._check_reg_movers(init_state, final_state, rb)
 
         # mem effect
-        ga._check_reg_change_dependencies(init_state, final_state, rb)
-        ga._check_reg_movers(init_state, final_state, reg_reads, rb)
         ga._analyze_concrete_regs(init_state, final_state, rb)
         ga._analyze_mem_access(final_state, init_state, rb)
 
@@ -127,6 +138,7 @@ class RopBlock(RopChain):
 
     @staticmethod
     def from_gadget(gadget, builder):
+        assert isinstance(gadget, RopGadget)
         assert gadget.stack_change > 0
         assert not gadget.has_conditional_branch
         assert gadget.transit_type == 'pop_pc'
@@ -139,7 +151,7 @@ class RopBlock(RopChain):
             state.solver.BVS("next_pc", project.arch.bits),
             project,
         )
-        state.memory.store(state.regs.sp + gadget.pc_offset, next_pc_val.ast, endness=project.arch.memory_endness)
+        state.memory.store(state.regs.sp + gadget.pc_offset + bytes_per_pop, next_pc_val.ast, endness=project.arch.memory_endness)
         state.stack_pop()
         state.ip = gadget.addr
 

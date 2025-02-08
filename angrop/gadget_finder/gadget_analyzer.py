@@ -345,10 +345,9 @@ class GadgetAnalyzer:
         # register effect analysis
         l.info("... checking for controlled regs")
         self._check_reg_changes(final_state, init_state, gadget)
-        reg_reads = self._get_reg_reads(final_state)
         l.debug("... checking for reg moves")
         self._check_reg_change_dependencies(init_state, final_state, gadget)
-        self._check_reg_movers(init_state, final_state, reg_reads, gadget)
+        self._check_reg_movers(init_state, final_state, gadget)
         self._analyze_concrete_regs(init_state, final_state, gadget)
 
         # memory access analysis
@@ -460,38 +459,33 @@ class GadgetAnalyzer:
             if len(controllers) != 0:
                 gadget.reg_controllers[reg] = set(controllers)
 
-    def _check_reg_movers(self, symbolic_state, symbolic_p, reg_reads, gadget):
+    def _check_reg_movers(self, init_state, final_state, gadget):
         """
         Checks if any data is directly copied from one register to another
-        :param symbolic_state: the input state for testing
-        :param symbolic_p: the stepped path, symbolic_state is an ancestor of it.
-        :param reg_reads: all the registers which were read
+        :param init_state: the input state for testing
+        :param final_state: the stepped path, symbolic_state is an ancestor of it.
         :param gadget: the gadget in which to store the reg movers
         :return:
         """
-        for reg in gadget.changed_regs:
-            regs_to_check = reg_reads
-            # skip popped regs
-            if reg in gadget.popped_regs:
+        for reg in gadget.changed_regs - gadget.popped_regs:
+            final_val = final_state.registers.load(reg)
+            if len(final_val.variables) != 1:
                 continue
-            # skip regs that depend on more than 1 reg
-            if reg in gadget.reg_dependencies:
-                if len(gadget.reg_dependencies[reg]) != 1:
-                    continue
-                regs_to_check = gadget.reg_dependencies[reg]
-            for from_reg in regs_to_check:
-                ast_1 = symbolic_state.registers.load(from_reg)
-                ast_2 = symbolic_p.registers.load(reg)
-                if ast_1 is ast_2:
-                    gadget.reg_moves.append(RopRegMove(from_reg, reg, self.project.arch.bits))
+            var_name = list(final_val.variables)[0]
+            if not var_name.startswith("sreg_"):
+                continue
+            from_reg = var_name[5:].split('-')[0]
+            init_val = init_state.registers.load(from_reg)
+            if init_val is final_val:
+                gadget.reg_moves.append(RopRegMove(from_reg, reg, self.project.arch.bits))
+            else:
                 # try lower 32 bits (this is intended for amd64)
-                # todo do this for less bits too?
-                else:
-                    half_bits = self.project.arch.bits // 2
-                    ast_1 = claripy.Extract(half_bits-1, 0, ast_1)
-                    ast_2 = claripy.Extract(half_bits-1, 0, ast_2)
-                    if ast_1 is ast_2:
-                        gadget.reg_moves.append(RopRegMove(from_reg, reg, half_bits))
+                # TODO: do this for less bits too?
+                half_bits = self.project.arch.bits // 2
+                init_val = claripy.Extract(half_bits-1, 0, init_val)
+                final_val = claripy.Extract(half_bits-1, 0, final_val)
+                if init_val is final_val:
+                    gadget.reg_moves.append(RopRegMove(from_reg, reg, half_bits))
 
     def _check_for_control_type(self, init_state, final_state):
         """
@@ -952,25 +946,6 @@ class GadgetAnalyzer:
         """
         controllers = rop_utils.get_ast_controllers(symbolic_state, symbolic_p.registers.load(test_reg), reg_deps)
         return controllers
-
-    def _get_reg_reads(self, path):
-        """
-        Finds all the registers read in a path
-        :param path: The path to check
-        :return: A set of register names which are read
-        """
-        all_reg_reads = set()
-        for a in reversed(path.history.actions):
-            if a.type == "reg" and a.action == "read":
-                try:
-                    reg_name = rop_utils.get_reg_name(self.project.arch, a.offset)
-                    if reg_name in self.arch.reg_set:
-                        all_reg_reads.add(reg_name)
-                    elif reg_name != self.arch.stack_pointer:
-                        l.info("reg read from register not in reg_set: %s", reg_name)
-                except RegNotFoundException as e:
-                    l.debug(e)
-        return all_reg_reads
 
     def _get_reg_writes(self, path):
         """

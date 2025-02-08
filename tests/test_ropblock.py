@@ -20,8 +20,17 @@ def test_reg_mover():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=True, only_check_near_rets=False)
 
-    rop.analyze_gadget(0x46f562) # mov rax, rbp; pop rbp; pop r12; ret
-    rop.analyze_gadget(0x524a50) # push rax; mov eax, 1; pop rbx; pop rbp; pop r12; ret
+    g1 = rop.analyze_gadget(0x46f562) # mov rax, rbp; pop rbp; pop r12; ret
+    g2 = rop.analyze_gadget(0x524a50) # push rax; mov eax, 1; pop rbx; pop rbp; pop r12; ret
+    assert g1 is not None and g2 is not None
+
+    rb = RopBlock.from_gadget_list([g1, g2], rop.chain_builder._reg_mover)
+    assert len(rb.reg_moves) == 1
+    move = rb.reg_moves[0]
+    assert move.from_reg == 'rbp'
+    assert move.to_reg == 'rbx'
+    assert move.bits == 64
+
     chain = rop.move_regs(rbx='rbp')
     chain._blank_state.regs.rbp = 0x41414141
 
