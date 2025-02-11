@@ -34,7 +34,7 @@ class MemWriter(Builder):
         for g in gadgets:
             if not g.self_contained:
                 continue
-            sym_rw = set(m for m in g.mem_reads + g.mem_writes if m.is_symbolic_access())
+            sym_rw = set(m for m in g.mem_reads + g.mem_changes if m.is_symbolic_access())
             if len(sym_rw) > 0 or len(g.mem_writes) != 1:
                 continue
             if g.stack_change <= 0:
