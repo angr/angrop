@@ -29,9 +29,27 @@ class RegSetter(Builder):
         self.hard_chain_cache = None
         # Estimate of how difficult it is to set each register.
         self._reg_weights = None
+        self._reg_setting_dict = None
+
+    def _insert_to_reg_dict(self, gs):
+        for rb in gs:
+            for reg in rb.popped_regs:
+                self._reg_setting_dict[reg].append(rb)
+        for reg in self._reg_setting_dict:
+            lst = self._reg_setting_dict[reg]
+            self._reg_setting_dict[reg] = sorted(lst, key=lambda x: x.stack_change)
 
     def update(self):
         self._reg_setting_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
+
+        # update reg_setting_dict
+        self._reg_setting_dict = defaultdict(list)
+        for g in self._reg_setting_gadgets:
+            if not g.self_contained:
+                continue
+            for reg in g.popped_regs:
+                self._reg_setting_dict[reg].append(g)
+        self._insert_to_reg_dict([]) # sort reg dict
 
         reg_pops = Counter()
         for gadget in self._reg_setting_gadgets:
@@ -43,7 +61,43 @@ class RegSetter(Builder):
 
         self.hard_chain_cache = {}
 
-        ## now we have a functional RegSetter, check whether we can do better
+    def advanced_update(self):
+        # now we have a functional RegSetter, check whether we can do better
+
+        # first, TODO: see whether we can use reg_mover to set hard-registers
+
+        # second, see whether we can use non-self-contained gadgets to reduce stack-change requirements
+        # TODO: currently, we only support jmp_reg gadgets
+        new_rop_blocks = set()
+        for gadget in self._reg_setting_gadgets:
+            if gadget.self_contained:
+                continue
+            if gadget.has_conditional_branch:
+                continue
+            if gadget.transit_type != 'jmp_reg':
+                continue
+            stack_change = gadget.stack_change
+            if gadget.pc_reg not in self._reg_setting_dict:
+                continue
+            pc_setter = self._reg_setting_dict[gadget.pc_reg][0]
+            pc_setter_sc = pc_setter.stack_change
+
+            for reg in gadget.popped_regs:
+                if gadget.pc_reg not in self._reg_setting_dict:
+                    continue
+                total_sc = stack_change + pc_setter_sc
+                reg_sc = self._reg_setting_dict[reg][0].stack_change if reg in self._reg_setting_dict else 0xffffffff
+                if total_sc > reg_sc:
+                    continue
+
+                assert isinstance(pc_setter, RopGadget)
+                try:
+                    chain = self._build_reg_setting_chain([pc_setter, gadget], None, {}, total_sc)
+                    rb = RopBlock.from_chain(chain)
+                    new_rop_blocks.add(rb)
+                except RopException:
+                    pass
+        self._insert_to_reg_dict(new_rop_blocks)
 
     def verify(self, chain, preserve_regs, registers):
         """
@@ -80,6 +134,17 @@ class RegSetter(Builder):
         pc_var = set(state.regs.pc.variables).pop()
         return pc_var.startswith("next_pc")
 
+    def _mixins_to_gadgets(self, mixins):
+        gadgets = []
+        for mixin in mixins:
+            if isinstance(mixin, RopGadget):
+                gadgets.append(mixin)
+            elif isinstance(mixin, RopBlock):
+                gadgets += mixin._gadgets
+            else:
+                raise
+        return gadgets
+
     def run(self, modifiable_memory_range=None, preserve_regs=None, max_length=10, **registers):
         if len(registers) == 0:
             return RopChain(self.project, None, badbytes=self.badbytes)
@@ -99,6 +164,7 @@ class RegSetter(Builder):
             l.debug("building reg_setting chain with chain:\n%s", chain_str)
             stack_change = sum(x.stack_change for x in gadgets)
             try:
+                gadgets = self._mixins_to_gadgets(gadgets)
                 chain = self._build_reg_setting_chain(gadgets, modifiable_memory_range,
                                                       registers, stack_change)
                 chain._concretize_chain_values(timeout=len(chain._values)*3)
@@ -155,12 +221,9 @@ class RegSetter(Builder):
     @staticmethod
     def _verify_chain(chain, regs):
         """
-        make sure the new chain can control the registers
+        make sure the new chain does not do bad memory accesses
         """
         g = chain[-1]
-        if g.transit_type == 'jmp_reg':
-            return g.pc_reg in regs
-
         # make sure all memory access can be forced to happen on valid addresses
         # don't need to consider constant addr or addr popped from stack
         for mem_access in g.mem_reads + g.mem_writes + g.mem_changes:
@@ -195,7 +258,7 @@ class RegSetter(Builder):
             partial_controllers = self._get_sufficient_partial_controllers(registers)
 
         # filter reg setting gadgets
-        gadgets = set(g for g in self._reg_setting_gadgets if g.self_contained)
+        gadgets = self._find_relevant_gadgets(**registers)
         for s in partial_controllers.values():
             gadgets.update(s)
         gadgets = list(gadgets)
@@ -395,11 +458,15 @@ class RegSetter(Builder):
     def _find_relevant_gadgets(self, **registers):
         """
         find gadgets that may pop/load/change requested registers
-        exclude gadgets that do symbolic memory access
         """
-        gadgets = set({})
+        gadgets = set()
+
+        # this step will add crafted rop_blocks as well
+        for reg in registers:
+            gadgets.update(self._reg_setting_dict[reg])
+
         for g in self._reg_setting_gadgets:
-            if g.has_symbolic_access():
+            if not g.self_contained:
                 continue
             for reg in registers:
                 if reg in g.popped_regs:
@@ -683,6 +750,7 @@ class RegSetter(Builder):
     def filter_gadgets(self, gadgets):
         """
         process gadgets based on their effects
+        exclude gadgets that do symbolic memory access
         """
         bests = set()
         gadgets = set(gadgets)
@@ -693,4 +761,5 @@ class RegSetter(Builder):
             bests = bests.union(self._filter_gadgets(equal_class))
 
             gadgets -= equal_class
+        bests = set(g for g in bests if not g.has_symbolic_access())
         return bests

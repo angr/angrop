@@ -183,6 +183,17 @@ class RopBlock(RopChain):
         RopBlock._analyze_effect(rb)
         return rb
 
+    @staticmethod
+    def from_chain(chain):
+        state = chain._blank_state.copy()
+        badbytes = chain._builder.badbytes
+        rb = RopBlock(chain._p, chain._builder, state=state, badbytes=badbytes)
+        rb._gadgets = chain._gadgets.copy()
+        rb._values = chain._values.copy()
+        rb._payload_len = chain._payload_len
+        RopBlock._analyze_effect(rb)
+        return rb
+
     def has_symbolic_access(self):
         accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)
         return any(x.is_symbolic_access() for x in accesses)
