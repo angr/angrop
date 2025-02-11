@@ -202,7 +202,7 @@ def test_gadget_filtering():
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
     rop.analyze_gadget(0x42bca5)
     rop.analyze_gadget(0x42c3c1)
-    rop.chain_builder.update()
+    rop.chain_builder.bootstrap()
     assert len(rop.chain_builder._reg_setter._reg_setting_gadgets) == 1
 
 def test_aarch64_svc():

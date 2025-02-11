@@ -19,7 +19,7 @@ class MemChanger(Builder):
         self._mem_change_gadgets = None
         self._mem_add_gadgets = None
 
-    def update(self):
+    def bootstrap(self):
         self._mem_change_gadgets = self._get_all_mem_change_gadgets(self.chain_builder.gadgets)
         self._mem_add_gadgets = self._get_all_mem_add_gadgets()
 

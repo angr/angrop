@@ -39,7 +39,7 @@ class RegSetter(Builder):
             lst = self._reg_setting_dict[reg]
             self._reg_setting_dict[reg] = sorted(lst, key=lambda x: x.stack_change)
 
-    def update(self):
+    def bootstrap(self):
         self._reg_setting_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
 
         # update reg_setting_dict
@@ -61,7 +61,7 @@ class RegSetter(Builder):
 
         self.hard_chain_cache = {}
 
-    def advanced_update(self):
+    def optimize(self):
         # now we have a functional RegSetter, check whether we can do better
 
         # first, TODO: see whether we can use reg_mover to set hard-registers
@@ -468,6 +468,8 @@ class RegSetter(Builder):
         for g in self._reg_setting_gadgets:
             if not g.self_contained:
                 continue
+            if g.has_symbolic_access():
+                continue
             for reg in registers:
                 if reg in g.popped_regs:
                     gadgets.add(g)
@@ -761,5 +763,4 @@ class RegSetter(Builder):
             bests = bests.union(self._filter_gadgets(equal_class))
 
             gadgets -= equal_class
-        bests = set(g for g in bests if not g.has_symbolic_access())
         return bests

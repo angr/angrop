@@ -21,7 +21,7 @@ class MemWriter(Builder):
         self._mem_write_gadgets: set = None # type: ignore
         self._good_mem_write_gadgets: set = None # type: ignore
 
-    def update(self):
+    def bootstrap(self):
         self._mem_write_gadgets = self._get_all_mem_write_gadgets(self.chain_builder.gadgets)
         self._good_mem_write_gadgets = set()
 

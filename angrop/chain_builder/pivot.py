@@ -32,7 +32,7 @@ class Pivot(Builder):
         super().__init__(chain_builder)
         self._pivot_gadgets: list = None # type: ignore
 
-    def update(self):
+    def bootstrap(self):
         self._pivot_gadgets = self.filter_gadgets(self.chain_builder.pivot_gadgets)
 
     def pivot(self, thing):

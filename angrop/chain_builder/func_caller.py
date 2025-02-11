@@ -30,7 +30,7 @@ class FuncCaller(Builder):
                             platform=self.project.simos.name if self.project.simos is not None else None,
                         )(self.project.arch)
 
-    def update(self):
+    def bootstrap(self):
         cc = self._cc
         self._func_jmp_gadgets = set()
         for g in self.chain_builder.gadgets:

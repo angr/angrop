@@ -43,7 +43,7 @@ class SysCaller(FuncCaller):
     def supported_os(os):
         return "unix" in os.lower()
 
-    def update(self):
+    def bootstrap(self):
         self.syscall_gadgets = self.filter_gadgets(self.chain_builder.syscall_gadgets)
 
     def filter_gadgets(self, gadgets) -> list: # pylint: disable=no-self-use

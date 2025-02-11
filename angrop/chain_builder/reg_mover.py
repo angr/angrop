@@ -23,13 +23,10 @@ class RegMover(Builder):
         self._reg_moving_blocks = None
         self._graph = None
 
-    def update(self):
+    def bootstrap(self):
         reg_moving_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
         self._reg_moving_blocks = {g for g in reg_moving_gadgets if g.self_contained}
         self._build_move_graph()
-
-    def advanced_update(self):
-        pass
 
     def _build_move_graph(self):
         self._graph = nx.DiGraph()

@@ -371,14 +371,14 @@ class Builder:
         return bests
 
     @abstractmethod
-    def update(self):
+    def bootstrap(self):
         """
         update the builder based on current gadgets to bootstrap a functional builder
         """
         raise NotImplementedError("each Builder class should have an `update` method!")
 
     @abstractmethod
-    def advanced_update(self):
+    def optimize(self):
         """
         improve the capability of this builder using other builders
         """

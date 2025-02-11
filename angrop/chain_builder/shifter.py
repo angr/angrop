@@ -17,7 +17,7 @@ class Shifter(Builder):
 
         self.shift_gadgets = None
 
-    def update(self):
+    def bootstrap(self):
         self.shift_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
 
     def verify_shift(self, chain, length, preserve_regs):
