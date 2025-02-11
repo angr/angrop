@@ -430,7 +430,7 @@ def test_retn_i386_call_chain():
     g = rop.analyze_gadget(0x809d9fb)
     rop._chain_builder._shifter.shift_gadgets = {g.stack_change: [g]}
 
-    rop.func_call('write', [1, 0x80AC5E8, 17], needs_return=False)
+    chain = rop.func_call('write', [1, 0x80AC5E8, 17], needs_return=False)
 
     chain = None
     try:

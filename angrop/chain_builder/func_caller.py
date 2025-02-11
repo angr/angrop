@@ -121,7 +121,7 @@ class FuncCaller(Builder):
                     except:
                         continue
 
-        raise Exception("Could not find mem pointing to func in binary memory")
+        raise RopException("Could not find mem pointing to func in binary memory")
 
     def _func_call(self, func_gadget, cc, args, extra_regs=None, preserve_regs=None,
                    needs_return=True, jmp_mem_target=None, **kwargs):
