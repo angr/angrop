@@ -113,7 +113,7 @@ class RegMover(Builder):
 
     def run(self, preserve_regs=None, **registers):
         if len(registers) == 0:
-            return RopChain(self.project, None, badbytes=self.badbytes)
+            return RopChain(self.project, self, badbytes=self.badbytes)
 
         # sanity check
         preserve_regs = set(preserve_regs) if preserve_regs else set()
