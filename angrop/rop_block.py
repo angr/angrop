@@ -13,9 +13,6 @@ class RopBlock(RopChain):
        the contain-flow
     """
 
-    gadget_analyzer = None
-    sim_state = None
-
     def __init__(self, project, builder, state=None, badbytes=None):
         super().__init__(project, builder, state=state, badbytes=badbytes)
 
@@ -39,22 +36,9 @@ class RopBlock(RopChain):
 
         self.isn_count: int = None # type: ignore
 
-        if self.gadget_analyzer is None:
-            self.__class__.gadget_analyzer = GadgetAnalyzer(project, True, kernel_mode=False, arch=builder.arch)
-
     @staticmethod
     def new_sim_state(builder):
-        if RopBlock.sim_state and RopBlock.sim_state.project == builder.project:
-            return RopBlock.sim_state.copy()
-        arch = builder.arch
-        project = builder.project
-        state = rop_utils.make_symbolic_state(
-            builder.project,
-            arch.reg_set,
-            stack_gsize=80*3 # this is a rop_block, we need to allow more gadgets
-        )
-        rop_utils.make_reg_symbolic(state, arch.base_pointer)
-        RopBlock.sim_state = state
+        state = builder._sim_state
         return state.copy()
 
     @property
@@ -69,14 +53,14 @@ class RopBlock(RopChain):
 
     def __add__(self, other):
         res = self._chain_block(other)
-        self._analyze_effect(res)
+        res._analyze_effect()
         return res
 
-    @staticmethod
-    def _analyze_effect(rb):
+    def _analyze_effect(self):
+        rb = self
         init_state, final_state = rb.sim_exec()
 
-        ga = RopBlock.gadget_analyzer
+        ga = self._builder._gadget_analyzer
 
         # stack change
         ga._compute_sp_change(init_state, final_state, rb)
@@ -181,7 +165,7 @@ class RopBlock(RopChain):
         rb = RopBlock.from_gadget(gs[0], builder)
         for g in gs[1:]:
             rb = rb._chain_block(RopBlock.from_gadget(g, builder))
-        RopBlock._analyze_effect(rb)
+        rb._analyze_effect()
         return rb
 
     @staticmethod
@@ -192,7 +176,7 @@ class RopBlock(RopChain):
         rb._gadgets = chain._gadgets.copy()
         rb._values = chain._values.copy()
         rb._payload_len = chain._payload_len
-        RopBlock._analyze_effect(rb)
+        rb._analyze_effect()
         return rb
 
     def has_symbolic_access(self):
@@ -214,5 +198,3 @@ class RopBlock(RopChain):
         cp.mem_changes = list(self.mem_changes)
         cp.isn_count = self.isn_count
         return cp
-
-from .gadget_finder.gadget_analyzer import GadgetAnalyzer

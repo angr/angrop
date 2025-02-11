@@ -9,6 +9,7 @@ from ..errors import RopException
 from ..rop_gadget import RopGadget
 from ..rop_value import RopValue
 from ..rop_chain import RopChain
+from ..gadget_finder.gadget_analyzer import GadgetAnalyzer
 
 class Builder:
     """
@@ -18,6 +19,15 @@ class Builder:
         self.chain_builder = chain_builder
         self.project = chain_builder.project
         self.arch = chain_builder.arch
+        self._gadget_analyzer = GadgetAnalyzer(self.project,
+                                               True,
+                                               kernel_mode=False,
+                                               arch=self.arch)
+        self._sim_state = rop_utils.make_symbolic_state(
+                                self.project,
+                                self.arch.reg_set,
+                                stack_gsize=80*3
+                                )
 
     @property
     def badbytes(self):
