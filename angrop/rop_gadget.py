@@ -147,8 +147,9 @@ class RopGadget:
         return (not self.has_conditional_branch) and self.transit_type == 'pop_pc'
 
     @property
-    def num_mem_access(self):
-        return len(self.mem_reads) + len(self.mem_writes) + len(self.mem_changes)
+    def num_sym_mem_access(self):
+        accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)
+        return len([x for x in accesses if x.is_symbolic_access()])
 
     def has_symbolic_access(self):
         accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)

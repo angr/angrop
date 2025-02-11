@@ -201,7 +201,7 @@ class RegMover(Builder):
 
     def _better_than(self, g1, g2):
         if g1.stack_change <= g2.stack_change and \
-                g1.num_mem_access <= g2.num_mem_access and \
+                g1.num_sym_mem_access <= g2.num_sym_mem_access and \
                 g1.isn_count <= g2.isn_count:
             return True
         return False

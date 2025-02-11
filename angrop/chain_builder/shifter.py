@@ -130,7 +130,7 @@ class Shifter(Builder):
         return True
 
     def _better_than(self, g1, g2):
-        if g1.num_mem_access > g2.num_mem_access:
+        if g1.num_sym_mem_access > g2.num_sym_mem_access:
             return False
         if not g1.changed_regs.issubset(g2.changed_regs):
             return False
@@ -146,7 +146,7 @@ class Shifter(Builder):
         gadgets = [
             x
             for x in gadgets
-            if x.num_mem_access == 0
+            if x.num_sym_mem_access == 0
             and x.self_contained
         ]
 

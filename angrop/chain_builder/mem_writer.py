@@ -34,7 +34,8 @@ class MemWriter(Builder):
         for g in gadgets:
             if not g.self_contained:
                 continue
-            if len(g.mem_reads) + len(g.mem_changes) > 0 or len(g.mem_writes) != 1:
+            sym_rw = set(m for m in g.mem_reads + g.mem_writes if m.is_symbolic_access())
+            if len(sym_rw) > 0 or len(g.mem_writes) != 1:
                 continue
             if g.stack_change <= 0:
                 continue
@@ -46,7 +47,7 @@ class MemWriter(Builder):
     def _better_than(self, g1, g2):
         if g1.stack_change > g2.stack_change:
             return False
-        if g1.num_mem_access > g2.num_mem_access:
+        if g1.num_sym_mem_access > g2.num_sym_mem_access:
             return False
         if g1.isn_count > g2.isn_count:
             return False

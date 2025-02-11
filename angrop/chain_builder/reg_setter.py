@@ -68,7 +68,7 @@ class RegSetter(Builder):
 
         # second, see whether we can use non-self-contained gadgets to reduce stack-change requirements
         # TODO: currently, we only support jmp_reg gadgets
-        new_rop_blocks = set()
+        bests = {}
         for gadget in self._reg_setting_gadgets:
             if gadget.self_contained:
                 continue
@@ -79,7 +79,16 @@ class RegSetter(Builder):
             stack_change = gadget.stack_change
             if gadget.pc_reg not in self._reg_setting_dict:
                 continue
-            pc_setter = self._reg_setting_dict[gadget.pc_reg][0]
+
+            # choose the best gadget to set the PC for this jmp_reg gadget
+            pc_setter = None
+            for g in self._reg_setting_dict[gadget.pc_reg]:
+                if g.has_symbolic_access():
+                    continue
+                pc_setter = g
+                break
+            if pc_setter is None:
+                continue
             pc_setter_sc = pc_setter.stack_change
 
             for reg in gadget.popped_regs:
@@ -94,10 +103,14 @@ class RegSetter(Builder):
                 try:
                     chain = self._build_reg_setting_chain([pc_setter, gadget], None, {}, total_sc)
                     rb = RopBlock.from_chain(chain)
-                    new_rop_blocks.add(rb)
+                    assert rb.stack_change == total_sc
+                    if reg not in bests or rb.stack_change < bests[reg].stack_change:
+                        bests[reg] = rb
+                    elif rb.stack_change == bests[reg].stack_change and bests[reg].num_sym_mem_access > rb.num_sym_mem_access:
+                        bests[reg] = rb
                 except RopException:
                     pass
-        self._insert_to_reg_dict(new_rop_blocks)
+        self._insert_to_reg_dict(bests.values())
 
     def verify(self, chain, preserve_regs, registers):
         """
@@ -186,7 +199,7 @@ class RegSetter(Builder):
 
         # algorithm2
         yield from self.find_candidate_chains_pop_only_bfs_search(
-                                    self._find_relevant_gadgets(**registers),
+                                    self._find_relevant_gadgets(allow_mem_access=False, **registers),
                                     preserve_regs.copy(),
                                     **registers)
 
@@ -223,10 +236,11 @@ class RegSetter(Builder):
         """
         make sure the new chain does not do bad memory accesses
         """
-        g = chain[-1]
-        # make sure all memory access can be forced to happen on valid addresses
-        # don't need to consider constant addr or addr popped from stack
-        for mem_access in g.mem_reads + g.mem_writes + g.mem_changes:
+        accesses = set()
+        for g in chain:
+            accesses.update(set(g.mem_reads + g.mem_writes + g.mem_changes))
+        accesses = set(m for m in accesses if m.is_symbolic_access())
+        for mem_access in accesses:
             if mem_access.addr_controllers and not mem_access.addr_controllers.intersection(regs):
                 return False
 
@@ -258,15 +272,12 @@ class RegSetter(Builder):
             partial_controllers = self._get_sufficient_partial_controllers(registers)
 
         # filter reg setting gadgets
-        gadgets = self._find_relevant_gadgets(**registers)
+        allow_mem_access = modifiable_memory_range is not None
+        gadgets = self._find_relevant_gadgets(allow_mem_access=allow_mem_access, **registers)
         for s in partial_controllers.values():
             gadgets.update(s)
         gadgets = list(gadgets)
-        if modifiable_memory_range is None:
-            gadgets = [g for g in gadgets if
-                       len(g.mem_changes) == 0 and len(g.mem_writes) == 0 and len(g.mem_reads) == 0]
         l.debug("finding best gadgets")
-
 
         # lets try doing a graph search to set registers, something like dijkstra's for minimum length
 
@@ -298,7 +309,7 @@ class RegSetter(Builder):
                     continue
 
                 # ignore gadgets that set any of our preserved registers
-                if not g.changed_regs.isdisjoint(preserve_regs):
+                if g.changed_regs.intersection(preserve_regs):
                     continue
 
                 stack_change = data[regs][1]
@@ -368,12 +379,12 @@ class RegSetter(Builder):
         end_regs = set(start_regs)
 
         # skip ones that change memory if no modifiable_memory_addr
-        if modifiable_memory_range is None and \
-                (len(g.mem_reads) > 0 or len(g.mem_writes) > 0 or len(g.mem_changes) > 0):
+        if modifiable_memory_range is None and g.has_symbolic_access():
             return set(), set()
         elif modifiable_memory_range is not None:
             # check if we control all the memory reads/writes/changes
-            all_mem_accesses = g.mem_changes + g.mem_reads + g.mem_writes
+            accesses =  g.mem_changes + g.mem_reads + g.mem_writes
+            all_mem_accesses = [m for m in accesses if m.is_symbolic_access()]
             mem_accesses_controlled = True
             for m_access in all_mem_accesses:
                 for reg in m_access.addr_dependencies:
@@ -455,7 +466,7 @@ class RegSetter(Builder):
 
     #### Chain Building Algorithm 2: pop-only BFS search ####
 
-    def _find_relevant_gadgets(self, **registers):
+    def _find_relevant_gadgets(self, allow_mem_access=True, **registers):
         """
         find gadgets that may pop/load/change requested registers
         """
@@ -469,6 +480,8 @@ class RegSetter(Builder):
             if not g.self_contained:
                 continue
             if g.has_symbolic_access():
+                continue
+            if not allow_mem_access and g.num_sym_mem_access:
                 continue
             for reg in registers:
                 if reg in g.popped_regs:
@@ -613,12 +626,7 @@ class RegSetter(Builder):
             if not gadget.changed_regs.isdisjoint(preserve_regs):
                 continue
             # Skip gadgets with non-constant memory accesses if we don't have memory that can be safely accessed.
-            if modifiable_memory_range is None and any(
-                mem_access.addr_constant is None
-                for mem_access in itertools.chain(
-                    gadget.mem_changes, gadget.mem_reads, gadget.mem_writes
-                )
-            ):
+            if modifiable_memory_range is None and gadget.has_symbolic_access():
                 continue
             remaining_regs = self._get_remaining_regs(gadget, registers)
             if remaining_regs is None:
@@ -708,7 +716,7 @@ class RegSetter(Builder):
         # gadget grouping
         d = defaultdict(list)
         for g in gadgets:
-            key = (len(g.changed_regs), g.stack_change, g.num_mem_access, g.isn_count)
+            key = (len(g.changed_regs), g.stack_change, g.num_sym_mem_access, g.isn_count)
             d[key].append(g)
         if len(d) == 0:
             return set()

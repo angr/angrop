@@ -54,8 +54,8 @@ class Builder:
             elif stack_change1 < stack_change2:
                 return -1
 
-            num_mem_access1 = sum(x.num_mem_access for x in chain1)
-            num_mem_access2 = sum(x.num_mem_access for x in chain2)
+            num_mem_access1 = sum(x.num_sym_mem_access for x in chain1)
+            num_mem_access2 = sum(x.num_sym_mem_access for x in chain2)
             if num_mem_access1 > num_mem_access2:
                 return 1
             if num_mem_access1 < num_mem_access2:

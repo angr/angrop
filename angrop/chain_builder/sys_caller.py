@@ -14,9 +14,9 @@ def cmp(g1, g2):
     if not g1.can_return and g2.can_return:
         return 1
 
-    if g1.num_mem_access < g2.num_mem_access:
+    if g1.num_sym_mem_access < g2.num_sym_mem_access:
         return -1
-    if g1.num_mem_access > g2.num_mem_access:
+    if g1.num_sym_mem_access > g2.num_sym_mem_access:
         return 1
 
     if g1.stack_change < g2.stack_change:

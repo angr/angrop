@@ -63,7 +63,7 @@ class MemChanger(Builder):
         if g1.isn_count <= g2.isn_count and \
             g1.stack_change <= g2.stack_change and \
             len(g1.changed_regs) <= len(g2.changed_regs) and \
-            g1.num_mem_access <= g2.num_mem_access:
+            g1.num_sym_mem_access <= g2.num_sym_mem_access:
             return True
         return False
 
@@ -72,7 +72,8 @@ class MemChanger(Builder):
         for g in gadgets:
             if not g.self_contained:
                 continue
-            if len(g.mem_reads) + len(g.mem_writes) > 0 or len(g.mem_changes) != 1:
+            sym_rw = set(m for m in g.mem_reads + g.mem_writes if m.is_symbolic_access())
+            if len(sym_rw) > 0 or len(g.mem_changes) != 1:
                 continue
             for m_access in g.mem_changes:
                 # assume we need intersection of addr_dependencies and data_dependencies to be 0
@@ -88,9 +89,9 @@ class MemChanger(Builder):
     def _sort_gadgets(gadgets):
         def cmp_func(g1, g2):
             # prefer gadget with fewer memory accesses
-            if g1.num_mem_access > g2.num_mem_access:
+            if g1.num_sym_mem_access > g2.num_sym_mem_access:
                 return 1
-            if g1.num_mem_access < g2.num_mem_access:
+            if g1.num_sym_mem_access < g2.num_sym_mem_access:
                 return -1
             # prefer gadget taking less space
             if g1.stack_change > g2.stack_change:
