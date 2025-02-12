@@ -288,7 +288,6 @@ class SyscallGadget(RopGadget):
     def __str__(self):
         s = f"SyscallGadget {self.addr:#x}\n"
         s += f"  stack change: {self.stack_change:#x}\n"
-        s += f"  transit type: {self.transit_type}\n"
         s += f"  can return: {self.can_return}\n"
         return s
 

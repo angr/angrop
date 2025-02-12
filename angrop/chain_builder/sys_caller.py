@@ -32,7 +32,7 @@ def cmp(g1, g2):
 
 class SysCaller(FuncCaller):
     """
-    handle linux system calls invocations, only support i386 and x86_64 atm
+    handle linux system calls invocations
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)

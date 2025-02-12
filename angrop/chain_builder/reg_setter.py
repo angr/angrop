@@ -434,9 +434,6 @@ class RegSetter(Builder):
         # doesnt change it
         if reg not in gadget.changed_regs:
             return False
-        # does syscall
-        if gadget.makes_syscall:
-            return False
         # can be controlled completely, not a partial control
         if reg in gadget.reg_controllers or reg in gadget.popped_regs:
             return False

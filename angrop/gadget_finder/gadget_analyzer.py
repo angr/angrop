@@ -323,7 +323,6 @@ class GadgetAnalyzer:
             if self._does_pivot(final_state):
                 return None
             gadget = SyscallGadget(addr=addr)
-            gadget.makes_syscall = self._does_syscall(final_state)
         elif ctrl_type == 'pivot' or self._does_pivot(final_state):
             gadget = PivotGadget(addr=addr)
         else:
