@@ -282,10 +282,20 @@ class GadgetAnalyzer:
         return False
 
     def _try_stepping_past_syscall(self, state):
-        try:
-            return rop_utils.step_to_unconstrained_successor(self.project, state, max_steps=3)
-        except Exception: # pylint:disable=broad-exception-caught
+        simgr = self.project.factory.simgr(state, save_unconstrained=True)
+        def filter_func(state):
+            if not state.ip.concrete:
+                return None
+            if self.project.is_hooked(state.addr):
+                # We don't want to go into SimProcedures.
+                return simgr.DROP
+            if not self.is_in_kernel(state) and not self._block_make_sense(state.addr):
+                return simgr.DROP
+            return None
+        simgr.run(n=2, filter_func=filter_func)
+        if len(simgr.unconstrained) != 1:
             return state
+        return simgr.unconstrained[0]
 
     @staticmethod
     def _control_to_transit_type(ctrl_type):

@@ -47,6 +47,9 @@ class SysCaller(FuncCaller):
         self.syscall_gadgets = self.filter_gadgets(self.chain_builder.syscall_gadgets)
 
     def filter_gadgets(self, gadgets) -> list: # pylint: disable=no-self-use
+        # currently, we don't support negative stack_change
+        # syscall gadgets
+        gadgets = list({g for g in gadgets if g.stack_change >= 0})
         return sorted(gadgets, key=functools.cmp_to_key(cmp))
 
     def _try_invoke_execve(self, path_addr):
