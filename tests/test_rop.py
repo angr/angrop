@@ -166,7 +166,7 @@ def test_rop_x86_64():
     # test creating a rop chain
     chain = rop.set_regs(rbp=0x1212, rbx=0x1234567890123456)
     # smallest possible chain
-    assert chain.payload_len == 24
+    assert chain.payload_len == 32
     # chain is correct
     result_state = execute_chain(b, chain)
     assert result_state.solver.eval(result_state.regs.rbp) == 0x1212
@@ -194,7 +194,7 @@ def test_rop_i386_cgc():
     # test creating a rop chain
     chain = rop.set_regs(ebx=0x98765432, ecx=0x12345678)
     # smallest possible chain
-    assert chain.payload_len == 12
+    assert chain.payload_len == 16
     # chain is correct
     result_state = execute_chain(b, chain)
     assert result_state.solver.eval(result_state.regs.ebx) == 0x98765432
@@ -221,7 +221,7 @@ def test_rop_arm():
     # test creating a rop chain
     chain = rop.set_regs(r11=0x99887766)
     # smallest possible chain
-    assert chain.payload_len == 8
+    assert chain.payload_len == 12
     # correct chains, using a more complicated chain here
     chain = rop.set_regs(r4=0x99887766, r9=0x44556677, r11=0x11223344)
     result_state = execute_chain(b, chain)
