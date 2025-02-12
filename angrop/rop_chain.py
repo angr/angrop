@@ -28,7 +28,7 @@ class RopChain:
         self._values = []
         # use self.payload_len in presentation layer, use self._payload in internal stuff
         # because next_pc is an internal mechanism, we don't expose it to users
-        self._payload_len = 0
+        self.payload_len = 0
 
         # blank state used for solving
         self._blank_state = self._p.factory.blank_state() if state is None else state
@@ -40,8 +40,8 @@ class RopChain:
         # need to add the values from the other's stack and the constraints to the result state
         result = self.copy()
         o_state = other._blank_state
-        o_stack = o_state.memory.load(o_state.regs.sp, other._payload_len)
-        result._blank_state.memory.store(result._blank_state.regs.sp + self._payload_len, o_stack)
+        o_stack = o_state.memory.load(o_state.regs.sp, other.payload_len)
+        result._blank_state.memory.store(result._blank_state.regs.sp + self.payload_len, o_stack)
         result._blank_state.add_constraints(*o_state.solver.constraints)
         if not other._values:
             return result
@@ -49,11 +49,11 @@ class RopChain:
         result._gadgets.extend(other._gadgets)
         idx = self.next_pc_idx()
         assert idx is not None or not self._values, "can't add to a chain that does not return!"
-        result._payload_len = self._payload_len + other._payload_len
+        result.payload_len = self.payload_len + other.payload_len
         if idx is not None:
             result._values[idx] = other._values[0]
             result._values.extend(other._values[1:])
-            result._payload_len -= self._p.arch.bytes
+            result.payload_len -= self._p.arch.bytes
         else:
             result._values.extend(other._values)
         return result
@@ -71,7 +71,7 @@ class RopChain:
             value = RopValue(value, self._p)
             value.rebase_analysis(chain=self)
         self._values.append(value)
-        self._payload_len += self._p.arch.bytes
+        self.payload_len += self._p.arch.bytes
 
     def add_gadget(self, gadget):
         value = gadget.addr
@@ -170,7 +170,7 @@ class RopChain:
         cp = self.__class__(self._p, self._builder)
         cp._gadgets = list(self._gadgets)
         cp._values = list(self._values)
-        cp._payload_len = self._payload_len
+        cp.payload_len = self.payload_len
         cp._blank_state = self._blank_state.copy()
         cp.badbytes = self.badbytes.copy()
 
@@ -261,12 +261,6 @@ class RopChain:
         if seg and seg.is_executable:
             return True
         return False
-
-    @property
-    def payload_len(self):
-        if self.next_pc_idx() == len(self._values) - 1:
-            return self._payload_len - self._p.arch.bytes
-        return self._payload_len
 
     def payload_bv(self):
         test_state = self._blank_state.copy()

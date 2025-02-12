@@ -175,7 +175,7 @@ class RopBlock(RopChain):
         rb = RopBlock(chain._p, chain._builder, state=state, badbytes=badbytes)
         rb._gadgets = chain._gadgets.copy()
         rb._values = chain._values.copy()
-        rb._payload_len = chain._payload_len
+        rb.payload_len = chain.payload_len
         rb._analyze_effect()
         return rb
 
