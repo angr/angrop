@@ -256,6 +256,9 @@ class GadgetAnalyzer:
     def is_in_kernel(self, state):
         return rop_utils.is_in_kernel(self.project, state)
 
+    def is_kernel_addr(self, addr):
+        return rop_utils.is_kernel_addr(self.project, addr)
+
     def _can_reach_stopping_states(self, addr, allow_conditional_branches, max_steps=2):
         """
         Use static analysis to check whether the address can lead to unconstrained targets
@@ -371,7 +374,7 @@ class GadgetAnalyzer:
                 l.debug("... mem access with no addr dependencies")
                 return None
 
-        gadget.bbl_addrs = list(final_state.history.bbl_addrs)
+        gadget.bbl_addrs = list(x for x in final_state.history.bbl_addrs if not self.is_kernel_addr(x))
         gadget.isn_count = sum(self.project.factory.block(addr).instructions for addr in gadget.bbl_addrs)
 
         # conditional branch analysis

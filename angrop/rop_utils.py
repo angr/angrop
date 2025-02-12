@@ -260,12 +260,15 @@ def cast_rop_value(val, project):
 def is_in_kernel(project, state):
     ip = state.ip
     if not ip.symbolic:
-        obj = project.loader.find_object_containing(ip.concrete_value)
-        if obj is None:
-            return False
-        if obj.binary == 'cle##kernel':
-            return True
+        return is_kernel_addr(project, ip.concrete_value)
+    return False
+
+def is_kernel_addr(project, addr):
+    obj = project.loader.find_object_containing(addr)
+    if obj is None:
         return False
+    if obj.binary == 'cle##kernel':
+        return True
     return False
 
 def step_one_block(project, state, stop_at_syscall=False):
