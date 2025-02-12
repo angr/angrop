@@ -117,6 +117,28 @@ class GadgetAnalyzer:
 
         return final_states, bad_states
 
+    def _at_syscall(self, state):
+        return self.project.factory.block(state.addr,
+                num_inst=1).vex.jumpkind.startswith("Ijk_Sys")
+
+    def _step_to_syscall(self, state):
+        """
+        windup state to a state just about to make a syscall
+        """
+
+        if self._at_syscall(state):
+            return state
+
+        simgr = state.project.factory.simgr(state)
+        while True:
+            simgr.step(num_inst=1)
+            if not simgr.active:
+                raise RuntimeError("unable to reach syscall instruction")
+            state = simgr.active[0]
+            if self._at_syscall(state):
+                return state
+        return None
+
     @rop_utils.timeout(3)
     def _analyze_gadget(self, addr, allow_conditional_branches):
         l.info("Analyzing 0x%x", addr)
@@ -316,18 +338,7 @@ class GadgetAnalyzer:
             case _:
                 raise ValueError("Unknown control type")
 
-    def _create_gadget(self, addr, init_state, final_state, ctrl_type, do_cond_branch):
-        # create the gadget
-        if ctrl_type == 'syscall' or self._does_syscall(final_state):
-            # gadgets that do syscall and pivoting are too complicated
-            if self._does_pivot(final_state):
-                return None
-            gadget = SyscallGadget(addr=addr)
-        elif ctrl_type == 'pivot' or self._does_pivot(final_state):
-            gadget = PivotGadget(addr=addr)
-        else:
-            gadget = RopGadget(addr=addr)
-
+    def _effect_analysis(self, gadget, init_state, final_state, ctrl_type, do_cond_branch):
         # compute sp change
         l.debug("... computing sp change")
         self._compute_sp_change(init_state, final_state, gadget)
@@ -336,23 +347,24 @@ class GadgetAnalyzer:
             return None
 
         # transit_type-based handling
-        transit_type = self._control_to_transit_type(ctrl_type)
-        gadget.transit_type = transit_type
-        arch_bits = self.project.arch.bits
-        match transit_type:
-            case 'pop_pc': # record pc_offset
-                idx = list(final_state.ip.variables)[0].split('_')[2]
-                gadget.pc_offset = int(idx) * self.project.arch.bytes
-                if gadget.pc_offset >= gadget.stack_change:
-                    return None
-            case 'jmp_reg': # record pc_reg
-                gadget.pc_reg = list(final_state.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
-            case 'jmp_mem': # record pc_target
-                for a in reversed(final_state.history.actions):
-                    if a.type == 'mem' and a.action == 'read' and a.size == arch_bits:
-                        if (a.data.ast == final_state.ip).is_true():
-                            gadget.pc_target = a.addr.ast
-                            break
+        if ctrl_type is not None:
+            transit_type = self._control_to_transit_type(ctrl_type)
+            gadget.transit_type = transit_type
+            arch_bits = self.project.arch.bits
+            match transit_type:
+                case 'pop_pc': # record pc_offset
+                    idx = list(final_state.ip.variables)[0].split('_')[2]
+                    gadget.pc_offset = int(idx) * self.project.arch.bytes
+                    if gadget.pc_offset >= gadget.stack_change:
+                        return None
+                case 'jmp_reg': # record pc_reg
+                    gadget.pc_reg = list(final_state.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
+                case 'jmp_mem': # record pc_target
+                    for a in reversed(final_state.history.actions):
+                        if a.type == 'mem' and a.action == 'read' and a.size == arch_bits:
+                            if (a.data.ast == final_state.ip).is_true():
+                                gadget.pc_target = a.addr.ast
+                                break
 
         # register effect analysis
         l.info("... checking for controlled regs")
@@ -408,6 +420,26 @@ class GadgetAnalyzer:
                 for reg in gadget.popped_regs
             }
 
+        return gadget
+
+    def _create_gadget(self, addr, init_state, final_state, ctrl_type, do_cond_branch):
+        # create the gadget
+        if ctrl_type == 'syscall' or self._does_syscall(final_state):
+            # gadgets that do syscall and pivoting are too complicated
+            if self._does_pivot(final_state):
+                return None
+            prologue_state = self._step_to_syscall(init_state)
+            g = RopGadget(addr=addr)
+            if init_state.addr != prologue_state.addr:
+                self._effect_analysis(g, init_state, prologue_state, None, do_cond_branch)
+            gadget = SyscallGadget(addr=addr)
+            gadget.prologue = g
+        elif ctrl_type == 'pivot' or self._does_pivot(final_state):
+            gadget = PivotGadget(addr=addr)
+        else:
+            gadget = RopGadget(addr=addr)
+
+        gadget = self._effect_analysis(gadget, init_state, final_state, ctrl_type, do_cond_branch)
         return gadget
 
     def _analyze_concrete_regs(self, init_state, final_state, gadget):

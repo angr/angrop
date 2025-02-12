@@ -149,9 +149,10 @@ class SysCaller(FuncCaller):
             return len(set(x.concrete_regs.keys()).intersection(registers.keys()))
         gadgets = sorted(gadgets, reverse=True, key=key_func)
 
+        more = kwargs.pop('preserve_regs', set())
         for gadget in gadgets:
             # separate registers to args and extra_regs
-            to_set_regs = {x:y for x,y in registers.items() if x not in gadget.concrete_regs}
+            to_set_regs = {x:y for x,y in registers.items() if x not in gadget.prologue.concrete_regs}
             if sysnum_reg in to_set_regs:
                 extra_regs = {sysnum_reg: syscall_num}
                 del to_set_regs[sysnum_reg]
@@ -160,8 +161,14 @@ class SysCaller(FuncCaller):
             preserve_regs = set(registers.keys()) - set(to_set_regs.keys())
             if sysnum_reg in preserve_regs:
                 preserve_regs.remove(sysnum_reg)
-            more = kwargs.pop('preserve_regs', set())
             preserve_regs.update(more)
+
+            # now check whether the prologue clobbers the registers
+            clobbered_regs = gadget.prologue.changed_regs - gadget.prologue.popped_regs
+            if clobbered_regs.intersection(preserve_regs):
+                continue
+            if clobbered_regs.intersection(set(to_set_regs.keys())):
+                continue
 
             try:
                 return self._func_call(gadget, cc, args, extra_regs=extra_regs,
