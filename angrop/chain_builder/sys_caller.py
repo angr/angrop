@@ -53,7 +53,7 @@ class SysCaller(FuncCaller):
         return sorted(gadgets, key=functools.cmp_to_key(cmp))
 
     def _try_invoke_execve(self, path_addr):
-        execve_syscall = 0x3b if self.project.arch.bits == 64 else 0xb
+        execve_syscall = self.chain_builder.arch.execve_num
         # next, try to invoke execve(path, ptr, ptr), where ptr points is either NULL or nullptr
         if 0 not in self.badbytes:
             ptr = 0
