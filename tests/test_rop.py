@@ -131,7 +131,7 @@ def verify_execve_chain(chain):
     # verify the syscall arguments
     state = simgr.active[0]
     cc = angr.SYSCALL_CC[proj.arch.name]["default"](proj.arch)
-    assert cc.syscall_num(state).concrete_value == 0x3b
+    assert cc.syscall_num(state).concrete_value == chain._builder.arch.execve_num
     ptr = state.registers.load(cc.ARG_REGS[0])
     assert state.solver.is_true(state.memory.load(ptr, 8) == b'/bin/sh\0')
     assert state.registers.load(cc.ARG_REGS[1]).concrete_value == 0
