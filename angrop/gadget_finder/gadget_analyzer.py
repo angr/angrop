@@ -99,9 +99,10 @@ class GadgetAnalyzer:
             simgr.move(from_stash='active', to_stash='syscall',
                        filter_func=lambda s: rop_utils.is_in_kernel(self.project, s))
 
-        except (claripy.errors.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError):
+        except (claripy.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError): # type: ignore
             return [], []
-        except (claripy.ClaripyFrontendError, angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e:
+        except (claripy.ClaripyFrontendError,
+                angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e: # type: ignore
             l.warning("... claripy error: %s", e)
             return [], []
         except (angr.errors.AngrError, angr.errors.AngrRuntimeError, angr.errors.SimError):
@@ -161,9 +162,10 @@ class GadgetAnalyzer:
             except RopException as e:
                 l.debug("... %s", e)
                 continue
-            except (claripy.errors.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError):
+            except (claripy.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError): # type: ignore
                 continue
-            except (claripy.ClaripyFrontendError, angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e:
+            except (claripy.ClaripyFrontendError,
+                    angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e: # type: ignore
                 l.warning("... claripy error: %s", e)
                 continue
             except (angr.errors.AngrError, angr.errors.AngrRuntimeError, angr.errors.SimError):
@@ -674,7 +676,7 @@ class GadgetAnalyzer:
             final_state = rop_utils.step_to_unconstrained_successor(self.project, state=init_state, precise_action=True)
             dependencies = self._get_reg_dependencies(final_state, "sp")
             last_sp = None
-            init_sym_sp: frozenset = None # type: ignore
+            init_sym_sp = None # type: ignore
             prev_act = None
             bits = self.project.arch.bits
             for act in final_state.history.actions:

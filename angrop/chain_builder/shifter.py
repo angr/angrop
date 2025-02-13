@@ -15,7 +15,7 @@ class Shifter(Builder):
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
 
-        self.shift_gadgets = None
+        self.shift_gadgets: dict = None # type: ignore
 
     def bootstrap(self):
         self.shift_gadgets = self.filter_gadgets(self.chain_builder.gadgets)

@@ -24,11 +24,12 @@ class RegSetter(Builder):
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
-        self._reg_setting_gadgets = None # all the gadgets that can set registers
-        self.hard_chain_cache = None
+        # all the gadgets that can set registers
+        self._reg_setting_gadgets: set[RopGadget]= None # type: ignore
+        self.hard_chain_cache: dict[tuple, list] = None # type: ignore
         # Estimate of how difficult it is to set each register.
-        self._reg_weights = None
-        self._reg_setting_dict = None
+        self._reg_weights: dict[str, int] = None # type: ignore
+        self._reg_setting_dict: dict[str, list] = None # type: ignore
 
     def _insert_to_reg_dict(self, gs):
         for rb in gs:
@@ -527,7 +528,8 @@ class RegSetter(Builder):
                     hard_chain = hard_chains[0]
                 else:
                     hard_chain = self._find_add_chain(gadgets, reg, val)
-                self.hard_chain_cache[key] = hard_chain # we cache the result even if it fails
+                if hard_chain:
+                    self.hard_chain_cache[key] = hard_chain # we cache the result even if it fails
             if not hard_chain:
                 l.error("Fail to set register: %s to: %#x", reg, val)
                 return []

@@ -283,7 +283,7 @@ class SyscallGadget(RopGadget):
     """
     def __init__(self, addr):
         super().__init__(addr)
-        self.prologue = None
+        self.prologue: RopGadget = None # type: ignore
 
     def __str__(self):
         s = f"SyscallGadget {self.addr:#x}\n"

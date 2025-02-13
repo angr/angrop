@@ -20,8 +20,8 @@ class RegMover(Builder):
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
-        self._reg_moving_blocks = None
-        self._graph = None
+        self._reg_moving_blocks: set[RopBlock] = None # type: ignore
+        self._graph: nx.Graph = None # type: ignore
 
     def bootstrap(self):
         reg_moving_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
