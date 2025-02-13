@@ -117,28 +117,6 @@ class GadgetAnalyzer:
 
         return final_states, bad_states
 
-    def _at_syscall(self, state):
-        return self.project.factory.block(state.addr,
-                num_inst=1).vex.jumpkind.startswith("Ijk_Sys")
-
-    def _step_to_syscall(self, state):
-        """
-        windup state to a state just about to make a syscall
-        """
-
-        if self._at_syscall(state):
-            return state
-
-        simgr = state.project.factory.simgr(state)
-        while True:
-            simgr.step(num_inst=1)
-            if not simgr.active:
-                raise RuntimeError("unable to reach syscall instruction")
-            state = simgr.active[0]
-            if self._at_syscall(state):
-                return state
-        return None
-
     @rop_utils.timeout(3)
     def _analyze_gadget(self, addr, allow_conditional_branches):
         l.info("Analyzing 0x%x", addr)
@@ -317,7 +295,10 @@ class GadgetAnalyzer:
             if not self.is_in_kernel(state) and not self._block_make_sense(state.addr):
                 return simgr.DROP
             return None
-        simgr.run(n=2, filter_func=filter_func)
+        try:
+            simgr.run(n=2, filter_func=filter_func)
+        except ValueError:
+            return state
         if len(simgr.unconstrained) != 1:
             return state
         return simgr.unconstrained[0]
@@ -428,7 +409,7 @@ class GadgetAnalyzer:
             # gadgets that do syscall and pivoting are too complicated
             if self._does_pivot(final_state):
                 return None
-            prologue_state = self._step_to_syscall(init_state)
+            prologue_state = rop_utils.step_to_syscall(init_state)
             g = RopGadget(addr=addr)
             if init_state.addr != prologue_state.addr:
                 self._effect_analysis(g, init_state, prologue_state, None, do_cond_branch)

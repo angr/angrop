@@ -282,12 +282,8 @@ class SyscallGadget(RopGadget):
     2. without return: syscall; xxxx
     """
     def __init__(self, addr):
-        # the "gadget" right before the syscall invocation
-        # we need this to track how it affects the syscall invocation
-        self.prologue = None
-        self._project = None
-
         super().__init__(addr)
+        self.prologue = None
 
     def __str__(self):
         s = f"SyscallGadget {self.addr:#x}\n"
@@ -299,21 +295,12 @@ class SyscallGadget(RopGadget):
         return f"<SyscallGadget {self.addr:#x}>"
 
     @property
-    def project(self):
-        return self._project
-
-    @project.setter
-    def project(self, proj):
-        self._project = proj
-        if self.prologue:
-            self.prologue.project = proj
-
-    @property
     def can_return(self):
         return self.transit_type is not None
 
     def copy(self):
         new = super().copy()
+        new.prologue = self.prologue
         return new
 
 class FunctionGadget(RopGadget):

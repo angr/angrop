@@ -5,6 +5,7 @@ import angr
 
 from .func_caller import FuncCaller
 from ..errors import RopException
+from ..import rop_utils
 
 l = logging.getLogger(__name__)
 
@@ -45,6 +46,27 @@ class SysCaller(FuncCaller):
 
     def bootstrap(self):
         self.syscall_gadgets = self.filter_gadgets(self.chain_builder.syscall_gadgets)
+
+    def verify(self, chain, registers, preserve_regs):
+        # these registers are marked as preserved, so they are set by the user
+        # don't verify them here
+        registers = dict(registers)
+        for reg in preserve_regs:
+            if reg in registers:
+                del registers[reg]
+        state = chain.sim_exec_til_syscall()
+        if state is None:
+            return False
+
+        for reg, val in registers.items():
+            bv = getattr(state.regs, reg)
+            if (val.symbolic != bv.symbolic) or state.solver.eval(bv != val.data):
+                chain_str = chain.dstr()
+                l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-2.\nregisters: %s",
+                            chain_str, registers)
+                return False
+
+        return True
 
     def filter_gadgets(self, gadgets) -> list: # pylint: disable=no-self-use
         # currently, we don't support negative stack_change
@@ -130,10 +152,10 @@ class SysCaller(FuncCaller):
             raise NotImplementedError("Currently, we can't handle on stack system call arguments!")
         registers = {}
         for arg, reg in zip(args, cc.ARG_REGS):
-            registers[reg] = arg
+            registers[reg] = rop_utils.cast_rop_value(arg, self.project)
 
         sysnum_reg = self.project.arch.register_names[self.project.arch.syscall_num_offset]
-        registers[sysnum_reg] = syscall_num
+        registers[sysnum_reg] = rop_utils.cast_rop_value(syscall_num, self.project)
 
         # do per-request gadget filtering
         gadgets = self.syscall_gadgets
@@ -163,17 +185,12 @@ class SysCaller(FuncCaller):
                 preserve_regs.remove(sysnum_reg)
             preserve_regs.update(more)
 
-            # now check whether the prologue clobbers the registers
-            clobbered_regs = gadget.prologue.changed_regs - gadget.prologue.popped_regs
-            if clobbered_regs.intersection(preserve_regs):
-                continue
-            if clobbered_regs.intersection(set(to_set_regs.keys())):
-                continue
-
             try:
-                return self._func_call(gadget, cc, args, extra_regs=extra_regs,
+                chain = self._func_call(gadget, cc, args, extra_regs=extra_regs,
                                needs_return=needs_return, preserve_regs=preserve_regs, **kwargs)
-            except Exception: # pylint:disable=broad-exception-caught
+                if self.verify(chain, registers, more):
+                    return chain
+            except RopException:
                 continue
 
         raise RopException(f"Fail to invoke syscall {syscall_num} with arguments: {args}!")

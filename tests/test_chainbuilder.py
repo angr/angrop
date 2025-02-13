@@ -112,9 +112,20 @@ def test_x86_64_syscall():
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
 
+    gadget = rop.analyze_gadget(0x536718)
+    rop.chain_builder._sys_caller.syscall_gadgets = [gadget]
+    chain = rop.do_syscall(0xca, [0, 0x81], needs_return=False)
+    assert chain
+
+    # TODO: technically, we should support using this gadget, but
+    # we don't. So use it to test whether we can catch wrong chains
     gadget = rop.analyze_gadget(0x536715)
     rop.chain_builder._sys_caller.syscall_gadgets = [gadget]
-    rop.do_syscall(0xca, [0, 0x81], needs_return=False)
+    try:
+        chain = rop.do_syscall(0xca, [0, 0x81], needs_return=False)
+        assert chain is None
+    except RopException:
+        pass
 
 def test_preserve_regs():
     cache_path = os.path.join(CACHE_DIR, "1after909")

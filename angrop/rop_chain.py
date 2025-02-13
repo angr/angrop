@@ -166,6 +166,15 @@ class RopChain:
             assert len(simgr.active) == 1
         return simgr.one_active
 
+    def sim_exec_til_syscall(self):
+        project = self._p
+        state = project.factory.blank_state()
+        for idx, val in enumerate(self._values):
+            offset = idx*project.arch.bytes
+            state.memory.store(state.regs.sp+offset, val.data, project.arch.bytes, endness=project.arch.memory_endness)
+        state.ip = state.stack_pop()
+        return rop_utils.step_to_syscall(state)
+
     def copy(self):
         cp = self.__class__(self._p, self._builder)
         cp._gadgets = list(self._gadgets)
