@@ -260,12 +260,15 @@ def cast_rop_value(val, project):
 def is_in_kernel(project, state):
     ip = state.ip
     if not ip.symbolic:
-        obj = project.loader.find_object_containing(ip.concrete_value)
-        if obj is None:
-            return False
-        if obj.binary == 'cle##kernel':
-            return True
+        return is_kernel_addr(project, ip.concrete_value)
+    return False
+
+def is_kernel_addr(project, addr):
+    obj = project.loader.find_object_containing(addr)
+    if obj is None:
         return False
+    if obj.binary == 'cle##kernel':
+        return True
     return False
 
 def step_one_block(project, state, stop_at_syscall=False):
@@ -363,6 +366,26 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
 
     except (angr.errors.AngrError, angr.errors.SimError) as e:
         raise RopException("Does not get to a single unconstrained successor") from e
+
+def at_syscall(state):
+    return state.project.factory.block(state.addr, num_inst=1).vex.jumpkind.startswith("Ijk_Sys")
+
+def step_to_syscall(state):
+    """
+    windup state to a state just about to make a syscall
+    """
+    if at_syscall(state):
+        return state
+
+    simgr = state.project.factory.simgr(state)
+    while True:
+        simgr.step(num_inst=1)
+        if not simgr.active:
+            raise RuntimeError("unable to reach syscall instruction")
+        state = simgr.active[0]
+        if at_syscall(state):
+            return state
+    return None
 
 def timeout(seconds_before_timeout):
     def decorate(f):

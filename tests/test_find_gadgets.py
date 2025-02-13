@@ -54,7 +54,7 @@ def test_arm_thumb_mode():
     gadget = rop.analyze_gadget(0x4bf858+1)
 
     assert gadget
-    assert gadget.block_length == 6
+    assert gadget.isn_count == 2
 
 def test_pivot_gadget():
     # pylint: disable=pointless-string-statement
@@ -202,7 +202,7 @@ def test_gadget_filtering():
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
     rop.analyze_gadget(0x42bca5)
     rop.analyze_gadget(0x42c3c1)
-    rop.chain_builder.update()
+    rop.chain_builder.bootstrap()
     assert len(rop.chain_builder._reg_setter._reg_setting_gadgets) == 1
 
 def test_aarch64_svc():
@@ -216,6 +216,41 @@ def test_aarch64_reg_setter():
     rop = proj.analyses.ROP(fast_mode=True, only_check_near_rets=False)
     g = rop.analyze_gadget(0x00000000004c29a0)
     assert g is not None
+
+def test_enter():
+    proj = angr.Project(os.path.join(tests_dir, "x86_64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    g = rop.analyze_gadget(0x00000000004f83f3)
+    assert g is not None
+
+def test_jmp_mem_gadget():
+    proj = angr.Project(os.path.join(tests_dir, "x86_64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    # 0x0000000000031f6d : jmp qword ptr [rax]
+    # 0x000000000004bec2 : call qword ptr [r11 + rax*8]
+    g = rop.analyze_gadget(0x0000000000431f6d)
+    assert g is not None
+    assert g.transit_type == 'jmp_mem'
+    g = rop.analyze_gadget(0x000000000044bec2)
+    assert g is not None
+    assert g.transit_type == 'jmp_mem'
+
+def test_syscall_next_block():
+    proj = angr.Project(os.path.join(tests_dir, "cgc", "sc1_0b32aa01_01"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    g = rop.analyze_gadget(0x804843c)
+    assert g
+    assert g.isn_count < 20
+
+    g = rop.analyze_gadget(0x8048441)
+    assert g.can_return is True
+
+    g = rop.analyze_gadget(0x080484d4)
+    assert g.can_return is True
+
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.do_syscall(2, [1, 0x41414141, 0x42424242, 0], preserve_regs={'eax'}, needs_return=True)
+    assert chain
 
 def run_all():
     functions = globals()

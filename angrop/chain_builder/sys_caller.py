@@ -5,6 +5,7 @@ import angr
 
 from .func_caller import FuncCaller
 from ..errors import RopException
+from ..import rop_utils
 
 l = logging.getLogger(__name__)
 
@@ -14,14 +15,9 @@ def cmp(g1, g2):
     if not g1.can_return and g2.can_return:
         return 1
 
-    if g1.starts_with_syscall and not g2.starts_with_syscall:
+    if g1.num_sym_mem_access < g2.num_sym_mem_access:
         return -1
-    if not g1.starts_with_syscall and g2.starts_with_syscall:
-        return 1
-
-    if g1.num_mem_access < g2.num_mem_access:
-        return -1
-    if g1.num_mem_access > g2.num_mem_access:
+    if g1.num_sym_mem_access > g2.num_sym_mem_access:
         return 1
 
     if g1.stack_change < g2.stack_change:
@@ -29,15 +25,15 @@ def cmp(g1, g2):
     if g1.stack_change > g2.stack_change:
         return 1
 
-    if g1.block_length < g2.block_length:
+    if g1.isn_count < g2.isn_count:
         return -1
-    if g1.block_length > g2.block_length:
+    if g1.isn_count > g2.isn_count:
         return 1
     return 0
 
 class SysCaller(FuncCaller):
     """
-    handle linux system calls invocations, only support i386 and x86_64 atm
+    handle linux system calls invocations
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
@@ -48,14 +44,39 @@ class SysCaller(FuncCaller):
     def supported_os(os):
         return "unix" in os.lower()
 
-    def update(self):
+    def bootstrap(self):
         self.syscall_gadgets = self.filter_gadgets(self.chain_builder.syscall_gadgets)
 
+    @staticmethod
+    def verify(chain, registers, preserve_regs):
+        # these registers are marked as preserved, so they are set by the user
+        # don't verify them here
+        registers = dict(registers)
+        for reg in preserve_regs:
+            if reg in registers:
+                del registers[reg]
+        state = chain.sim_exec_til_syscall()
+        if state is None:
+            return False
+
+        for reg, val in registers.items():
+            bv = getattr(state.regs, reg)
+            if (val.symbolic != bv.symbolic) or state.solver.eval(bv != val.data):
+                chain_str = chain.dstr()
+                l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-2.\nregisters: %s",
+                            chain_str, registers)
+                return False
+
+        return True
+
     def filter_gadgets(self, gadgets) -> list: # pylint: disable=no-self-use
+        # currently, we don't support negative stack_change
+        # syscall gadgets
+        gadgets = list({g for g in gadgets if g.stack_change >= 0})
         return sorted(gadgets, key=functools.cmp_to_key(cmp))
 
     def _try_invoke_execve(self, path_addr):
-        execve_syscall = 0x3b if self.project.arch.bits == 64 else 0xb
+        execve_syscall = self.chain_builder.arch.execve_num
         # next, try to invoke execve(path, ptr, ptr), where ptr points is either NULL or nullptr
         if 0 not in self.badbytes:
             ptr = 0
@@ -132,10 +153,10 @@ class SysCaller(FuncCaller):
             raise NotImplementedError("Currently, we can't handle on stack system call arguments!")
         registers = {}
         for arg, reg in zip(args, cc.ARG_REGS):
-            registers[reg] = arg
+            registers[reg] = rop_utils.cast_rop_value(arg, self.project)
 
         sysnum_reg = self.project.arch.register_names[self.project.arch.syscall_num_offset]
-        registers[sysnum_reg] = syscall_num
+        registers[sysnum_reg] = rop_utils.cast_rop_value(syscall_num, self.project)
 
         # do per-request gadget filtering
         gadgets = self.syscall_gadgets
@@ -151,9 +172,10 @@ class SysCaller(FuncCaller):
             return len(set(x.concrete_regs.keys()).intersection(registers.keys()))
         gadgets = sorted(gadgets, reverse=True, key=key_func)
 
+        more = kwargs.pop('preserve_regs', set())
         for gadget in gadgets:
             # separate registers to args and extra_regs
-            to_set_regs = {x:y for x,y in registers.items() if x not in gadget.concrete_regs}
+            to_set_regs = {x:y for x,y in registers.items() if x not in gadget.prologue.concrete_regs}
             if sysnum_reg in to_set_regs:
                 extra_regs = {sysnum_reg: syscall_num}
                 del to_set_regs[sysnum_reg]
@@ -162,13 +184,14 @@ class SysCaller(FuncCaller):
             preserve_regs = set(registers.keys()) - set(to_set_regs.keys())
             if sysnum_reg in preserve_regs:
                 preserve_regs.remove(sysnum_reg)
-            more = kwargs.pop('preserve_regs', set())
             preserve_regs.update(more)
 
             try:
-                return self._func_call(gadget, cc, args, extra_regs=extra_regs,
+                chain = self._func_call(gadget, cc, args, extra_regs=extra_regs,
                                needs_return=needs_return, preserve_regs=preserve_regs, **kwargs)
-            except Exception: # pylint:disable=broad-exception-caught
+                if self.verify(chain, registers, more):
+                    return chain
+            except RopException:
                 continue
 
         raise RopException(f"Fail to invoke syscall {syscall_num} with arguments: {args}!")

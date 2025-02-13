@@ -291,6 +291,11 @@ def test_syscall_gadget():
     assert not gadget.can_return
     assert len(gadget.concrete_regs) == 1 and gadget.concrete_regs.pop('rsi') == 0x81
 
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "cgc", "sc1_0b32aa01_01"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+    g = rop.analyze_gadget(0x0804843c)
+    assert g.prologue and isinstance(g, RopGadget)
+
 def test_pop_pc_gadget():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "mipsel", "darpa_ping"), auto_load_libs=False)
     rop = proj.analyses.ROP()

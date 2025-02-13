@@ -159,16 +159,18 @@ class ChainBuilder:
     def set_roparg_filler(self, roparg_filler):
         self.roparg_filler = roparg_filler
 
-    def update(self):
-        self._reg_setter.update()
-        self._reg_mover.update()
-        self._mem_writer.update()
-        self._mem_changer.update()
-        #self._func_caller.update()
+    def bootstrap(self):
+        self._reg_mover.bootstrap()
+        self._reg_setter.bootstrap()
+        self._mem_writer.bootstrap()
+        self._mem_changer.bootstrap()
+        self._func_caller.bootstrap()
         if self._sys_caller:
-            self._sys_caller.update()
-        self._pivot.update()
-        self._shifter.update()
+            self._sys_caller.bootstrap()
+        self._pivot.bootstrap()
+        self._shifter.bootstrap()
+
+        self._reg_setter.optimize()
 
     # should also be able to do execve by providing writable memory
     # todo pass values to setregs as symbolic variables

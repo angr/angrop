@@ -17,6 +17,7 @@ class ROPArch:
         self.base_pointer = a.register_names[a.bp_offset]
         self.syscall_insts = None
         self.ret_insts = None
+        self.execve_num = None
 
     def _get_reg_set(self):
         """
@@ -42,6 +43,7 @@ class X86(ROPArch):
         self.syscall_insts = {b"\xcd\x80"} # int 0x80
         self.ret_insts = {b"\xc2", b"\xc3", b"\xca", b"\xcb"}
         self.segment_regs = {"cs", "ds", "es", "fs", "gs", "ss"}
+        self.execve_num = 0xb
 
     def _x86_block_make_sense(self, block):
         capstr = str(block.capstone).lower()
@@ -68,6 +70,7 @@ class AMD64(X86):
         super().__init__(project, kernel_mode=kernel_mode)
         self.syscall_insts = {b"\x0f\x05"} # syscall
         self.segment_regs = {"cs_seg", "ds_seg", "es_seg", "fs_seg", "gs_seg", "ss_seg"}
+        self.execve_num = 0x3b
 
     def block_make_sense(self, block):
         return self._x86_block_make_sense(block)
@@ -82,6 +85,7 @@ class ARM(ROPArch):
         self.alignment = self.project.arch.bytes
         self.max_block_size = self.alignment * 8
         self.fast_mode_max_block_size = self.alignment * 6
+        self.execve_num = 0xb
 
     def set_thumb(self):
         self.is_thumb = True
@@ -109,6 +113,7 @@ class AARCH64(ROPArch):
         self.ret_insts = {b'\xc0\x03_\xd6'}
         self.max_block_size = self.alignment * 10
         self.fast_mode_max_block_size = self.alignment * 6
+        self.execve_num = 0xdd
 
 class MIPS(ROPArch):
     def __init__(self, project, kernel_mode=False):
@@ -116,6 +121,7 @@ class MIPS(ROPArch):
         self.alignment = self.project.arch.bytes
         self.max_block_size = self.alignment * 8
         self.fast_mode_max_block_size = self.alignment * 6
+        self.execve_num = 0xfab
 
 def get_arch(project, kernel_mode=False):
     name = project.arch.name

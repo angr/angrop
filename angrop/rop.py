@@ -94,7 +94,7 @@ class ROP(Analysis):
         self.chain_builder.gadgets = self.rop_gadgets
         self.chain_builder.pivot_gadgets = self.pivot_gadgets
         self.chain_builder.syscall_gadgets = self.syscall_gadgets
-        self.chain_builder.update()
+        self.chain_builder.bootstrap()
 
     def analyze_addr(self, addr):
         """
