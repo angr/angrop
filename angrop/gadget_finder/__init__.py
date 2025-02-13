@@ -217,9 +217,29 @@ class GadgetFinder:
         """
         Checks if a block has any ip relative instructions
         """
-        string = bl.bytes
-        test_addr = 0x41414140 + addr % 0x10
-        bl2 = self.project.factory.block(test_addr, byte_string=string)
+        # if thumb mode, the block needs to parsed very carefully
+        if addr & 1 == 1 and self.project.arch.bits == 32 and self.project.arch.name.startswith('ARM'):
+            # thumb mode has this conditional instruction thingy, which is terrible for vex statement
+            # comparison. We inject a ton of fake statements into the program to ensure vex that this gadget
+            # is not a conditional instruction
+            MMAP_ADDR = 0x1000
+            test_addr = MMAP_ADDR + 0x200+1
+            if self.project.loader.memory.min_addr > MMAP_ADDR:
+                # a ton of `pop {pc}`
+                self.project.loader.memory.add_backer(MMAP_ADDR, b'\x00\xbd'*0x100+b'\x00'*0x200)
+
+            # create the block without using the cache
+            engine = self.project.factory.default_engine
+            bk = engine._use_cache
+            engine._use_cache = False
+            self.project.loader.memory.store(test_addr-1, bl.bytes + b'\x00'*(0x200-len(bl.bytes)))
+            bl2 = self.project.factory.block(test_addr)
+            engine._use_cache = bk
+        else:
+            test_addr = 0x41414140 + addr % 0x10
+            bl2 = self.project.factory.block(test_addr, insn_bytes=bl.bytes)
+
+        # now diff the blocks to see whether anything constants changes
         try:
             diff_constants = differing_constants(bl, bl2)
         except UnmatchedStatementsException:

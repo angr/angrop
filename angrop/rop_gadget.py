@@ -100,7 +100,6 @@ class RopGadget:
     def __init__(self, addr):
         self.project: Project = None # type: ignore
         self.addr = addr
-        self.block_length = None
         self.stack_change: int = None # type: ignore
 
         # register effect information
@@ -119,15 +118,16 @@ class RopGadget:
         self.mem_writes = []
         self.mem_changes = []
 
-        # TODO: pc shouldn't be treated differently from other registers
-        # it is just a register. With the register setting framework, we will be able to
-        # utilize gadgets like `call qword ptr [rax+rbx]` because we have the dependency information.
-        # transition information, i.e. how to pass the control flow to the next gadget
+        # gadget transition
+        # we now support the following gadget transitions
+        # 1. pop_pc:    ret, jmp [sp+X], pop pc,X,Y, retn), this type of gadgets are "self-contained"
+        # 2. jmp_reg:   jmp reg <- requires reg setting before using it (call falls here as well)
+        # 3. jmp_mem:   jmp [reg+X] <- requires mem setting before using it (call falls here as well)
         self.transit_type: str = None # type: ignore
-        self.pc_reg = None
-        # pc_offset is exclusively used when transit_type is "pop_pc",
-        # when pc_offset==stack_change-arch_bytes, transit_type is basically ret
-        self.pc_offset = None
+
+        self.pc_offset = None # for pop_pc, ret is basically pc_offset == stack_change - arch.bytes
+        self.pc_reg = None # for jmp_reg, which register it jumps to
+        self.pc_target = None # for jmp_mem, where it jumps to
 
         # List of basic block addresses for gadgets with conditional branches
         self.bbl_addrs = []
@@ -138,8 +138,18 @@ class RopGadget:
         self.has_conditional_branch: bool = None # type: ignore
 
     @property
-    def num_mem_access(self):
-        return len(self.mem_reads) + len(self.mem_writes) + len(self.mem_changes)
+    def self_contained(self):
+        """
+        the gadget is useable by itself, doesn't rely on the existence of other gadgets
+        e.g. 'jmp_reg' gadgets requires another one setting the registers
+        (a gadget like mov rax, [rsp]; add rsp, 8; jmp rax will be considered pop_pc)
+        """
+        return (not self.has_conditional_branch) and self.transit_type == 'pop_pc'
+
+    @property
+    def num_sym_mem_access(self):
+        accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)
+        return len([x for x in accesses if x.is_symbolic_access()])
 
     def has_symbolic_access(self):
         accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)
@@ -213,6 +223,7 @@ class RopGadget:
         out.addr = self.addr
         out.changed_regs = set(self.changed_regs)
         out.popped_regs = set(self.popped_regs)
+        out.popped_reg_vars = dict(self.popped_reg_vars)
         out.concrete_regs = dict(self.concrete_regs)
         out.reg_dependencies = dict(self.reg_dependencies)
         out.reg_controllers = dict(self.reg_controllers)
@@ -221,7 +232,6 @@ class RopGadget:
         out.mem_changes = list(self.mem_changes)
         out.mem_writes = list(self.mem_writes)
         out.reg_moves = list(self.reg_moves)
-        out.block_length = self.block_length
         out.transit_type = self.transit_type
         out.pc_reg = self.pc_reg
         return out
@@ -273,15 +283,12 @@ class SyscallGadget(RopGadget):
     """
     def __init__(self, addr):
         super().__init__(addr)
-        self.makes_syscall = False
-        self.starts_with_syscall = False
+        self.prologue: RopGadget = None # type: ignore
 
     def __str__(self):
         s = f"SyscallGadget {self.addr:#x}\n"
         s += f"  stack change: {self.stack_change:#x}\n"
-        s += f"  transit type: {self.transit_type}\n"
         s += f"  can return: {self.can_return}\n"
-        s += f"  starts_with_syscall: {self.starts_with_syscall}\n"
         return s
 
     def __repr__(self):
@@ -289,12 +296,11 @@ class SyscallGadget(RopGadget):
 
     @property
     def can_return(self):
-        return self.transit_type != 'syscall'
+        return self.transit_type is not None
 
     def copy(self):
         new = super().copy()
-        new.makes_syscall = self.makes_syscall
-        new.starts_with_syscall = self.starts_with_syscall
+        new.prologue = self.prologue
         return new
 
 class FunctionGadget(RopGadget):

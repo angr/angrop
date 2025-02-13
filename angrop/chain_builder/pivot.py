@@ -18,9 +18,9 @@ def cmp(g1, g2):
     if g1.stack_change + g1.stack_change_after_pivot > g2.stack_change + g2.stack_change_after_pivot:
         return 1
 
-    if g1.block_length < g2.block_length:
+    if g1.isn_count < g2.isn_count:
         return -1
-    if g1.block_length > g2.block_length:
+    if g1.isn_count > g2.isn_count:
         return 1
     return 0
 
@@ -32,7 +32,7 @@ class Pivot(Builder):
         super().__init__(chain_builder)
         self._pivot_gadgets: list = None # type: ignore
 
-    def update(self):
+    def bootstrap(self):
         self._pivot_gadgets = self.filter_gadgets(self.chain_builder.pivot_gadgets)
 
     def pivot(self, thing):
@@ -119,7 +119,7 @@ class Pivot(Builder):
         return True
 
     def _better_than(self, g1, g2):
-        if g1.num_mem_access > g2.num_mem_access:
+        if g1.num_sym_mem_access > g2.num_sym_mem_access:
             return False
         if not g1.changed_regs.issubset(g2.changed_regs):
             return False

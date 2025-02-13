@@ -41,7 +41,7 @@ def test_x86_64_func_call():
         rop.save_gadgets(cache_path)
 
     chain = rop.func_call('puts', [0x402704]) + rop.func_call('puts', [0x402704])
-    state = chain.exec(max_steps=8)
+    state = chain.exec()
     assert state.posix.dumps(1) == b'Enter username: \nEnter username: \n'
 
 def test_i386_func_call():
@@ -56,7 +56,7 @@ def test_i386_func_call():
         rop.save_gadgets(cache_path)
 
     chain = rop.func_call('write', [1, 0x80AC5E8, 17]) + rop.func_call('write', [1, 0x80AC5E8, 17])
-    state = chain.exec(max_steps=100)
+    state = chain.exec()
     assert state.posix.dumps(1) == b'/usr/share/locale/usr/share/locale'
 
 def test_arm_func_call():
@@ -74,16 +74,16 @@ def test_arm_func_call():
 
     proj.hook_symbol('write', angr.SIM_PROCEDURES['posix']['write']())
     chain1 = rop.func_call("write", [1, 0x4E15F0, 9])
-    state = chain1.exec(max_steps=100)
+    state = chain1.exec()
     assert state.posix.dumps(1) == b'malloc.c\x00'
 
     proj.hook_symbol('puts', angr.SIM_PROCEDURES['libc']['puts']())
     chain2 = rop.func_call("puts", [0x4E15F0])
-    state = chain2.exec(max_steps=100)
+    state = chain2.exec()
     assert state.posix.dumps(1) == b'malloc.c\n'
 
     chain = chain1 + chain2
-    state = chain.exec(max_steps=100)
+    state = chain.exec()
     assert state.posix.dumps(1) == b'malloc.c\x00malloc.c\n'
 
 def test_i386_syscall():
@@ -112,9 +112,20 @@ def test_x86_64_syscall():
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
 
+    gadget = rop.analyze_gadget(0x536718)
+    rop.chain_builder._sys_caller.syscall_gadgets = [gadget]
+    chain = rop.do_syscall(0xca, [0, 0x81], needs_return=False)
+    assert chain
+
+    # TODO: technically, we should support using this gadget, but
+    # we don't. So use it to test whether we can catch wrong chains
     gadget = rop.analyze_gadget(0x536715)
     rop.chain_builder._sys_caller.syscall_gadgets = [gadget]
-    rop.do_syscall(0xca, [0, 0x81], needs_return=False)
+    try:
+        chain = rop.do_syscall(0xca, [0, 0x81], needs_return=False)
+        assert chain is None
+    except RopException:
+        pass
 
 def test_preserve_regs():
     cache_path = os.path.join(CACHE_DIR, "1after909")
@@ -130,7 +141,7 @@ def test_preserve_regs():
     chain1 = rop.set_regs(rdi=0x402715)
     chain2 = rop.func_call('puts', [0x402704], preserve_regs=['rdi'])
     chain = chain1+chain2
-    state = chain.exec(max_steps=5)
+    state = chain.exec()
     assert state.posix.dumps(1) == b'Failed to parse username.\n'
 
 def test_i386_mem_write():
@@ -292,7 +303,7 @@ def test_shifter():
         rop.save_gadgets(cache_path)
 
     chain = rop.shift(0x50, preserve_regs=['ebx'])
-    init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
+    init_sp = chain._blank_state.regs.sp.concrete_value
     state = chain.exec()
     assert state.regs.sp.concrete_value == init_sp + 0x50 + proj.arch.bytes
 
@@ -318,7 +329,7 @@ def test_shifter():
         rop.save_gadgets(cache_path)
 
     chain = rop.shift(0x40)
-    init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
+    init_sp = chain._blank_state.regs.sp.concrete_value
     state = chain.exec()
     assert state.regs.sp.concrete_value == init_sp + 0x40 + proj.arch.bytes
 
@@ -333,7 +344,7 @@ def test_shifter():
         rop.save_gadgets(cache_path)
 
     chain = rop.shift(0x40)
-    init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
+    init_sp = chain._blank_state.regs.sp.concrete_value
     state = chain.exec()
     assert state.regs.sp.concrete_value == init_sp + 0x40 + proj.arch.bytes
 
@@ -349,7 +360,7 @@ def test_shifter():
         rop.save_gadgets(cache_path)
 
     chain = rop.shift(0x10)
-    init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * proj.arch.bytes
+    init_sp = chain._blank_state.regs.sp.concrete_value
     state = chain.exec()
     assert state.regs.sp.concrete_value == init_sp + 0x10 + proj.arch.bytes
 
@@ -430,7 +441,7 @@ def test_retn_i386_call_chain():
     g = rop.analyze_gadget(0x809d9fb)
     rop._chain_builder._shifter.shift_gadgets = {g.stack_change: [g]}
 
-    rop.func_call('write', [1, 0x80AC5E8, 17], needs_return=False)
+    chain = rop.func_call('write', [1, 0x80AC5E8, 17], needs_return=False)
 
     chain = None
     try:
@@ -521,6 +532,58 @@ def test_aarch64_mem_access():
         if action.type == action.MEM and action.action == action.WRITE:
             assert action.addr.ast.concrete_value >= 0x1000
             assert action.addr.ast.concrete_value < 0x2000
+
+def test_mipstake():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "mips", "mipstake"), auto_load_libs=True, arch="mips")
+    rop = proj.analyses.ROP(max_block_size=40)
+    # lw $ra, 0x34($sp);
+    # lw $s5, 0x30($sp);
+    # lw $s4, 0x2c($sp);
+    # lw $s3, 0x28($sp);
+    # lw $s2, 0x24($sp);
+    # lw $s1, 0x20($sp);
+    # lw $s0, 0x1c($sp);
+    # jr $ra;
+    # addiu $sp, $sp, 0x38
+    g = rop.analyze_gadget(0x400E64)
+    assert g is not None
+
+    # lw $t9, ($s1);
+    # addiu $s0, $s0, 1;
+    # move $a0, $s3;
+    # move $a1, $s4;
+    # jalr $t9;
+    # move $a2, $s5
+    g = rop.analyze_gadget(0x400E40)
+    assert g is not None
+    chain = rop.func_call("sleep", [0x41414141, 0x42424242, 0x43434343])
+    sleep_addr = proj.loader.main_object.imports['sleep'].value
+    state = chain.concrete_exec_til_addr(sleep_addr)
+    assert state.regs.a0.concrete_value == 0x41414141
+    assert state.regs.a1.concrete_value == 0x42424242
+    assert state.regs.a2.concrete_value == 0x43434343
+
+def test_unexploitable():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "unexploitable"), auto_load_libs=False)
+    rop = proj.analyses.ROP(max_block_size=40, fast_mode=False, only_check_near_rets=False)
+    g = rop.analyze_gadget(0x4005D0) # mov rdx, r15; mov rsi, r14; mov edi, r13d; call qword ptr [r12 + rbx*8]
+    assert g is not None
+    # mov rbx, qword ptr [rsp + 8];
+    # mov rbp, qword ptr [rsp + 0x10];
+    # mov r12, qword ptr [rsp + 0x18];
+    # mov r13, qword ptr [rsp + 0x20];
+    # mov r14, qword ptr [rsp + 0x28];
+    # mov r15, qword ptr [rsp + 0x30];
+    # add rsp, 0x38; ret
+    g = rop.analyze_gadget(0x4005E6)
+    assert g is not None
+    chain = rop.func_call("sleep", [0x41414141, 0x4242424242424242, 0x4343434343434343])
+
+    sleep_addr = proj.loader.main_object.imports['sleep'].value
+    state = chain.concrete_exec_til_addr(sleep_addr)
+    assert state.regs.rdi.concrete_value == 0x41414141
+    assert state.regs.rsi.concrete_value == 0x4242424242424242
+    assert state.regs.rdx.concrete_value == 0x4343434343434343
 
 def run_all():
     functions = globals()

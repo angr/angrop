@@ -1,10 +1,11 @@
 import os
+import pickle
+import logging
+
+import claripy
 import angr
 import angrop  # pylint: disable=unused-import
-import pickle
-import claripy
 
-import logging
 l = logging.getLogger("angrop.tests.test_rop")
 
 public_bin_location = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../binaries/tests')
@@ -44,8 +45,6 @@ def assert_gadgets_equal(known_gadget, test_gadget):
     assert known_gadget.reg_dependencies == test_gadget.reg_dependencies
     assert known_gadget.reg_controllers == test_gadget.reg_controllers
     assert known_gadget.stack_change == test_gadget.stack_change
-    if hasattr(known_gadget, "makes_syscall"):
-        assert known_gadget.makes_syscall == test_gadget.makes_syscall
 
     assert len(known_gadget.mem_reads) == len(test_gadget.mem_reads)
     for m1, m2 in zip(known_gadget.mem_reads, test_gadget.mem_reads):
@@ -132,7 +131,7 @@ def verify_execve_chain(chain):
     # verify the syscall arguments
     state = simgr.active[0]
     cc = angr.SYSCALL_CC[proj.arch.name]["default"](proj.arch)
-    assert cc.syscall_num(state).concrete_value == 0x3b
+    assert cc.syscall_num(state).concrete_value == chain._builder.arch.execve_num
     ptr = state.registers.load(cc.ARG_REGS[0])
     assert state.solver.is_true(state.memory.load(ptr, 8) == b'/bin/sh\0')
     assert state.registers.load(cc.ARG_REGS[1]).concrete_value == 0
@@ -143,11 +142,11 @@ def test_roptest_mips():
     rop = proj.analyses.ROP()
     rop.find_gadgets_single_threaded(show_progress=False)
 
-    chain = rop.set_regs(s0=0x41414141, s1=0x42424242, v0=0x43434343)
+    chain = rop.set_regs(s0=0x41414142, s1=0x42424243, v0=0x43434344)
     result_state = execute_chain(proj, chain)
-    assert result_state.solver.eval(result_state.regs.s0) == 0x41414141
-    assert result_state.solver.eval(result_state.regs.s1) == 0x42424242
-    assert result_state.solver.eval(result_state.regs.v0) == 0x43434343
+    assert result_state.solver.eval(result_state.regs.s0) == 0x41414142
+    assert result_state.solver.eval(result_state.regs.s1) == 0x42424243
+    assert result_state.solver.eval(result_state.regs.v0) == 0x43434344
 
 
 def test_rop_x86_64():
@@ -160,13 +159,14 @@ def test_rop_x86_64():
         rop.save_gadgets(cache_path)
 
     # check gadgets
-    tup = pickle.load(open(cache_path, "rb"))
-    compare_gadgets(rop._all_gadgets, tup[0])
+    with open(cache_path, "rb") as f:
+        tup = pickle.load(f)
+        compare_gadgets(rop._all_gadgets, tup[0])
 
     # test creating a rop chain
     chain = rop.set_regs(rbp=0x1212, rbx=0x1234567890123456)
     # smallest possible chain
-    assert chain.payload_len == 24
+    assert chain.payload_len == 32
     # chain is correct
     result_state = execute_chain(b, chain)
     assert result_state.solver.eval(result_state.regs.rbp) == 0x1212
@@ -188,13 +188,14 @@ def test_rop_i386_cgc():
         rop.save_gadgets(cache_path)
 
     # check gadgets
-    tup = pickle.load(open(os.path.join(test_data_location, "0b32aa01_01_gadgets"), "rb"))
-    compare_gadgets(rop._all_gadgets, tup[0])
+    with open(os.path.join(test_data_location, "0b32aa01_01_gadgets"), "rb") as f:
+        tup = pickle.load(f)
+        compare_gadgets(rop._all_gadgets, tup[0])
 
     # test creating a rop chain
     chain = rop.set_regs(ebx=0x98765432, ecx=0x12345678)
     # smallest possible chain
-    assert chain.payload_len == 12
+    assert chain.payload_len == 16
     # chain is correct
     result_state = execute_chain(b, chain)
     assert result_state.solver.eval(result_state.regs.ebx) == 0x98765432
@@ -215,13 +216,14 @@ def test_rop_arm():
         rop.save_gadgets(cache_path)
 
     # check gadgets
-    tup = pickle.load(open(os.path.join(test_data_location, "arm_manysum_test_gadgets"), "rb"))
-    compare_gadgets(rop._all_gadgets, tup[0])
+    with open(os.path.join(test_data_location, "arm_manysum_test_gadgets"), "rb") as f:
+        tup = pickle.load(f)
+        compare_gadgets(rop._all_gadgets, tup[0])
 
     # test creating a rop chain
     chain = rop.set_regs(r11=0x99887766)
     # smallest possible chain
-    assert chain.payload_len == 8
+    assert chain.payload_len == 12
     # correct chains, using a more complicated chain here
     chain = rop.set_regs(r4=0x99887766, r9=0x44556677, r11=0x11223344)
     result_state = execute_chain(b, chain)
@@ -269,7 +271,7 @@ def test_roptest_aarch64():
 
 def run_all():
     functions = globals()
-    all_functions = dict([x for x in functions.items() if x[0].startswith('test_')])
+    all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
     for f in sorted(all_functions.keys()):
         if hasattr(all_functions[f], '__call__'):
             print(f)

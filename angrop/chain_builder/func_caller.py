@@ -15,10 +15,116 @@ class FuncCaller(Builder):
     """
     handle function calls by automatically detecting the target binary's
     calling convention
+    thanks to @tomgond for a great portion of this class
     """
+    def __init__(self, chain_builder):
+        super().__init__(chain_builder)
+        # invoke a function but cannot maintain the control flow afterwards (pop rdi; jmp rax)
+        self._func_jmp_gadgets = None
+        # invoke a function and still maintain the control flow afterwards (call rax; ret)
+        # TODO: currently not supported
+        self._func_call_gadgets = None
+        # record the calling convention
+        self._cc = angr.default_cc(
+                            self.project.arch.name,
+                            platform=self.project.simos.name if self.project.simos is not None else None,
+                        )(self.project.arch)
+
+    def bootstrap(self):
+        cc = self._cc
+        self._func_jmp_gadgets = set()
+        for g in self.chain_builder.gadgets:
+            if g.self_contained:
+                continue
+            if g.popped_regs.intersection(cc.ARG_REGS):
+                self._func_jmp_gadgets.add(g)
+                continue
+            for move in g.reg_moves:
+                if move.to_reg in cc.ARG_REGS:
+                    self._func_jmp_gadgets.add(g)
+                    break
+
+    def _is_valid_pointer(self, addr):
+        """
+        Validate if an address is a legitimate pointer in the binary
+        Checks:
+        1. Address is within memory ranges
+        2. Address points to readable memory
+        3. Address is aligned
+        """
+        arch_bytes = self.project.arch.bytes
+
+        # Check basic alignment
+        if addr % arch_bytes != 0:
+            return False
+
+        # Check against memory ranges
+        if (addr < self.project.loader.min_addr or
+                addr >= self.project.loader.max_addr):
+            return False
+
+        # Check readable writable sections
+        for section in self.project.loader.main_object.sections:
+            if (section.is_readable and
+                    section.min_addr <= addr < section.max_addr):
+                return True
+
+        return False
+
+    def _find_function_pointer_in_got_plt(self, func_addr):
+        """
+        Search if a func addr is in plt. If it's in plt, find func name and
+        translate it to GOT so that we can directly call/jmp to the location pointed there.
+        """
+        # Search GOT and PLT across all loaded objects
+        func_name = None
+        for sym in self.project.loader.main_object.symbols:
+            if sym.rebased_addr == func_addr:
+                func_name = sym.name
+
+        for sym, val in self.project.loader.main_object.plt.items():
+            if val == func_addr:
+                func_name = sym
+        # addr is found in plt. we look for this symbol in got
+        if func_name:
+            func_got = self.project.loader.main_object.imports.get(func_name)
+            if func_got:
+                return func_got.rebased_addr
+            else:
+                # this is from plt but not in got somehow
+                return None
+        # not in plt. We can search in other ways
+        else:
+            return None
+
+    def _find_function_pointer(self, func_addr):
+        """Find pointer to function, allowing for potential memory locations"""
+        # Existing GOT/PLT search logic first
+        got_ptr = self._find_function_pointer_in_got_plt(func_addr)
+        if got_ptr is not None:
+            return got_ptr
+
+        # Broader search strategy
+        for obj in self.project.loader.all_objects:
+            for section in obj.sections:
+                if not section.is_readable:
+                    continue
+
+                # Scan section for potential pointers
+                for offset in range(0, section.max_addr - section.min_addr, self.project.arch.bytes):
+                    potential_ptr = section.min_addr + offset
+                    try:
+                        ptr_value = self.project.loader.memory.unpack_word(potential_ptr)
+                        if (ptr_value == func_addr and
+                                self._is_valid_pointer(potential_ptr)):
+                            return potential_ptr
+                    except Exception: # pylint: disable=broad-exception-caught
+                        continue
+
+        raise RopException("Could not find mem pointing to func in binary memory")
 
     def _func_call(self, func_gadget, cc, args, extra_regs=None, preserve_regs=None,
-                   needs_return=True, **kwargs):
+                   needs_return=True, jmp_mem_target=None, **kwargs):
         """
         func_gadget: the address of the function to invoke
         cc: calling convention
@@ -51,7 +157,18 @@ class FuncCaller(Builder):
             registers[reg] = arg
         for reg in preserve_regs:
             registers.pop(reg, None)
-        chain = self.chain_builder.set_regs(**registers, preserve_regs=preserve_regs)
+
+        # if this is a simple function call, just set the registers and invoke it
+        if not jmp_mem_target:
+            chain = self.chain_builder.set_regs(**registers, preserve_regs=preserve_regs)
+        else:
+            # this is a jmp_mem function call, we need to constrain the jmp_mem target
+            rop_values, constraints = self._build_ast_constraints(func_gadget.pc_target)
+            registers.update(rop_values)
+            chain = self.chain_builder.set_regs(**registers, preserve_regs=preserve_regs)
+            state = chain._blank_state
+            state.solver.add(claripy.And(*constraints))
+            state.solver.add(jmp_mem_target == func_gadget.pc_target)
 
         # invoke the function
         chain.add_gadget(func_gadget)
@@ -70,10 +187,14 @@ class FuncCaller(Builder):
         # 2. handle function return address to maintain the control flow
         if stack_arguments:
             shift_bytes = (len(stack_arguments)+1)*arch_bytes
+            # TODO: currently, we only shift stack only for the minimal
+            # but if this shift fails, we should try larger shifts
             cleaner = self.chain_builder.shift(shift_bytes, next_pc_idx=-1, preserve_regs=preserve_regs)
             chain.add_gadget(cleaner._gadgets[0])
             for arg in stack_arguments:
                 chain.add_value(arg)
+            next_pc = claripy.BVS("next_pc", self.project.arch.bits)
+            chain.add_value(next_pc)
 
         # handle return address
         if not isinstance(cc.RETURN_ADDR, (SimStackArg, SimRegArg)):
@@ -108,11 +229,52 @@ class FuncCaller(Builder):
             else:
                 raise RopException("Symbol passed to func_call does not exist in the binary")
 
-        cc = angr.default_cc(
-            self.project.arch.name,
-            platform=self.project.simos.name if self.project.simos is not None else None,
-        )(self.project.arch)
+        # try to invoke the function using all self-contained gadgets
         func_gadget = FunctionGadget(address, symbol)
         func_gadget.stack_change = self.project.arch.bytes
         func_gadget.pc_offset = 0
-        return self._func_call(func_gadget, cc, args, **kwargs)
+        try:
+            return self._func_call(func_gadget, self._cc, args, **kwargs)
+        except RopException:
+            pass
+
+        # well, let's try non-self-contained gadgets, but this time, we don't guarantee returns
+        needs_return = kwargs.get("needs_return", None)
+        if needs_return:
+            raise RopException("fail to invoke function and return using all self-contained gadgets")
+        if needs_return is None:
+            s = symbol if symbol else hex(address)
+            l.warning("function %s won't return!", s)
+            kwargs['needs_return'] = False
+
+        # try func_jmp_gadgets
+        register_args = args[:len(self._cc.ARG_REGS)]
+        registers = {self._cc.ARG_REGS[i]:register_args[i] for i in range(len(register_args))}
+        reg_names = set(registers.keys())
+        ptr_to_func = self._find_function_pointer(address)
+        for g in self._func_jmp_gadgets:
+            if g.popped_regs.intersection(reg_names):
+                raise NotImplementedError("do not support func_jmp_gadgets that have pops")
+
+            # build the new target registers
+            registers = registers.copy()
+            for move in g.reg_moves:
+                if move.to_reg in registers.keys():
+                    val = registers[move.to_reg]
+                    assert move.from_reg not in registers, "oops, overlapped moves not handled atm"
+                    del registers[move.to_reg]
+                    registers[move.from_reg] = val
+
+            if g.transit_type != 'jmp_mem':
+                raise NotImplementedError("currently only support jmp_mem type func_jmp_gadgets!")
+            #func_gadget.stack_change = self.project.arch.bytes
+            #func_gadget.pc_offset = 0
+            # try to invoke the function using the new target registers
+            try:
+                return self._func_call(g, self._cc, [], extra_regs=registers,
+                                       jmp_mem_target=ptr_to_func, **kwargs)
+            except RopException:
+                pass
+
+        s = symbol if symbol else hex(address)
+        raise RopException(f"fail to invoke function: {s}")

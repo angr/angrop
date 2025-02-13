@@ -1,5 +1,4 @@
 import heapq
-import itertools
 import logging
 from collections import defaultdict, Counter
 from typing import Iterable, Iterator
@@ -10,6 +9,7 @@ from angr.errors import SimUnsatError
 from .builder import Builder
 from .. import rop_utils
 from ..rop_chain import RopChain
+from ..rop_block import RopBlock
 from ..rop_gadget import RopGadget
 from ..errors import RopException
 
@@ -24,14 +24,33 @@ class RegSetter(Builder):
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
-        self._reg_setting_gadgets = None # all the gadgets that can set registers
-        self.hard_chain_cache = None
+        # all the gadgets that can set registers
+        self._reg_setting_gadgets: set[RopGadget]= None # type: ignore
+        self.hard_chain_cache: dict[tuple, list] = None # type: ignore
         # Estimate of how difficult it is to set each register.
-        self._reg_weights = None
+        self._reg_weights: dict[str, int] = None # type: ignore
+        self._reg_setting_dict: dict[str, list] = None # type: ignore
 
-    def update(self):
+    def _insert_to_reg_dict(self, gs):
+        for rb in gs:
+            for reg in rb.popped_regs:
+                self._reg_setting_dict[reg].append(rb)
+        for reg in self._reg_setting_dict:
+            lst = self._reg_setting_dict[reg]
+            self._reg_setting_dict[reg] = sorted(lst, key=lambda x: x.stack_change)
+
+    def bootstrap(self):
         self._reg_setting_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
-        self.hard_chain_cache = {}
+
+        # update reg_setting_dict
+        self._reg_setting_dict = defaultdict(list)
+        for g in self._reg_setting_gadgets:
+            if not g.self_contained:
+                continue
+            for reg in g.popped_regs:
+                self._reg_setting_dict[reg].append(g)
+        self._insert_to_reg_dict([]) # sort reg dict
+
         reg_pops = Counter()
         for gadget in self._reg_setting_gadgets:
             reg_pops.update(gadget.popped_regs)
@@ -39,6 +58,60 @@ class RegSetter(Builder):
             reg: 5 if reg_pops[reg] == 0 else 2 if reg_pops[reg] == 1 else 1
             for reg in self.arch.reg_set
         }
+
+        self.hard_chain_cache = {}
+
+    def optimize(self):
+        # now we have a functional RegSetter, check whether we can do better
+
+        # first, TODO: see whether we can use reg_mover to set hard-registers
+
+        # second, see whether we can use non-self-contained gadgets to reduce stack-change requirements
+        # TODO: currently, we only support jmp_reg gadgets
+        bests = {}
+        for gadget in self._reg_setting_gadgets:
+            if gadget.self_contained:
+                continue
+            if gadget.has_conditional_branch:
+                continue
+            if gadget.transit_type != 'jmp_reg':
+                continue
+            stack_change = gadget.stack_change
+            if gadget.pc_reg not in self._reg_setting_dict:
+                continue
+
+            # choose the best gadget to set the PC for this jmp_reg gadget
+            pc_setter = None
+            for g in self._reg_setting_dict[gadget.pc_reg]:
+                if g.has_symbolic_access():
+                    continue
+                pc_setter = g
+                break
+            if pc_setter is None:
+                continue
+            pc_setter_sc = pc_setter.stack_change
+
+            for reg in gadget.popped_regs:
+                if gadget.pc_reg not in self._reg_setting_dict:
+                    continue
+                total_sc = stack_change + pc_setter_sc
+                reg_sc = self._reg_setting_dict[reg][0].stack_change if reg in self._reg_setting_dict else 0xffffffff
+                if total_sc > reg_sc:
+                    continue
+
+                assert isinstance(pc_setter, RopGadget)
+                try:
+                    chain = self._build_reg_setting_chain([pc_setter, gadget], None, {}, total_sc)
+                    rb = RopBlock.from_chain(chain)
+                    assert rb.stack_change == total_sc
+                    if reg not in bests or rb.stack_change < bests[reg].stack_change:
+                        bests[reg] = rb
+                    elif rb.stack_change == bests[reg].stack_change and \
+                            bests[reg].num_sym_mem_access > rb.num_sym_mem_access:
+                        bests[reg] = rb
+                except RopException:
+                    pass
+        self._insert_to_reg_dict(bests.values())
 
     def verify(self, chain, preserve_regs, registers):
         """
@@ -69,15 +142,27 @@ class RegSetter(Builder):
                 l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-2.\nregisters: %s",
                             chain_str, registers)
                 return False
-        # the next pc must come from the stack or just marked as the next_pc
+        # the next pc must be marked as the next_pc
         if len(state.regs.pc.variables) != 1:
             return False
         pc_var = set(state.regs.pc.variables).pop()
-        return pc_var.startswith("symbolic_stack") or pc_var.startswith("next_pc")
+        return pc_var.startswith("next_pc")
+
+    @staticmethod
+    def _mixins_to_gadgets(mixins):
+        gadgets = []
+        for mixin in mixins:
+            if isinstance(mixin, RopGadget):
+                gadgets.append(mixin)
+            elif isinstance(mixin, RopBlock):
+                gadgets += mixin._gadgets
+            else:
+                raise ValueError(f"cannot turn {mixin} into RopBlock!")
+        return gadgets
 
     def run(self, modifiable_memory_range=None, preserve_regs=None, max_length=10, **registers):
         if len(registers) == 0:
-            return RopChain(self.project, None, badbytes=self.badbytes)
+            return RopChain(self.project, self, badbytes=self.badbytes)
 
         # sanity check
         preserve_regs = set(preserve_regs) if preserve_regs else set()
@@ -94,6 +179,7 @@ class RegSetter(Builder):
             l.debug("building reg_setting chain with chain:\n%s", chain_str)
             stack_change = sum(x.stack_change for x in gadgets)
             try:
+                gadgets = self._mixins_to_gadgets(gadgets)
                 chain = self._build_reg_setting_chain(gadgets, modifiable_memory_range,
                                                       registers, stack_change)
                 chain._concretize_chain_values(timeout=len(chain._values)*3)
@@ -115,7 +201,7 @@ class RegSetter(Builder):
 
         # algorithm2
         yield from self.find_candidate_chains_pop_only_bfs_search(
-                                    self._find_relevant_gadgets(**registers),
+                                    self._find_relevant_gadgets(allow_mem_access=False, **registers),
                                     preserve_regs.copy(),
                                     **registers)
 
@@ -150,15 +236,13 @@ class RegSetter(Builder):
     @staticmethod
     def _verify_chain(chain, regs):
         """
-        make sure the new chain can control the registers
+        make sure the new chain does not do bad memory accesses
         """
-        g = chain[-1]
-        if g.transit_type == 'jmp_reg':
-            return g.pc_reg in regs
-
-        # make sure all memory access can be forced to happen on valid addresses
-        # don't need to consider constant addr or addr popped from stack
-        for mem_access in g.mem_reads + g.mem_writes + g.mem_changes:
+        accesses = set()
+        for g in chain:
+            accesses.update(set(g.mem_reads + g.mem_writes + g.mem_changes))
+        accesses = set(m for m in accesses if m.is_symbolic_access())
+        for mem_access in accesses:
             if mem_access.addr_controllers and not mem_access.addr_controllers.intersection(regs):
                 return False
 
@@ -190,15 +274,12 @@ class RegSetter(Builder):
             partial_controllers = self._get_sufficient_partial_controllers(registers)
 
         # filter reg setting gadgets
-        gadgets = set(self._reg_setting_gadgets)
+        allow_mem_access = modifiable_memory_range is not None
+        gadgets = self._find_relevant_gadgets(allow_mem_access=allow_mem_access, **registers)
         for s in partial_controllers.values():
             gadgets.update(s)
         gadgets = list(gadgets)
-        if modifiable_memory_range is None:
-            gadgets = [g for g in gadgets if
-                       len(g.mem_changes) == 0 and len(g.mem_writes) == 0 and len(g.mem_reads) == 0]
         l.debug("finding best gadgets")
-
 
         # lets try doing a graph search to set registers, something like dijkstra's for minimum length
 
@@ -230,7 +311,7 @@ class RegSetter(Builder):
                     continue
 
                 # ignore gadgets that set any of our preserved registers
-                if not g.changed_regs.isdisjoint(preserve_regs):
+                if g.changed_regs.intersection(preserve_regs):
                     continue
 
                 stack_change = data[regs][1]
@@ -300,12 +381,12 @@ class RegSetter(Builder):
         end_regs = set(start_regs)
 
         # skip ones that change memory if no modifiable_memory_addr
-        if modifiable_memory_range is None and \
-                (len(g.mem_reads) > 0 or len(g.mem_writes) > 0 or len(g.mem_changes) > 0):
+        if modifiable_memory_range is None and g.has_symbolic_access():
             return set(), set()
         elif modifiable_memory_range is not None:
             # check if we control all the memory reads/writes/changes
-            all_mem_accesses = g.mem_changes + g.mem_reads + g.mem_writes
+            accesses =  g.mem_changes + g.mem_reads + g.mem_writes
+            all_mem_accesses = [m for m in accesses if m.is_symbolic_access()]
             mem_accesses_controlled = True
             for m_access in all_mem_accesses:
                 for reg in m_access.addr_dependencies:
@@ -355,9 +436,6 @@ class RegSetter(Builder):
         # doesnt change it
         if reg not in gadget.changed_regs:
             return False
-        # does syscall
-        if gadget.makes_syscall:
-            return False
         # can be controlled completely, not a partial control
         if reg in gadget.reg_controllers or reg in gadget.popped_regs:
             return False
@@ -387,14 +465,22 @@ class RegSetter(Builder):
 
     #### Chain Building Algorithm 2: pop-only BFS search ####
 
-    def _find_relevant_gadgets(self, **registers):
+    def _find_relevant_gadgets(self, allow_mem_access=True, **registers):
         """
         find gadgets that may pop/load/change requested registers
-        exclude gadgets that do symbolic memory access
         """
-        gadgets = set({})
+        gadgets = set()
+
+        # this step will add crafted rop_blocks as well
+        for reg in registers:
+            gadgets.update(self._reg_setting_dict[reg])
+
         for g in self._reg_setting_gadgets:
+            if not g.self_contained:
+                continue
             if g.has_symbolic_access():
+                continue
+            if not allow_mem_access and g.num_sym_mem_access:
                 continue
             for reg in registers:
                 if reg in g.popped_regs:
@@ -442,7 +528,8 @@ class RegSetter(Builder):
                     hard_chain = hard_chains[0]
                 else:
                     hard_chain = self._find_add_chain(gadgets, reg, val)
-                self.hard_chain_cache[key] = hard_chain # we cache the result even if it fails
+                if hard_chain:
+                    self.hard_chain_cache[key] = hard_chain # we cache the result even if it fails
             if not hard_chain:
                 l.error("Fail to set register: %s to: %#x", reg, val)
                 return []
@@ -539,12 +626,7 @@ class RegSetter(Builder):
             if not gadget.changed_regs.isdisjoint(preserve_regs):
                 continue
             # Skip gadgets with non-constant memory accesses if we don't have memory that can be safely accessed.
-            if modifiable_memory_range is None and any(
-                mem_access.addr_constant is None
-                for mem_access in itertools.chain(
-                    gadget.mem_changes, gadget.mem_reads, gadget.mem_writes
-                )
-            ):
+            if modifiable_memory_range is None and gadget.has_symbolic_access():
                 continue
             remaining_regs = self._get_remaining_regs(gadget, registers)
             if remaining_regs is None:
@@ -591,7 +673,7 @@ class RegSetter(Builder):
 
         for reg in registers:
             if reg in gadget.popped_regs:
-                reg_vars = gadget.popped_reg_vars[reg]
+                reg_vars = gadget.popped_reg_vars[reg] if reg in gadget.popped_reg_vars else set()
                 if not reg_vars.isdisjoint(stack_dependencies):
                     # Two registers are popped from the same location on the stack.
                     return None
@@ -634,7 +716,7 @@ class RegSetter(Builder):
         # gadget grouping
         d = defaultdict(list)
         for g in gadgets:
-            key = (len(g.changed_regs), g.stack_change, g.num_mem_access, g.isn_count)
+            key = (len(g.changed_regs), g.stack_change, g.num_sym_mem_access, g.isn_count)
             d[key].append(g)
         if len(d) == 0:
             return set()
@@ -671,11 +753,14 @@ class RegSetter(Builder):
             return False
         if g1.transit_type != g2.transit_type:
             return False
+        if g1.has_conditional_branch != g2.has_conditional_branch:
+            return False
         return True
 
     def filter_gadgets(self, gadgets):
         """
-        process gadgets based their effects
+        process gadgets based on their effects
+        exclude gadgets that do symbolic memory access
         """
         bests = set()
         gadgets = set(gadgets)

@@ -15,14 +15,14 @@ class Shifter(Builder):
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
 
-        self.shift_gadgets = None
+        self.shift_gadgets: dict = None # type: ignore
 
-    def update(self):
+    def bootstrap(self):
         self.shift_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
 
     def verify_shift(self, chain, length, preserve_regs):
         arch_bytes = self.project.arch.bytes
-        init_sp = chain._blank_state.regs.sp.concrete_value - len(chain._values) * arch_bytes
+        init_sp = chain._blank_state.regs.sp.concrete_value
         state = chain.exec()
         if state.regs.sp.concrete_value != init_sp + length + arch_bytes:
             return False
@@ -77,14 +77,10 @@ class Shifter(Builder):
         for g in self.shift_gadgets[length]:
             if preserve_regs.intersection(g.changed_regs):
                 continue
-            if next_pc_idx == g_cnt-1:
-                if g.transit_type != 'ret':
-                    continue
-            else:
-                if g.transit_type != 'pop_pc':
-                    continue
-                if g.pc_offset != next_pc_idx*arch_bytes:
-                    continue
+            if g.transit_type != 'pop_pc':
+                continue
+            if g.pc_offset != next_pc_idx*arch_bytes:
+                continue
             try:
                 chain = RopChain(self.project, self.chain_builder)
                 chain.add_gadget(g)
@@ -129,10 +125,12 @@ class Shifter(Builder):
             return False
         if g1.transit_type != g2.transit_type:
             return False
+        if g1.pc_offset != g2.pc_offset:
+            return False
         return True
 
     def _better_than(self, g1, g2):
-        if g1.num_mem_access > g2.num_mem_access:
+        if g1.num_sym_mem_access > g2.num_sym_mem_access:
             return False
         if not g1.changed_regs.issubset(g2.changed_regs):
             return False
@@ -144,13 +142,12 @@ class Shifter(Builder):
         """
         filter gadgets having the same effect
         """
-        # we don't like gadgets with any memory accesses or jump gadgets
+        # we don't like gadgets with any memory accesses
         gadgets = [
             x
             for x in gadgets
-            if x.num_mem_access == 0
-            and x.transit_type != "jmp_reg"
-            and not x.has_conditional_branch
+            if x.num_sym_mem_access == 0
+            and x.self_contained
         ]
 
         gadgets = self._filter_gadgets(gadgets)

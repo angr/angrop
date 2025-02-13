@@ -19,7 +19,7 @@ class MemChanger(Builder):
         self._mem_change_gadgets = None
         self._mem_add_gadgets = None
 
-    def update(self):
+    def bootstrap(self):
         self._mem_change_gadgets = self._get_all_mem_change_gadgets(self.chain_builder.gadgets)
         self._mem_add_gadgets = self._get_all_mem_add_gadgets()
 
@@ -37,38 +37,61 @@ class MemChanger(Builder):
         # the next pc must come from the stack
         if len(state.regs.pc.variables) != 1:
             raise RopException("memory add fails - 2")
-        if not set(state.regs.pc.variables).pop().startswith("symbolic_stack"):
+        if not set(state.regs.pc.variables).pop().startswith("next_pc_"):
             raise RopException("memory add fails - 3")
 
     def _set_regs(self, *args, **kwargs):
         return self.chain_builder._reg_setter.run(*args, **kwargs)
 
-    @staticmethod
-    def _get_all_mem_change_gadgets(gadgets):
+    def _same_effect(self, g1, g2):
+        change1 = g1.mem_changes[0]
+        change2 = g2.mem_changes[0]
+
+        if change1.op != change2.op:
+            return False
+        if change1.data_size != change2.data_size:
+            return False
+        if change1.data_constant != change2.data_constant:
+            return False
+        if change1.addr_dependencies != change2.addr_dependencies:
+            return False
+        if change1.data_dependencies != change2.data_dependencies:
+            return False
+        return True
+
+    def _better_than(self, g1, g2):
+        if g1.isn_count <= g2.isn_count and \
+            g1.stack_change <= g2.stack_change and \
+            len(g1.changed_regs) <= len(g2.changed_regs) and \
+            g1.num_sym_mem_access <= g2.num_sym_mem_access:
+            return True
+        return False
+
+    def _get_all_mem_change_gadgets(self, gadgets):
         possible_gadgets = set()
         for g in gadgets:
-            if g.has_conditional_branch:
+            if not g.self_contained:
                 continue
-            if len(g.mem_reads) + len(g.mem_writes) > 0 or len(g.mem_changes) != 1:
-                continue
-            if g.stack_change <= 0:
+            sym_rw = set(m for m in g.mem_reads + g.mem_writes if m.is_symbolic_access())
+            if len(sym_rw) > 0 or len(g.mem_changes) != 1:
                 continue
             for m_access in g.mem_changes:
                 # assume we need intersection of addr_dependencies and data_dependencies to be 0
                 if m_access.addr_controllable() and m_access.data_controllable() and m_access.addr_data_independent():
                     possible_gadgets.add(g)
-        return possible_gadgets
+        gadgets = self._filter_gadgets(possible_gadgets)
+        return sorted(gadgets, key=lambda x: x.stack_change)
 
     def _get_all_mem_add_gadgets(self):
-        return {x for x in self._mem_change_gadgets if x.mem_changes[0].op in ('__add__', '__sub__')}
+        return [x for x in self._mem_change_gadgets if x.mem_changes[0].op in ('__add__', '__sub__')]
 
     @staticmethod
     def _sort_gadgets(gadgets):
         def cmp_func(g1, g2):
             # prefer gadget with fewer memory accesses
-            if g1.num_mem_access > g2.num_mem_access:
+            if g1.num_sym_mem_access > g2.num_sym_mem_access:
                 return 1
-            if g1.num_mem_access < g2.num_mem_access:
+            if g1.num_sym_mem_access < g2.num_sym_mem_access:
                 return -1
             # prefer gadget taking less space
             if g1.stack_change > g2.stack_change:
@@ -76,9 +99,9 @@ class MemChanger(Builder):
             elif g1.stack_change < g2.stack_change:
                 return -1
             # prefer shorter gadget
-            if g1.block_length > g2.block_length:
+            if g1.isn_count > g2.isn_count:
                 return 1
-            elif g1.block_length < g2.block_length:
+            elif g1.isn_count < g2.isn_count:
                 return -1
             return 0
         return sorted(gadgets, key=cmp_to_key(cmp_func))
@@ -89,7 +112,7 @@ class MemChanger(Builder):
         if data_size is None:
             data_size = self.project.arch.bits
 
-        possible_gadgets = {x for x in self._mem_add_gadgets if x.mem_changes[0].data_size == data_size}
+        possible_gadgets = [x for x in self._mem_add_gadgets if x.mem_changes[0].data_size == data_size]
         if not possible_gadgets:
             raise RopException("Fail to find any gadget that can perform memory adding...")
 
@@ -102,12 +125,12 @@ class MemChanger(Builder):
 
         # filter out gadgets that certainly cannot be used for add_mem
         # e.g. we can't set needed registers
-        gadgets = []
+        gadgets = set()
         for t, _ in reg_data.items():
             for g in possible_gadgets:
                 mem_change = g.mem_changes[0]
                 if (set(mem_change.addr_dependencies) | set(mem_change.data_dependencies)).issubset(set(t)):
-                    gadgets.append(g)
+                    gadgets.add(g)
 
         # sort the gadgets with number of memory accesses and stack_change
         gadgets = self._sort_gadgets(gadgets)
@@ -190,6 +213,9 @@ class MemChanger(Builder):
         chain.add_gadget(gadget)
 
         bytes_per_pop = self.project.arch.bytes
-        for _ in range(gadget.stack_change // bytes_per_pop - 1):
-            chain.add_value(self._get_fill_val())
+        for offset in range(0, gadget.stack_change, bytes_per_pop):
+            if offset == gadget.pc_offset:
+                chain.add_value(claripy.BVS("next_pc", self.project.arch.bits))
+            else:
+                chain.add_value(self._get_fill_val())
         return chain
