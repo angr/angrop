@@ -1,7 +1,7 @@
 import os
 
 import angr
-import angrop
+import angrop # pylint: disable=unused-import
 from angrop.rop_block import RopBlock
 from angrop.errors import RopException
 
@@ -16,7 +16,6 @@ def test_ropblock():
     assert rb.next_pc_idx() == 11
 
 def test_reg_mover():
-    cache_path = os.path.join(CACHE_DIR, "amd64_glibc_2.19")
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=True, only_check_near_rets=False)
 

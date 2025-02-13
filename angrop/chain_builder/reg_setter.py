@@ -1,5 +1,4 @@
 import heapq
-import itertools
 import logging
 from collections import defaultdict, Counter
 from typing import Iterable, Iterator
@@ -106,7 +105,8 @@ class RegSetter(Builder):
                     assert rb.stack_change == total_sc
                     if reg not in bests or rb.stack_change < bests[reg].stack_change:
                         bests[reg] = rb
-                    elif rb.stack_change == bests[reg].stack_change and bests[reg].num_sym_mem_access > rb.num_sym_mem_access:
+                    elif rb.stack_change == bests[reg].stack_change and \
+                            bests[reg].num_sym_mem_access > rb.num_sym_mem_access:
                         bests[reg] = rb
                 except RopException:
                     pass
@@ -147,7 +147,8 @@ class RegSetter(Builder):
         pc_var = set(state.regs.pc.variables).pop()
         return pc_var.startswith("next_pc")
 
-    def _mixins_to_gadgets(self, mixins):
+    @staticmethod
+    def _mixins_to_gadgets(mixins):
         gadgets = []
         for mixin in mixins:
             if isinstance(mixin, RopGadget):
@@ -155,7 +156,7 @@ class RegSetter(Builder):
             elif isinstance(mixin, RopBlock):
                 gadgets += mixin._gadgets
             else:
-                raise
+                raise ValueError(f"cannot turn {mixin} into RopBlock!")
         return gadgets
 
     def run(self, modifiable_memory_range=None, preserve_regs=None, max_length=10, **registers):

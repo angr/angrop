@@ -1,7 +1,5 @@
 import logging
 
-import claripy
-
 from . import rop_utils
 from .errors import RopException
 from .rop_gadget import RopGadget
@@ -117,7 +115,7 @@ class RopChain:
             return symbol.name
         return None
 
-    def exec(self, max_steps=None, timeout=None):
+    def exec(self, timeout=None):
         """
         symbolically execute the ROP chain and return the final state
         """
@@ -161,7 +159,6 @@ class RopChain:
         simgr = project.factory.simgr(s)
         while simgr.one_active.addr != target_addr:
             simgr.step()
-            state = simgr.active[0]
             assert len(simgr.active) == 1
         return simgr.one_active
 

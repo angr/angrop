@@ -41,7 +41,7 @@ def test_x86_64_func_call():
         rop.save_gadgets(cache_path)
 
     chain = rop.func_call('puts', [0x402704]) + rop.func_call('puts', [0x402704])
-    state = chain.exec(max_steps=8)
+    state = chain.exec()
     assert state.posix.dumps(1) == b'Enter username: \nEnter username: \n'
 
 def test_i386_func_call():
@@ -56,7 +56,7 @@ def test_i386_func_call():
         rop.save_gadgets(cache_path)
 
     chain = rop.func_call('write', [1, 0x80AC5E8, 17]) + rop.func_call('write', [1, 0x80AC5E8, 17])
-    state = chain.exec(max_steps=100)
+    state = chain.exec()
     assert state.posix.dumps(1) == b'/usr/share/locale/usr/share/locale'
 
 def test_arm_func_call():
@@ -74,16 +74,16 @@ def test_arm_func_call():
 
     proj.hook_symbol('write', angr.SIM_PROCEDURES['posix']['write']())
     chain1 = rop.func_call("write", [1, 0x4E15F0, 9])
-    state = chain1.exec(max_steps=100)
+    state = chain1.exec()
     assert state.posix.dumps(1) == b'malloc.c\x00'
 
     proj.hook_symbol('puts', angr.SIM_PROCEDURES['libc']['puts']())
     chain2 = rop.func_call("puts", [0x4E15F0])
-    state = chain2.exec(max_steps=100)
+    state = chain2.exec()
     assert state.posix.dumps(1) == b'malloc.c\n'
 
     chain = chain1 + chain2
-    state = chain.exec(max_steps=100)
+    state = chain.exec()
     assert state.posix.dumps(1) == b'malloc.c\x00malloc.c\n'
 
 def test_i386_syscall():
@@ -141,7 +141,7 @@ def test_preserve_regs():
     chain1 = rop.set_regs(rdi=0x402715)
     chain2 = rop.func_call('puts', [0x402704], preserve_regs=['rdi'])
     chain = chain1+chain2
-    state = chain.exec(max_steps=5)
+    state = chain.exec()
     assert state.posix.dumps(1) == b'Failed to parse username.\n'
 
 def test_i386_mem_write():
@@ -536,10 +536,25 @@ def test_aarch64_mem_access():
 def test_mipstake():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "mips", "mipstake"), auto_load_libs=True, arch="mips")
     rop = proj.analyses.ROP(max_block_size=40)
-    g = rop.analyze_gadget(0x400E64) # lw $ra, 0x34($sp); lw $s5, 0x30($sp); lw $s4, 0x2c($sp); lw $s3, 0x28($sp); lw $s2, 0x24($sp); lw $s1, 0x20($sp); lw $s0, 0x1c($sp); jr $ra; addiu $sp, $sp, 0x38
+    # lw $ra, 0x34($sp);
+    # lw $s5, 0x30($sp);
+    # lw $s4, 0x2c($sp);
+    # lw $s3, 0x28($sp);
+    # lw $s2, 0x24($sp);
+    # lw $s1, 0x20($sp);
+    # lw $s0, 0x1c($sp);
+    # jr $ra;
+    # addiu $sp, $sp, 0x38
+    g = rop.analyze_gadget(0x400E64)
     assert g is not None
 
-    g = rop.analyze_gadget(0x400E40) # lw $t9, ($s1); addiu $s0, $s0, 1; move $a0, $s3; move $a1, $s4; jalr $t9; move $a2, $s5
+    # lw $t9, ($s1);
+    # addiu $s0, $s0, 1;
+    # move $a0, $s3;
+    # move $a1, $s4;
+    # jalr $t9;
+    # move $a2, $s5
+    g = rop.analyze_gadget(0x400E40)
     assert g is not None
     chain = rop.func_call("sleep", [0x41414141, 0x42424242, 0x43434343])
     sleep_addr = proj.loader.main_object.imports['sleep'].value
@@ -553,7 +568,14 @@ def test_unexploitable():
     rop = proj.analyses.ROP(max_block_size=40, fast_mode=False, only_check_near_rets=False)
     g = rop.analyze_gadget(0x4005D0) # mov rdx, r15; mov rsi, r14; mov edi, r13d; call qword ptr [r12 + rbx*8]
     assert g is not None
-    g = rop.analyze_gadget(0x4005E6) # mov rbx, qword ptr [rsp + 8]; mov rbp, qword ptr [rsp + 0x10]; mov r12, qword ptr [rsp + 0x18]; mov r13, qword ptr [rsp + 0x20]; mov r14, qword ptr [rsp + 0x28]; mov r15, qword ptr [rsp + 0x30]; add rsp, 0x38; ret
+    # mov rbx, qword ptr [rsp + 8];
+    # mov rbp, qword ptr [rsp + 0x10];
+    # mov r12, qword ptr [rsp + 0x18];
+    # mov r13, qword ptr [rsp + 0x20];
+    # mov r14, qword ptr [rsp + 0x28];
+    # mov r15, qword ptr [rsp + 0x30];
+    # add rsp, 0x38; ret
+    g = rop.analyze_gadget(0x4005E6)
     assert g is not None
     chain = rop.func_call("sleep", [0x41414141, 0x4242424242424242, 0x4343434343434343])
 

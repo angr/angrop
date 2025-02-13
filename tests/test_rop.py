@@ -1,10 +1,11 @@
 import os
+import pickle
+import logging
+
+import claripy
 import angr
 import angrop  # pylint: disable=unused-import
-import pickle
-import claripy
 
-import logging
 l = logging.getLogger("angrop.tests.test_rop")
 
 public_bin_location = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../binaries/tests')
@@ -158,8 +159,9 @@ def test_rop_x86_64():
         rop.save_gadgets(cache_path)
 
     # check gadgets
-    tup = pickle.load(open(cache_path, "rb"))
-    compare_gadgets(rop._all_gadgets, tup[0])
+    with open(cache_path, "rb") as f:
+        tup = pickle.load(f)
+        compare_gadgets(rop._all_gadgets, tup[0])
 
     # test creating a rop chain
     chain = rop.set_regs(rbp=0x1212, rbx=0x1234567890123456)
@@ -186,8 +188,9 @@ def test_rop_i386_cgc():
         rop.save_gadgets(cache_path)
 
     # check gadgets
-    tup = pickle.load(open(os.path.join(test_data_location, "0b32aa01_01_gadgets"), "rb"))
-    compare_gadgets(rop._all_gadgets, tup[0])
+    with open(os.path.join(test_data_location, "0b32aa01_01_gadgets"), "rb") as f:
+        tup = pickle.load(f)
+        compare_gadgets(rop._all_gadgets, tup[0])
 
     # test creating a rop chain
     chain = rop.set_regs(ebx=0x98765432, ecx=0x12345678)
@@ -213,8 +216,9 @@ def test_rop_arm():
         rop.save_gadgets(cache_path)
 
     # check gadgets
-    tup = pickle.load(open(os.path.join(test_data_location, "arm_manysum_test_gadgets"), "rb"))
-    compare_gadgets(rop._all_gadgets, tup[0])
+    with open(os.path.join(test_data_location, "arm_manysum_test_gadgets"), "rb") as f:
+        tup = pickle.load(f)
+        compare_gadgets(rop._all_gadgets, tup[0])
 
     # test creating a rop chain
     chain = rop.set_regs(r11=0x99887766)
@@ -267,7 +271,7 @@ def test_roptest_aarch64():
 
 def run_all():
     functions = globals()
-    all_functions = dict([x for x in functions.items() if x[0].startswith('test_')])
+    all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
     for f in sorted(all_functions.keys()):
         if hasattr(all_functions[f], '__call__'):
             print(f)

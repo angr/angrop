@@ -34,6 +34,7 @@ class RopBlock(RopChain):
         self.mem_writes = []
         self.mem_changes = []
 
+        self.bbl_addrs = []
         self.isn_count: int = None # type: ignore
 
     @staticmethod
@@ -136,7 +137,8 @@ class RopBlock(RopChain):
             state.solver.BVS("next_pc", project.arch.bits),
             project,
         )
-        state.memory.store(state.regs.sp + gadget.pc_offset + bytes_per_pop, next_pc_val.ast, endness=project.arch.memory_endness)
+        state.memory.store(state.regs.sp + gadget.pc_offset + bytes_per_pop, next_pc_val.ast,
+                           endness=project.arch.memory_endness)
         state.stack_pop()
         state.ip = gadget.addr
 

@@ -678,7 +678,8 @@ class GadgetAnalyzer:
             prev_act = None
             bits = self.project.arch.bits
             for act in final_state.history.actions:
-                if act.type == 'reg' and act.action == 'write' and act.size == bits and act.storage == self.arch.stack_pointer:
+                if act.type == 'reg' and act.action == 'write' and act.size == bits and \
+                            act.storage == self.arch.stack_pointer:
                     if not act.data.ast.symbolic:
                         last_sp = act.data.ast
                     else:

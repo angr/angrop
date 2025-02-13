@@ -118,7 +118,7 @@ class FuncCaller(Builder):
                         if (ptr_value == func_addr and
                                 self._is_valid_pointer(potential_ptr)):
                             return potential_ptr
-                    except:
+                    except Exception: # pylint: disable=broad-exception-caught
                         continue
 
         raise RopException("Could not find mem pointing to func in binary memory")
@@ -244,7 +244,7 @@ class FuncCaller(Builder):
             raise RopException("fail to invoke function and return using all self-contained gadgets")
         if needs_return is None:
             s = symbol if symbol else hex(address)
-            l.warning(f"function {s} won't return!")
+            l.warning("function %s won't return!", s)
             kwargs['needs_return'] = False
 
         # try func_jmp_gadgets

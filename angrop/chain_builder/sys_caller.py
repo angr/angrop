@@ -47,7 +47,8 @@ class SysCaller(FuncCaller):
     def bootstrap(self):
         self.syscall_gadgets = self.filter_gadgets(self.chain_builder.syscall_gadgets)
 
-    def verify(self, chain, registers, preserve_regs):
+    @staticmethod
+    def verify(chain, registers, preserve_regs):
         # these registers are marked as preserved, so they are set by the user
         # don't verify them here
         registers = dict(registers)
