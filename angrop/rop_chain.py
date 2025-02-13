@@ -64,7 +64,6 @@ class RopChain:
     @classmethod
     def set_cls_timeout(cls, timeout):
         cls.cls_timeout = timeout
-        print(cls, cls.cls_timeout)
 
     def add_value(self, value):
         if type(value) is not RopValue:
