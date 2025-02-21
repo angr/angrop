@@ -39,6 +39,7 @@ class SysCaller(FuncCaller):
         super().__init__(chain_builder)
 
         self.syscall_gadgets: list = None # type: ignore
+        self.sysnum_reg = self.project.arch.register_names[self.project.arch.syscall_num_offset]
 
     @staticmethod
     def supported_os(os):
@@ -131,6 +132,50 @@ class SysCaller(FuncCaller):
 
         return chain + chain2
 
+    def _can_set_sysnum_reg(self, syscall_num):
+        try:
+            self.chain_builder.set_regs(**{self.sysnum_reg: syscall_num})
+        except RopException:
+            return False
+        return True
+
+    def _per_request_filtering(self, syscall_num, registers, preserve_regs, needs_return):
+        """
+        filter out gadgets that cannot be used at all for the chain
+        """
+
+        gadgets = self.syscall_gadgets
+        if needs_return:
+            gadgets = [x for x in gadgets if x.can_return]
+        def concrete_val_ok(g):
+            for key, val in g.prologue.concrete_regs.items():
+                if key in registers and type(registers[key]) == int and registers[key] != val:
+                    return False
+                if key == self.sysnum_reg and val != syscall_num:
+                    return False
+            return True
+        gadgets = [x for x in gadgets if concrete_val_ok(x)]
+        target_regs = dict(registers)
+        target_regs[self.sysnum_reg] = syscall_num
+
+        # now try to set sysnum_reg, if we can't do it, that means we have to rely on concrete values
+        def set_sysnum(g):
+            if self.sysnum_reg not in g.prologue.concrete_regs:
+                return False
+            return g.prologue.concrete_regs[self.sysnum_reg] == syscall_num
+        if self.sysnum_reg not in preserve_regs and not self._can_set_sysnum_reg(syscall_num):
+            gadgets = [g for g in gadgets if set_sysnum(g)]
+
+        # prioritize gadgets that can set more arguments
+        def key_func(g):
+            good_sets = set()
+            for reg, val in g.prologue.concrete_regs.items():
+                if target_regs[reg] == val:
+                    good_sets.add(reg)
+            return len(good_sets)
+        gadgets = sorted(gadgets, reverse=True, key=key_func)
+        return gadgets
+
     def do_syscall(self, syscall_num, args, needs_return=True, **kwargs):
         """
         build a rop chain which performs the requested system call with the arguments set to 'registers' before
@@ -155,36 +200,31 @@ class SysCaller(FuncCaller):
         for arg, reg in zip(args, cc.ARG_REGS):
             registers[reg] = rop_utils.cast_rop_value(arg, self.project)
 
-        sysnum_reg = self.project.arch.register_names[self.project.arch.syscall_num_offset]
-        registers[sysnum_reg] = rop_utils.cast_rop_value(syscall_num, self.project)
+        more = kwargs.pop('preserve_regs', set())
 
         # do per-request gadget filtering
-        gadgets = self.syscall_gadgets
-        if needs_return:
-            gadgets = [x for x in gadgets if x.can_return]
-        def concrete_val_ok(g):
-            for key, val in g.concrete_regs.items():
-                if key in registers and type(registers[key]) == int and registers[key] != val:
-                    return False
-            return True
-        gadgets = [x for x in gadgets if concrete_val_ok(x)]
-        def key_func(x):
-            return len(set(x.concrete_regs.keys()).intersection(registers.keys()))
-        gadgets = sorted(gadgets, reverse=True, key=key_func)
-
-        more = kwargs.pop('preserve_regs', set())
+        gadgets = self._per_request_filtering(syscall_num, registers, more, needs_return)
+        orig_registers = registers
         for gadget in gadgets:
-            # separate registers to args and extra_regs
-            to_set_regs = {x:y for x,y in registers.items() if x not in gadget.prologue.concrete_regs}
-            if sysnum_reg in to_set_regs:
-                extra_regs = {sysnum_reg: syscall_num}
-                del to_set_regs[sysnum_reg]
-            else:
-                extra_regs = {}
-            preserve_regs = set(registers.keys()) - set(to_set_regs.keys())
-            if sysnum_reg in preserve_regs:
-                preserve_regs.remove(sysnum_reg)
-            preserve_regs.update(more)
+            registers = dict(orig_registers) # create a copy of it
+            preserve_regs = set(more)
+            extra_regs = {self.sysnum_reg: syscall_num}
+
+            # at this point, we know all the concrete_regs are good, just remove the requirementes
+            for reg in gadget.prologue.concrete_regs:
+                if reg in extra_regs:
+                    del extra_regs[reg]
+                if reg in registers:
+                    preserve_regs.add(reg)
+
+            # now, check whether there are clobbered registers
+            p = gadget.prologue
+            clobbered_regs = p.changed_regs - p.popped_regs - set(p.concrete_regs.keys())
+            tmp = set(preserve_regs)
+            tmp = tmp.union(registers.keys())
+            tmp = tmp.union(extra_regs.keys())
+            if clobbered_regs.intersection(tmp):
+                continue
 
             try:
                 chain = self._func_call(gadget, cc, args, extra_regs=extra_regs,

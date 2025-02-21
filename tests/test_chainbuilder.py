@@ -112,9 +112,9 @@ def test_x86_64_syscall():
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
 
-    gadget = rop.analyze_gadget(0x536718)
+    gadget = rop.analyze_gadget(0x4fb4a6)
     rop.chain_builder._sys_caller.syscall_gadgets = [gadget]
-    chain = rop.do_syscall(0xca, [0, 0x81], needs_return=False)
+    chain = rop.do_syscall(0x2f, [], needs_return=False)
     assert chain
 
     # TODO: technically, we should support using this gadget, but
