@@ -139,7 +139,7 @@ def verify_execve_chain(chain):
 
 def test_roptest_mips():
     proj = angr.Project(os.path.join(public_bin_location, "mipsel/darpa_ping"), auto_load_libs=False)
-    rop = proj.analyses.ROP()
+    rop = proj.analyses.ROP(fast_mode=True)
     rop.find_gadgets_single_threaded(show_progress=False)
 
     chain = rop.set_regs(s0=0x41414142, s1=0x42424243, v0=0x43434344)
