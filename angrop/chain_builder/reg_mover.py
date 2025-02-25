@@ -20,13 +20,17 @@ class RegMover(Builder):
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
+        self._reg_moving_gadgets = None
         self._reg_moving_blocks: set[RopBlock] = None # type: ignore
         self._graph: nx.Graph = None # type: ignore
 
     def bootstrap(self):
-        reg_moving_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
-        self._reg_moving_blocks = {g for g in reg_moving_gadgets if g.self_contained}
+        self._reg_moving_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
+        self._reg_moving_blocks = {g for g in self._reg_moving_gadgets if g.self_contained}
         self._build_move_graph()
+
+    def optimize(self):
+        pass
 
     def _build_move_graph(self):
         self._graph = nx.DiGraph()

@@ -585,6 +585,40 @@ def test_unexploitable():
     assert state.regs.rsi.concrete_value == 0x4242424242424242
     assert state.regs.rdx.concrete_value == 0x4343434343434343
 
+def test_graph_search_reg_setter():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "arjsfxjr"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False)
+    cache_path = "./duh"
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    # the easy peasy pop-only reg setter
+    chain = rop.set_regs(r15=0x41414141)
+    assert chain
+
+    # the ability to utilize concrete values
+    # 0x000000000040259e : xor eax, eax ; add rsp, 8 ; ret
+    chain = rop.set_regs(rax=0)
+    assert chain
+
+    # the ability to set a register and then move it to another
+    chain = rop.set_regs(rax=0x41414141)
+    assert chain
+    state = chain.exec()
+    assert state.regs.rax.concrete_value == 0x41414141
+
+    # the ability to write_to_mem
+    chain = rop.write_to_mem(0x41414141, b'BBBB')
+    assert chain
+    state = chain.exec()
+    assert state.solver.eval(state.memory.load(0x41414141, 4), cast_to=bytes) == b'BBBB'
+
+    # the ability to write_to_mem and utilize jmp_mem gadgets
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

@@ -1,9 +1,11 @@
 import heapq
+import itertools
 import logging
 from collections import defaultdict, Counter
 from typing import Iterable, Iterator
 
 import claripy
+import networkx as nx
 from angr.errors import SimUnsatError
 
 from .builder import Builder
@@ -64,54 +66,51 @@ class RegSetter(Builder):
     def optimize(self):
         # now we have a functional RegSetter, check whether we can do better
 
-        # first, TODO: see whether we can use reg_mover to set hard-registers
+        # first, see whether we can use reg_mover to set hard-registers
+        # basically, we are looking for situations like this:
+        # 1) we can set register A to arbitrary value (in self._reg_setting_dict)
+        # 2) we can move register A to another register, preferably a unseen one
+        mover_graph = self.chain_builder._reg_mover._graph
+        all_chains = []
+        for src in self._reg_setting_dict:
+            for dst in self.arch.reg_set:
+                if src == dst:
+                    continue
+                paths = nx.all_simple_paths(mover_graph, src, dst)
+                for path in paths:
+                    path_chain = [self._reg_setting_dict[src]]
+                    edges = zip(path, path[1:])
+                    for edge in edges:
+                        edge_blocks = mover_graph.get_edge_data(edge[0], edge[1])['block']
+                        path_chain.append(edge_blocks)
+                    all_chains += list(itertools.product(*path_chain))
+
+        # FIXME: blockify is very slow
+        rop_blocks = [RopBlock.from_gadget_list(self._mixins_to_gadgets(c), self) for c in all_chains]
+        for rb in rop_blocks:
+            print('='*0x10)
+            rb.pp()
+            print(rb.popped_regs)
+        self._insert_to_reg_dict(rop_blocks)
 
         # second, see whether we can use non-self-contained gadgets to reduce stack-change requirements
         # TODO: currently, we only support jmp_reg gadgets
-        bests = {}
+        new_blocks = set()
         for gadget in self._reg_setting_gadgets:
             if gadget.self_contained:
                 continue
+            # check whether it introduces new capabilities
+            if all(x in self._reg_setting_dict  for x in gadget.popped_regs):
+                continue
+
             if gadget.has_conditional_branch:
                 continue
-            if gadget.transit_type != 'jmp_reg':
-                continue
-            stack_change = gadget.stack_change
-            if gadget.pc_reg not in self._reg_setting_dict:
-                continue
 
-            # choose the best gadget to set the PC for this jmp_reg gadget
-            pc_setter = None
-            for g in self._reg_setting_dict[gadget.pc_reg]:
-                if g.has_symbolic_access():
-                    continue
-                pc_setter = g
-                break
-            if pc_setter is None:
-                continue
-            pc_setter_sc = pc_setter.stack_change
+            rb = self.normalize_gadget(gadget)
+            if rb:
+                new_blocks.add(rb)
 
-            for reg in gadget.popped_regs:
-                if gadget.pc_reg not in self._reg_setting_dict:
-                    continue
-                total_sc = stack_change + pc_setter_sc
-                reg_sc = self._reg_setting_dict[reg][0].stack_change if reg in self._reg_setting_dict else 0xffffffff
-                if total_sc > reg_sc:
-                    continue
-
-                assert isinstance(pc_setter, RopGadget)
-                try:
-                    chain = self._build_reg_setting_chain([pc_setter, gadget], None, {}, total_sc)
-                    rb = RopBlock.from_chain(chain)
-                    assert rb.stack_change == total_sc
-                    if reg not in bests or rb.stack_change < bests[reg].stack_change:
-                        bests[reg] = rb
-                    elif rb.stack_change == bests[reg].stack_change and \
-                            bests[reg].num_sym_mem_access > rb.num_sym_mem_access:
-                        bests[reg] = rb
-                except RopException:
-                    pass
-        self._insert_to_reg_dict(bests.values())
+        self._insert_to_reg_dict(new_blocks)
 
     def verify(self, chain, preserve_regs, registers):
         """
@@ -192,28 +191,110 @@ class RegSetter(Builder):
         raise RopException("Couldn't set registers :(")
 
     def iterate_candidate_chains(self, modifiable_memory_range, preserve_regs, max_length, registers):
-        # algorithm1
-        gadgets, _, _ = self.find_candidate_chains_graph_search(modifiable_memory_range=modifiable_memory_range,
-                                                                preserve_regs=preserve_regs.copy(),
-                                                                **registers)
-        if gadgets:
-            yield gadgets
+        gadgets = self.find_candidate_chains_giga_graph_search(registers, preserve_regs)
+        yield from gadgets
+        ## algorithm1
+        #gadgets, _, _ = self.find_candidate_chains_graph_search(modifiable_memory_range=modifiable_memory_range,
+        #                                                        preserve_regs=preserve_regs.copy(),
+        #                                                        **registers)
+        #if gadgets:
+        #    yield gadgets
 
-        # algorithm2
-        yield from self.find_candidate_chains_pop_only_bfs_search(
-                                    self._find_relevant_gadgets(allow_mem_access=False, **registers),
-                                    preserve_regs.copy(),
-                                    **registers)
+        ## algorithm2
+        #yield from self.find_candidate_chains_pop_only_bfs_search(
+        #                            self._find_relevant_gadgets(allow_mem_access=False, **registers),
+        #                            preserve_regs.copy(),
+        #                            **registers)
 
-        # algorithm3
-        yield from self.find_candidate_chains_backwards_recursive_search(
-                                    self._reg_setting_gadgets,
-                                    set(registers),
-                                    current_chain=[],
-                                    preserve_regs=preserve_regs.copy(),
-                                    modifiable_memory_range=modifiable_memory_range,
-                                    visited={},
-                                    max_length=max_length)
+        ## algorithm3
+        #yield from self.find_candidate_chains_backwards_recursive_search(
+        #                            self._reg_setting_gadgets,
+        #                            set(registers),
+        #                            current_chain=[],
+        #                            preserve_regs=preserve_regs.copy(),
+        #                            modifiable_memory_range=modifiable_memory_range,
+        #                            visited={},
+        #                            max_length=max_length)
+
+    #### Chain Building Algorithm 0: super graph search algorithm described in the angrop-paper ####
+    def find_candidate_chains_giga_graph_search(self, registers, preserve_regs):
+        if preserve_regs is None:
+            preserve_regs = set()
+        regs = sorted(list(registers.keys()))
+        assert len(regs)
+
+        graph = nx.DiGraph()
+
+        # add all the nodes. here, each node represents a state where the corresponding register
+        # is correctly set to the target value
+        nodes = list(itertools.product((True, False), repeat=len(regs)))
+        graph.add_nodes_from(nodes)
+
+        def add_edge(src, dst, obj):
+            assert type(obj) is not list
+            if graph.has_edge(src, dst):
+                objects = graph.get_edge_data(src, dst)['objects']
+                if obj in objects:
+                    return
+                objects.add(obj)
+            else:
+                graph.add_edge(src, dst, objects={obj})
+
+        def get_dst_node(src, reg_list):
+            dst = list(src)
+            for reg in reg_list:
+                if reg not in regs:
+                    continue
+                idx = regs.index(reg)
+                dst[idx] = True
+            return tuple(dst)
+
+        def can_set_regs(g):
+            # ofc pops
+            reg_set = set(g.popped_regs)
+            # if concrete values happen to match
+            for reg in regs:
+                if registers[reg].symbolic:
+                    continue
+                if reg in g.concrete_regs and g.concrete_regs[reg] == registers[reg].concreted:
+                    reg_set.add(reg)
+            return reg_set
+
+        # add edges for pops and concrete values
+        gadgets = self._find_relevant_gadgets(allow_mem_access=False, **registers)
+        for g in gadgets:
+            reg_set = can_set_regs(g)
+            for n in nodes:
+                src_node = n
+                dst_node = get_dst_node(n, reg_set)
+                if src_node == dst_node:
+                    continue
+                # TODO: take into account clobbered registers
+                add_edge(src_node, dst_node, g)
+
+        # TODO: the ability to set a register using concrete_values and then move it to another
+        # currently, we don't have a testcase that needs this
+
+        # now find all paths between the src and dst node
+        src = tuple([False] * len(regs))
+        dst = tuple([True] * len(regs))
+
+        chains = [] # here, each "chain" is a list of gadgets
+        try:
+            paths = nx.all_simple_paths(graph, source=src, target=dst)
+            for path in paths:
+                tmp = []
+                edges = zip(path, path[1:])
+                for edge in edges:
+                    objects = graph.get_edge_data(edge[0], edge[1])['objects']
+                    tmp.append(objects)
+                chains += itertools.product(*tmp)
+        except nx.exception.NetworkXNoPath:
+            return []
+
+        # then sort them by stack_change
+        chains = sorted(chains, key=lambda c: sum(g.stack_change for g in c))
+        return chains
 
     #### Chain Building Algorithm 1: fast but unreliable graph-based search ####
 

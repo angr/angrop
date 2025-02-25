@@ -9,6 +9,7 @@ from ..errors import RopException
 from ..rop_gadget import RopGadget
 from ..rop_value import RopValue
 from ..rop_chain import RopChain
+from ..rop_block import RopBlock
 from ..gadget_finder.gadget_analyzer import GadgetAnalyzer
 
 class Builder:
@@ -155,7 +156,7 @@ class Builder:
         we know that lhs (stack content with modification) == rhs (user ropvalue)
         since user ropvalue may be symbolic, we need to present the stack content using the user ropvalue and store it
         on stack so that users can eval on their own ropvalue and get the correct solves
-        TODO: currently, we only support add/sub
+        TODO: currently, we only support add/sub, Extract/ZeroExt
         """
         assert self._ast_contains_stack_data(lhs)
         while lhs.depth != 1:
@@ -180,6 +181,18 @@ class Builder:
                 case "Reverse":
                     lhs = lhs.args[0]
                     rhs = claripy.Reverse(rhs)
+                case "ZeroExt":
+                    rhs_leading = claripy.Extract(rhs.length-1, rhs.length-lhs.args[0], rhs)
+                    if rhs_leading.concrete_value != 0:
+                        raise RopException("rebalance unsat")
+                    rhs = claripy.Extract(rhs.length-lhs.args[0]-1, 0, rhs)
+                    lhs = lhs.args[1]
+                case "Extract":
+                    assert lhs.length == rhs.length
+                    full_size = lhs.args[2].length
+                    assert lhs.args[1] == 0
+                    rhs = claripy.ZeroExt(full_size-rhs.length, rhs)
+                    lhs = lhs.args[2]
                 case _:
                     raise ValueError(f"{lhs.op} cannot be rebalanced at the moment. plz create an issue!")
         assert self._ast_contains_stack_data(lhs)
@@ -394,3 +407,39 @@ class Builder:
         """
         cls_name = self.__class__.__name__
         raise NotImplementedError(f"`advanced_update` is not implemented for {cls_name}!")
+
+    def normalize_jmp_reg(self, gadget):
+        reg_setter = self.chain_builder._reg_setter
+        if gadget.pc_reg not in reg_setter._reg_setting_dict:
+            return None
+
+        # choose the best gadget to set the PC for this jmp_reg gadget
+        for pc_setter in reg_setter._reg_setting_dict[gadget.pc_reg]:
+            if pc_setter.has_symbolic_access():
+                continue
+            total_sc = gadget.stack_change + pc_setter.stack_change
+            gadgets = reg_setter._mixins_to_gadgets([pc_setter, gadget])
+            try:
+                chain = reg_setter._build_reg_setting_chain(gadgets, None, {}, total_sc)
+                rb = RopBlock.from_chain(chain)
+                assert rb.stack_change == total_sc
+                return rb
+            except RopException:
+                pass
+        return None
+
+    def normalize_jmp_mem(self, gadget):
+        print("jmp_mem")
+        gadget.pp()
+        return None
+
+    def normalize_gadget(self, gadget):
+        # TODO
+        assert not gadget.has_conditional_branch
+
+        if gadget.transit_type == 'jmp_reg':
+            return self.normalize_jmp_reg(gadget)
+        elif gadget.transit_type == 'jmp_mem':
+            return self.normalize_jmp_mem(gadget)
+        else:
+            raise NotImplementedError()

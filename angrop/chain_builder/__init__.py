@@ -170,6 +170,7 @@ class ChainBuilder:
         self._pivot.bootstrap()
         self._shifter.bootstrap()
 
+        self._reg_mover.optimize()
         self._reg_setter.optimize()
 
     # should also be able to do execve by providing writable memory

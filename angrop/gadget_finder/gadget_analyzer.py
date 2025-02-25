@@ -583,18 +583,7 @@ class GadgetAnalyzer:
         # prefilter
         if len(ast.variables) != 1 or not list(ast.variables)[0].startswith("symbolic_stack"):
             return False
-
-        stack_bytes_length = self._stack_bsize # number of controllable bytes
-        if gadget_stack_change is not None:
-            stack_bytes_length = min(max(gadget_stack_change, 0), stack_bytes_length)
-        concrete_stack = claripy.BVV(b"B" * stack_bytes_length)
-        const = initial_state.memory.load(initial_state.regs.sp, stack_bytes_length) == concrete_stack
-        test_constraint = ast != test_val
-        # stack must have set the register and it must be able to set the register to all 1's or all 0's
-        ans = not initial_state.solver.satisfiable(extra_constraints=(const, test_constraint,)) and \
-                rop_utils.fast_unconstrained_check(initial_state, ast)
-
-        return ans
+        return True
 
     def _check_if_stack_pivot(self, init_state, final_state):
         ip_variables = list(final_state.ip.variables)
