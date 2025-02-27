@@ -1,4 +1,5 @@
 import struct
+import itertools
 from abc import abstractmethod
 from functools import cmp_to_key
 
@@ -492,14 +493,16 @@ class Builder:
             sc = -gadget.stack_change + self.project.arch.bytes
             shifter = None
             # find the smallest shifter
-            while True:
-                if sc in self.chain_builder._shifter.shift_gadgets:
-                    shifter = self.chain_builder._shifter.shift_gadgets[sc][0]
-                    if not shifter.changed_regs.intersection(preserve_regs):
-                        break
-                sc += self.project.arch.bytes
-                if sc > 1000: # FIXME: a terrible hack
-                    raise RuntimeError("plz raise an issue for this :P")
+            shift_gadgets = self.chain_builder._shifter.shift_gadgets
+            shifter_list = [y for x,y in shift_gadgets.items() if x >= sc]
+            if not shifter_list:
+                return None
+            shifter_list = itertools.chain.from_iterable(shifter_list)
+            for shifter in shifter_list:
+                if not shifter.changed_regs.intersection(preserve_regs):
+                    break
+            else:
+                return None
             assert shifter.transit_type == 'pop_pc'
 
             # step2: write the shifter to a writable location
