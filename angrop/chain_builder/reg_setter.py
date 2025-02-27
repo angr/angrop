@@ -87,28 +87,32 @@ class RegSetter(Builder):
 
         # FIXME: blockify is very slow
         rop_blocks = [RopBlock.from_gadget_list(self._mixins_to_gadgets(c), self) for c in all_chains]
-        for rb in rop_blocks:
-            print('='*0x10)
-            rb.pp()
-            print(rb.popped_regs)
         self._insert_to_reg_dict(rop_blocks)
 
-        # second, see whether we can use non-self-contained gadgets to reduce stack-change requirements
-        # TODO: currently, we only support jmp_reg gadgets
+        # second, see whether we can use non-self-contained gadgets to set hard registers
+        # TODO: currently, we don't support conditional_branches
+        #       and we may want to optimize this algorithm since sometimes it will generate functional
+        #       equivalent chains multiple times
         new_blocks = set()
         for gadget in self._reg_setting_gadgets:
             if gadget.self_contained:
                 continue
-            # check whether it introduces new capabilities
-            if all(x in self._reg_setting_dict  for x in gadget.popped_regs):
-                continue
-
             if gadget.has_conditional_branch:
                 continue
 
+            # check whether it introduces new capabilities
+            new_regs = {x for x in gadget.popped_regs if not self._reg_setting_dict[x]}
+            new_moves = {x for x in gadget.reg_moves if not self._reg_setting_dict[x.to_reg]}
+            if not (new_regs | new_moves):
+                continue
+
+            new_stuff = {m.to_reg for m in new_moves} | new_regs
+
             rb = self.normalize_gadget(gadget)
-            if rb:
+            if rb and rb.popped_regs.intersection(new_stuff):
                 new_blocks.add(rb)
+            if rb and not rb.popped_regs.intersection(new_stuff):
+                raise RuntimeError("RegSetter.optimize: plz raise an issue for this!")
 
         self._insert_to_reg_dict(new_blocks)
 
@@ -178,7 +182,6 @@ class RegSetter(Builder):
             l.debug("building reg_setting chain with chain:\n%s", chain_str)
             stack_change = sum(x.stack_change for x in gadgets)
             try:
-                gadgets = self._mixins_to_gadgets(gadgets)
                 chain = self._build_reg_setting_chain(gadgets, modifiable_memory_range,
                                                       registers, stack_change)
                 chain._concretize_chain_values(timeout=len(chain._values)*3)

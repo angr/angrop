@@ -194,10 +194,10 @@ def make_initial_state(project, stack_gsize, fast_mode=False):
 
     angr.SimState.register_default("sym_memory", SpecialMem)
 
-    remove_set = angr.options.resilience | angr.options.simplification
+    remove_set = angr.options.resilience | angr.options.simplification | {angr.options.AVOID_MULTIVALUED_READS}
     if fast_mode:
         remove_set.add(angr.options.SUPPORT_FLOATING_POINT)
-    add_set = {angr.options.AVOID_MULTIVALUED_READS, angr.options.AVOID_MULTIVALUED_WRITES,
+    add_set = {angr.options.CONSERVATIVE_READ_STRATEGY, angr.options.AVOID_MULTIVALUED_WRITES,
                angr.options.NO_SYMBOLIC_JUMP_RESOLUTION, angr.options.CGC_NO_SYMBOLIC_RECEIVE_LENGTH,
                angr.options.NO_SYMBOLIC_SYSCALL_RESOLUTION, angr.options.TRACK_ACTION_HISTORY,
                angr.options.ADD_AUTO_REFS, angr.options.SPECIAL_MEMORY_FILL}

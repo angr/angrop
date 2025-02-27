@@ -29,6 +29,7 @@ class Builder:
                                 self.arch.reg_set,
                                 stack_gsize=80*3
                                 )
+        self._used_writable_ptr = set()
 
     @property
     def badbytes(self):
@@ -46,7 +47,7 @@ class Builder:
         arch_bytes = self.project.arch.bytes
         arch_endness = self.project.arch.memory_endness
 
-        state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set)
+        state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set, stack_gsize=80*3)
         rop_utils.make_reg_symbolic(state, self.arch.base_pointer)
 
         state.regs.ip = pc
@@ -91,23 +92,38 @@ class Builder:
     def _get_ptr_to_writable(self, size):
         """
         get a pointer to writable region that can fit `size` bytes
+        currently, we force it to point to a NULL region
         it shouldn't contain bad byte
         """
         # get all writable segments
         segs = [ s for s in self.project.loader.main_object.segments if s.is_writable ]
+        null = b'\x00'*size
         # enumerate through all address to find a good address
         for seg in segs:
+            # we should use project.loader.memory.find API, but it is currently broken as reported here:
+            # https://github.com/angr/angr/issues/5330
             for addr in range(seg.min_addr, seg.max_addr):
+                # can't collide with used regions
+                collide = False
+                for a, s in self._used_writable_ptr:
+                    if a <= addr < a+s or a < addr+size <= a+s:
+                        collide = True
+                        break
+                if collide:
+                    continue
                 if all(not self._word_contain_badbyte(x) for x in range(addr, addr+size, self.project.arch.bytes)):
-                    return addr
+                    data = self.project.loader.memory.load(addr, 8)
+                    if data == null:
+                        self._used_writable_ptr.add((addr, size))
+                        return addr
         return None
 
     def _get_ptr_to_null(self):
         # get all non-writable segments
         segs = [ s for s in self.project.loader.main_object.segments if not s.is_writable ]
         # enumerate through all address to find a good address
+        null = b'\x00'*self.project.arch.bytes
         for seg in segs:
-            null = b'\x00'*self.project.arch.bytes
             for addr in self.project.loader.memory.find(null, search_min=seg.min_addr, search_max=seg.max_addr):
                 if not self._word_contain_badbyte(addr):
                     return addr
@@ -209,11 +225,14 @@ class Builder:
         then constraining the final registers to the values that were requested
         """
 
+        total_sc = sum(g.stack_change for g in gadgets)
+        arch_bytes = self.project.arch.bytes
+
         # emulate a 'pop pc' of the first gadget
         test_symbolic_state = rop_utils.make_symbolic_state(
             self.project,
             self.arch.reg_set,
-            stack_gsize=stack_change // self.project.arch.bytes + 1,
+            stack_gsize=80*3,
         )
         rop_utils.make_reg_symbolic(test_symbolic_state, self.arch.base_pointer)
         test_symbolic_state.ip = test_symbolic_state.stack_pop()
@@ -226,18 +245,35 @@ class Builder:
             if len(ast.variables) != 1:
                 raise RopException("Target value not controlled by a single variable")
             var = next(iter(ast.variables))
-            if not var.startswith("symbolic_stack_"):
+            if not var.startswith("symbolic_stack_") and not var.startswith("next_pc_"):
                 raise RopException("Target value not controlled by the stack")
             stack_var_to_value[var] = value
-
-        arch_bytes = self.project.arch.bytes
 
         state = test_symbolic_state.copy()
 
         # Step through each gadget and constrain the ip.
+        stack_patchs = []
         for gadget in gadgets:
-            map_stack_var(state.ip, gadget)
-            state.solver.add(state.ip == gadget.addr)
+            if isinstance(gadget, RopGadget):
+                map_stack_var(state.ip, gadget)
+                state.solver.add(state.ip == gadget.addr)
+            elif isinstance(gadget, RopBlock):
+                rb = gadget
+                map_stack_var(state.ip, rb)
+                state.solver.add(state.ip == rb._values[0].concreted)
+                st = rb._blank_state
+                for idx, val in enumerate(rb._values[1:]):
+                    state.memory.store(state.regs.sp+idx*arch_bytes, val.data, endness=self.project.arch.memory_endness)
+                    stack_patchs.append((state.regs.sp+idx*arch_bytes, val.data))
+                state.solver.add(*st.solver.constraints)
+                # when we import constraints, it is possible some of the constraints are associated with initial register value
+                # now stitch them together, only the ones being used though
+                used_regs = {x.split('-')[0].split('_')[-1] for x in st.solver._solver.variables if x.startswith('sreg_')}
+                for reg in used_regs:
+                    state.solver.add(state.registers.load(reg) == st.registers.load(reg))
+            else:
+                raise ValueError("huh?")
+
             for addr in gadget.bbl_addrs[1:]:
                 succ = state.step()
                 succ_states = [
@@ -293,6 +329,8 @@ class Builder:
         # Constrain memory access addresses.
         for action in state.history.actions:
             if action.type == action.MEM and action.addr.symbolic:
+                if len(state.solver.eval_upto(action.addr, 2)) == 1:
+                    continue
                 if modifiable_memory_range is None:
                     raise RopException(
                         "Symbolic memory address without modifiable memory range"
@@ -302,6 +340,10 @@ class Builder:
 
         # now import the constraints from the state that has reached the end of the ropchain
         test_symbolic_state.solver.add(*state.solver.constraints)
+
+        # now import the stack patchs
+        for addr, data in stack_patchs:
+            test_symbolic_state.memory.store(addr, data, endness=self.project.arch.memory_endness)
 
         bytes_per_pop = arch_bytes
 
@@ -321,9 +363,14 @@ class Builder:
                          badbytes=self.badbytes)
 
         # iterate through the stack values that need to be in the chain
+        plain_gadgets = []
         for offset in range(-bytes_per_pop, stack_change, bytes_per_pop):
             sym_word = test_symbolic_state.stack_read(offset, bytes_per_pop)
-            assert len(sym_word.variables) == 1
+            assert len(sym_word.variables) <= 1
+            if not sym_word.variables:
+                chain.add_value(sym_word)
+                continue
+
             sym_var = next(iter(sym_word.variables))
             if sym_var in stack_var_to_value:
                 val = stack_var_to_value[sym_var]
@@ -333,12 +380,16 @@ class Builder:
                     value = RopValue(val.addr, self.project)
                     value.rebase_analysis(chain=chain)
                     chain.add_value(value)
+                    plain_gadgets.append(val)
+                elif isinstance(val, RopBlock):
+                    chain.add_value(val._values[0])
+                    plain_gadgets += val._gadgets
                 else:
                     chain.add_value(val)
             else:
                 chain.add_value(sym_word)
 
-        chain.set_gadgets(gadgets)
+        chain.set_gadgets(plain_gadgets)
 
         return chain
 
@@ -408,7 +459,9 @@ class Builder:
         cls_name = self.__class__.__name__
         raise NotImplementedError(f"`advanced_update` is not implemented for {cls_name}!")
 
-    def normalize_jmp_reg(self, gadget):
+    def normalize_jmp_reg(self, gadget, preserve_regs=None):
+        if preserve_regs is None:
+            preserve_regs = set()
         reg_setter = self.chain_builder._reg_setter
         if gadget.pc_reg not in reg_setter._reg_setting_dict:
             return None
@@ -428,18 +481,85 @@ class Builder:
                 pass
         return None
 
-    def normalize_jmp_mem(self, gadget):
-        print("jmp_mem")
-        gadget.pp()
+    def normalize_jmp_mem(self, gadget, preserve_regs=None):
+        if preserve_regs is None:
+            preserve_regs = set()
+
+        mem_writer = self.chain_builder._mem_writer
+
+        try:
+            # step1: find a shifter that clean up the jmp_mem call
+            sc = -gadget.stack_change + self.project.arch.bytes
+            shifter = None
+            # find the smallest shifter
+            while True:
+                if sc in self.chain_builder._shifter.shift_gadgets:
+                    shifter = self.chain_builder._shifter.shift_gadgets[sc][0]
+                    if not shifter.changed_regs.intersection(preserve_regs):
+                        break
+                sc += self.project.arch.bytes
+                if sc > 1000: # FIXME: a terrible hack
+                    raise RuntimeError("plz raise an issue for this :P")
+            assert shifter.transit_type == 'pop_pc'
+
+            # step2: write the shifter to a writable location
+            ptr = self._get_ptr_to_writable(self.project.arch.bytes)
+            ptr_val = rop_utils.cast_rop_value(ptr, self.project)
+            data = struct.pack(self.project.arch.struct_fmt(), shifter.addr)
+            # we ensure the content it points to is zeroed out, so we don't need to write trailing 0s
+            chain = mem_writer.write_to_mem(ptr_val, data.rstrip(b'\x00'), fill_byte=b'\x00')
+            rb = RopBlock.from_chain(chain)
+            st = chain._blank_state
+            state = rb._blank_state
+
+            # step3: now, constrain the jmp_mem target to the location we just wrote into
+            rop_values, constraints = self._build_ast_constraints(gadget.pc_target)
+            if any(x not in rb.popped_regs for x in rop_values):
+                raise NotImplementedError("reg setting inside normalized_jmp_mem is not supported yet, plz create an issue :)")
+            init_state, final_state = rb.sim_exec()
+            for reg in rop_values:
+                rb._blank_state.solver.add(final_state.registers.load(reg) == rop_values[reg].ast)
+            rb._blank_state.solver.add(claripy.And(*constraints))
+            rb._blank_state.solver.add(gadget.pc_target == ptr)
+
+            # step4: chain it with the jmp_mem gadget
+            # note that rb2 here is actually the gadget+shifter
+            # but shifter is written into memory, so ignore it when building rb2
+            rb2 = RopBlock(self.project, self)
+            value = RopValue(gadget.addr, self.project)
+            value.rebase_analysis(chain=chain)
+            rb2.add_value(value)
+
+            sc = shifter.stack_change + gadget.stack_change
+            state = rb2._blank_state
+            for offset in range(0, sc, self.project.arch.bytes):
+                if offset == shifter.pc_offset + gadget.stack_change:
+                    val = state.solver.BVS("next_pc", self.project.arch.bits)
+                else:
+                    val = state.memory.load(state.regs.sp+rb.stack_change, self.project.arch.bytes, endness=project.arch.memory_endness)
+                rb2.add_value(val)
+            rb2.set_gadgets([gadget])
+
+            # stitch two blocks together: the final registers of the first block should be the initial registers of the second block
+            st = rb2._blank_state
+            for reg in rop_values:
+                rb._blank_state.solver.add(final_state.registers.load(reg) == st.registers.load(reg))
+
+            rb += rb2
+            return rb
+        except RopException:
+            return None
         return None
 
-    def normalize_gadget(self, gadget):
+    def normalize_gadget(self, gadget, preserve_regs=None):
         # TODO
         assert not gadget.has_conditional_branch
+        if preserve_regs is None:
+            preserve_regs = set()
 
         if gadget.transit_type == 'jmp_reg':
-            return self.normalize_jmp_reg(gadget)
+            return self.normalize_jmp_reg(gadget, preserve_regs=preserve_regs)
         elif gadget.transit_type == 'jmp_mem':
-            return self.normalize_jmp_mem(gadget)
+            return self.normalize_jmp_mem(gadget, preserve_regs=preserve_regs)
         else:
             raise NotImplementedError()

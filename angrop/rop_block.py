@@ -39,8 +39,12 @@ class RopBlock(RopChain):
 
     @staticmethod
     def new_sim_state(builder):
-        state = builder._sim_state
-        return state.copy()
+        state = rop_utils.make_symbolic_state(
+                                builder.project,
+                                builder.arch.reg_set,
+                                stack_gsize=80*3
+                                )
+        return state
 
     @property
     def num_sym_mem_access(self):

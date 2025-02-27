@@ -618,6 +618,12 @@ def test_graph_search_reg_setter():
     assert state.solver.eval(state.memory.load(0x41414141, 4), cast_to=bytes) == b'BBBB'
 
     # the ability to write_to_mem and utilize jmp_mem gadgets
+    chain = rop.func_call(0xdeadbeef, [0x41414141, 0x42424242, 0x43434343])
+    state = chain.concrete_exec_til_addr(0xdeadbeef)
+    assert state.regs.rdi.concrete_value == 0x41414141
+    assert state.regs.rsi.concrete_value == 0x42424242
+    assert state.regs.rdx.concrete_value == 0x43434343
+    assert state.ip.concrete_value == 0xdeadbeef
 
 def run_all():
     functions = globals()

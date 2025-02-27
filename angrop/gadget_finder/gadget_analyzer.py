@@ -502,6 +502,9 @@ class GadgetAnalyzer:
             if not var_name.startswith("sreg_"):
                 continue
             from_reg = var_name[5:].split('-')[0]
+            # rax->rax (32bit) is not a move, it is a register change
+            if from_reg == reg:
+                continue
             init_val = init_state.registers.load(from_reg)
             if init_val is final_val:
                 gadget.reg_moves.append(RopRegMove(from_reg, reg, self.project.arch.bits))

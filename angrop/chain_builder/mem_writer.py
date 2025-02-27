@@ -8,6 +8,7 @@ from .. import rop_utils
 from ..errors import RopException
 from ..rop_chain import RopChain
 from ..rop_value import RopValue
+from ..rop_block import RopBlock
 
 l = logging.getLogger("angrop.chain_builder.mem_writer")
 
@@ -106,7 +107,7 @@ class MemWriter(Builder):
                 break
 
     @rop_utils.timeout(5)
-    def _try_write_to_mem(self, gadget, use_partial_controllers, addr, string_data, fill_byte):
+    def _try_write_to_mem(self, gadget, use_partial_controllers, addr, string_data, preserve_regs, fill_byte):
         gadget_code = str(self.project.factory.block(gadget.addr).capstone)
         l.debug("building mem_write chain with gadget:\n%s", gadget_code)
         mem_write = gadget.mem_writes[0]
@@ -115,7 +116,7 @@ class MemWriter(Builder):
         # there should be only two cases. Either it is a string, or it is a single badbyte
         chain = RopChain(self.project, self, badbytes=self.badbytes)
         if len(string_data) == 1 and ord(string_data) in self.badbytes:
-            chain += self._write_to_mem_with_gadget(gadget, addr, string_data, use_partial_controllers)
+            chain += self._write_to_mem_with_gadget(gadget, addr, string_data, preserve_regs, use_partial_controllers)
         else:
             bytes_per_write = mem_write.data_size//8 if not use_partial_controllers else 1
             for i in range(0, len(string_data), bytes_per_write):
@@ -123,20 +124,25 @@ class MemWriter(Builder):
                 # pad if needed
                 if len(to_write) < bytes_per_write and fill_byte:
                     to_write += fill_byte * (bytes_per_write-len(to_write))
-                chain += self._write_to_mem_with_gadget(gadget, addr + i, to_write, use_partial_controllers)
+                chain += self._write_to_mem_with_gadget(gadget, addr + i, to_write, preserve_regs, use_partial_controllers)
 
         return chain
 
-    def _write_to_mem(self, addr, string_data, fill_byte=b"\xff"):# pylint:disable=inconsistent-return-statements
+    def _write_to_mem(self, addr, string_data, preserve_regs=None, fill_byte=b"\xff"):# pylint:disable=inconsistent-return-statements
         """
         :param addr: address to store the string
         :param string_data: string to store
         :param fill_byte: a byte to use to fill up the string if necessary
         :return: a rop chain
         """
+        if preserve_regs is None:
+            preserve_regs = set()
+
         for gadget in self._gen_mem_write_gadgets(string_data):
+            if gadget.changed_regs.intersection(preserve_regs):
+                continue
             try:
-                chain = self._try_write_to_mem(gadget, False, addr, string_data, fill_byte)
+                chain = self._try_write_to_mem(gadget, False, addr, string_data, preserve_regs, fill_byte)
                 self._good_mem_write_gadgets.add(gadget)
                 return chain
             except (RopException, angr.errors.SimEngineError, angr.errors.SimUnsatError):
@@ -144,7 +150,9 @@ class MemWriter(Builder):
 
         raise RopException("Fail to write data to memory :(")
 
-    def write_to_mem(self, addr, data, fill_byte=b"\xff"):
+    def write_to_mem(self, addr, data, preserve_regs=None, fill_byte=b"\xff"):
+        if preserve_regs is None:
+            preserve_regs = set()
 
         # sanity check
         if not (isinstance(fill_byte, bytes) and len(fill_byte) == 1):
@@ -180,14 +188,14 @@ class MemWriter(Builder):
             if self._word_contain_badbyte(ptr):
                 raise RopException(f"{ptr} contains bad byte!")
             if len(elem) != 1 or ord(elem) not in self.badbytes:
-                chain += self._write_to_mem(ptr, elem, fill_byte=fill_byte)
+                chain += self._write_to_mem(ptr, elem, preserve_regs=preserve_regs, fill_byte=fill_byte)
                 offset += len(elem)
             else:
-                chain += self._write_to_mem(ptr, elem, fill_byte=fill_byte)
+                chain += self._write_to_mem(ptr, elem, preserve_regs=preserve_regs, fill_byte=fill_byte)
                 offset += 1
         return chain
 
-    def _write_to_mem_with_gadget(self, gadget, addr_val, data, use_partial_controllers=False):
+    def _write_to_mem_with_gadget(self, gadget, addr_val, data, preserve_regs, use_partial_controllers=False):
         """
         addr_val is a RopValue
         """
@@ -256,7 +264,9 @@ class MemWriter(Builder):
             reg_vals[reg] = var
 
 
-        chain = self._set_regs(**reg_vals)
+        chain = self._set_regs(**reg_vals, preserve_regs=preserve_regs)
+        chain = RopBlock.from_chain(chain)
+        init_state, final_state = chain.sim_exec()
         chain.add_gadget(gadget)
 
         bytes_per_pop = self.project.arch.bytes
@@ -266,6 +276,8 @@ class MemWriter(Builder):
         else:
             raise ValueError(f"Unknown gadget transit_type: {gadget.transit_type}")
 
+        state = final_state
+        arch_bytes = self.project.arch.bytes
         for idx in range(gadget.stack_change // bytes_per_pop):
             if idx == pc_offset//bytes_per_pop:
                 next_pc_val = rop_utils.cast_rop_value(
@@ -274,7 +286,8 @@ class MemWriter(Builder):
                 )
                 chain.add_value(next_pc_val)
                 continue
-            chain.add_value(self._get_fill_val())
+            val = state.memory.load(state.regs.sp+idx*arch_bytes+arch_bytes, arch_bytes, endness=self.project.arch.memory_endness)
+            chain.add_value(val)
 
         # verify the write actually works
         state = chain.exec()
