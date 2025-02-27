@@ -169,8 +169,23 @@ class RopBlock(RopChain):
     def from_gadget_list(gs, builder):
         assert gs
         rb = RopBlock.from_gadget(gs[0], builder)
+        project = builder.project
         for g in gs[1:]:
-            rb = rb._chain_block(RopBlock.from_gadget(g, builder))
+            if g.self_contained:
+                rb = rb._chain_block(RopBlock.from_gadget(g, builder))
+            elif g.stack_change == 0 and g.transit_type == 'jmp_reg':
+                rb.add_gadget(g)
+                init_state, final_state = rb.sim_exec()
+                ip_hash = hash(final_state.ip)
+                for idx, val in enumerate(rb._values):
+                    if val.symbolic and hash(val.ast) == ip_hash:
+                        next_pc_val = rop_utils.cast_rop_value(
+                            init_state.solver.BVS("next_pc", project.arch.bits),
+                            project,
+                        )
+                        rb._values[idx] = next_pc_val
+            else:
+                raise NotImplementedError("plz create an issue")
         rb._analyze_effect()
         return rb
 

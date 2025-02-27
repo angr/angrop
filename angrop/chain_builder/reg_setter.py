@@ -86,7 +86,13 @@ class RegSetter(Builder):
                     all_chains += list(itertools.product(*path_chain))
 
         # FIXME: blockify is very slow
-        rop_blocks = [RopBlock.from_gadget_list(self._mixins_to_gadgets(c), self) for c in all_chains]
+        rop_blocks = []
+        for c in all_chains:
+            try:
+                c = RopBlock.from_gadget_list(self._mixins_to_gadgets(c), self)
+                rop_blocks.append(c)
+            except RopException:
+                pass
         self._insert_to_reg_dict(rop_blocks)
 
         # second, see whether we can use non-self-contained gadgets to set hard registers
@@ -109,9 +115,11 @@ class RegSetter(Builder):
             new_stuff = {m.to_reg for m in new_moves} | new_regs
 
             rb = self.normalize_gadget(gadget)
-            if rb and rb.popped_regs.intersection(new_stuff):
+            if rb is None:
+                continue
+            if rb.popped_regs.intersection(new_stuff):
                 new_blocks.add(rb)
-            if rb and not rb.popped_regs.intersection(new_stuff):
+            else:
                 raise RuntimeError("RegSetter.optimize: plz raise an issue for this!")
 
         self._insert_to_reg_dict(new_blocks)
@@ -136,14 +144,14 @@ class RegSetter(Builder):
                 offset -= act.offset % self.project.arch.bytes
                 reg_name = self.project.arch.translate_register_name(offset)
                 if reg_name in preserve_regs:
-                    l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-1.\nregisters: %s",
-                                chain_str, registers)
+                    l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-1.\nregisters: %s\npreserve_regs: %s",
+                                chain_str, registers, preserve_regs)
                     return False
         for reg, val in registers.items():
             bv = getattr(state.regs, reg)
             if (val.symbolic != bv.symbolic) or state.solver.eval(bv != val.data):
-                l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-2.\nregisters: %s",
-                            chain_str, registers)
+                l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-2.\nregisters: %s\npreserve_regs: %s",
+                            chain_str, registers, preserve_regs)
                 return False
         # the next pc must be marked as the next_pc
         if len(state.regs.pc.variables) != 1:

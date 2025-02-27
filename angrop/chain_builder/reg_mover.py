@@ -38,6 +38,15 @@ class RegMover(Builder):
                 continue
             preserve_regs = {m.from_reg for m in new_moves}
             rb = self.normalize_gadget(gadget, preserve_regs=preserve_regs)
+            if rb is None:
+                continue
+            for move in rb.reg_moves:
+                edge = (move.from_reg, move.to_reg)
+                if self._graph.has_edge(*edge):
+                    edge_blocks = self._graph.get_edge_data(*edge)['block']
+                    edge_blocks.add(rb)
+                else:
+                    self._graph.add_edge(*edge, block={rb})
 
     def _build_move_graph(self):
         self._graph = nx.DiGraph()

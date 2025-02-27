@@ -310,10 +310,17 @@ def test_pop_pc_gadget():
     assert gadget.pc_offset == 0
     assert gadget.stack_change == 0x18
 
+def test_reg_moves():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "arjsfxjr"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+    gadget = rop.analyze_gadget(0x4027c4) # mov esi, esi; mov edi, r15d; call qword ptr [r12 + rbx*8]
+    assert len(gadget.reg_moves) == 1
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
     for f in sorted(all_functions.keys()):
+        print(f)
         if hasattr(all_functions[f], '__call__'):
             all_functions[f]()
 

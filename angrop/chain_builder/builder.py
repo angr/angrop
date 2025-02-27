@@ -1,3 +1,4 @@
+import math
 import struct
 import itertools
 from abc import abstractmethod
@@ -103,7 +104,8 @@ class Builder:
         for seg in segs:
             # we should use project.loader.memory.find API, but it is currently broken as reported here:
             # https://github.com/angr/angr/issues/5330
-            for addr in range(seg.min_addr, seg.max_addr):
+            max_addr = math.ceil(seg.max_addr / 0x1000)*0x1000 # // round up to page size
+            for addr in range(seg.min_addr, max_addr):
                 # can't collide with used regions
                 collide = False
                 for a, s in self._used_writable_ptr:
@@ -113,8 +115,9 @@ class Builder:
                 if collide:
                     continue
                 if all(not self._word_contain_badbyte(x) for x in range(addr, addr+size, self.project.arch.bytes)):
-                    data = self.project.loader.memory.load(addr, 8)
-                    if data == null:
+                    data = self.project.loader.memory.load(addr, size)
+                    data_len = len(data)
+                    if data == null[:data_len]:
                         self._used_writable_ptr.add((addr, size))
                         return addr
         return None
@@ -515,15 +518,22 @@ class Builder:
             st = chain._blank_state
             state = rb._blank_state
 
-            # step3: now, constrain the jmp_mem target to the location we just wrote into
+            # step3: identify the registers that we can't fully control yet in pc_target, then set them using RegSetter
             rop_values, constraints = self._build_ast_constraints(gadget.pc_target)
-            if any(x not in rb.popped_regs for x in rop_values):
+            to_set_regs = {x:y for x,y in rop_values.items() if x not in rb.popped_regs}
+            preserve_regs = rb.popped_regs - set(rop_values.keys())
+            if any(x for x in to_set_regs if x not in self.chain_builder._reg_setter._reg_setting_dict):
+                return None
+            chain = self.chain_builder._reg_setter.run(**to_set_regs, preserve_regs=preserve_regs)
+            if to_set_regs and chain:
                 raise NotImplementedError("reg setting inside normalized_jmp_mem is not supported yet, plz create an issue :)")
             init_state, final_state = rb.sim_exec()
             for reg in rop_values:
                 rb._blank_state.solver.add(final_state.registers.load(reg) == rop_values[reg].ast)
             rb._blank_state.solver.add(claripy.And(*constraints))
             rb._blank_state.solver.add(gadget.pc_target == ptr)
+
+            # step3: now, constrain the jmp_mem target to the location we just wrote into
 
             # step4: chain it with the jmp_mem gadget
             # note that rb2 here is actually the gadget+shifter
