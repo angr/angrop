@@ -1,3 +1,4 @@
+import math
 import ctypes
 import logging
 from collections import defaultdict
@@ -886,6 +887,7 @@ class GadgetAnalyzer:
             # ignore read/write within the stack patch
             if not a.addr.ast.symbolic:
                 addr_constant = a.addr.ast.concrete_value
+
                 # check whether the access is within the stack patch
                 # we ignore pushes, which will lead to under patch write then load
                 upper_bound = (1<<final_state.project.arch.bits)-1
@@ -895,6 +897,19 @@ class GadgetAnalyzer:
                     continue
                 if a.action == 'read' and any(x.startswith('uninitialized') for x in a.data.variables):
                     return False
+
+            # ignore read/write in known segments
+            if not a.addr.ast.symbolic:
+                addr_constant = a.addr.ast.concrete_value
+                found = False
+                for seg in self.project.loader.main_object.segments:
+                    min_addr = seg.min_addr
+                    max_addr = math.ceil(seg.max_addr / 0x1000)*0x1000
+                    if min_addr <= addr_constant < max_addr:
+                        found = True
+                        break
+                if found is True:
+                    continue
 
             all_mem_actions.append(a)
 

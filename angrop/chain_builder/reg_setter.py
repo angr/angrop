@@ -122,7 +122,6 @@ class RegSetter(Builder):
                 continue
 
             new_stuff = {m.to_reg for m in new_moves} | new_regs
-
             rb = self.normalize_gadget(gadget)
             if rb is None:
                 continue
@@ -339,7 +338,7 @@ class RegSetter(Builder):
         # bad, we can't set all registers, no need to try
         to_set_reg_set = set(registers.keys())
         if to_set_reg_set - total_reg_set:
-            l.warning("fail to cover all registers using giga_graph_search!\nregister covered: %s", total_reg_set)
+            l.warning("fail to cover all registers using giga_graph_search!\nregister covered: %s, registers to set: %s", total_reg_set, to_set_reg_set)
             return []
 
         # TODO: the ability to set a register using concrete_values and then move it to another
@@ -635,6 +634,9 @@ class RegSetter(Builder):
         # including gadgets that set concrete values
         for g in self._reg_setting_gadgets:
             if not allow_mem_access and g.has_symbolic_access():
+                continue
+            # TODO: don't support conditional branch yet
+            if g.has_conditional_branch:
                 continue
             # TODO: normalize these, use badbyte test as the testcase
             if g.oop:
