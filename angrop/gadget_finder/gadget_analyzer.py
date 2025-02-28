@@ -893,6 +893,8 @@ class GadgetAnalyzer:
                     upper_bound = final_state.regs.sp.concrete_value
                 if init_state.regs.sp.concrete_value-0x20 <= addr_constant < upper_bound:
                     continue
+                if a.action == 'read' and any(x.startswith('uninitialized') for x in a.data.variables):
+                    return False
 
             all_mem_actions.append(a)
 

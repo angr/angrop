@@ -25,7 +25,7 @@ class RegMover(Builder):
         self._graph: nx.Graph = None # type: ignore
 
     def bootstrap(self):
-        self._reg_moving_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
+        self._reg_moving_gadgets = sorted(self.filter_gadgets(self.chain_builder.gadgets), key=lambda g:g.stack_change)
         self._reg_moving_blocks = {g for g in self._reg_moving_gadgets if g.self_contained}
         self._build_move_graph()
 

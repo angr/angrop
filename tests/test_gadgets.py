@@ -324,6 +324,26 @@ def test_oop_access():
         g = rop.analyze_gadget(addr)
         assert g and g.oop
 
+def test_negative_stack_change():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
+
+    # this is not a gadget because it is loading uninitialized memory
+    """
+    sub sp, #0x50
+    add fp, pc
+    b #0x4bf669
+    ldr r3, [sp, #8]
+    mov r2, r7
+    mov r1, r6
+    mov r0, r5
+    str r3, [sp]
+    mov r3, r8
+    blx r4
+    """
+    g = rop.analyze_gadget(0x4bf661)
+    assert g is None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

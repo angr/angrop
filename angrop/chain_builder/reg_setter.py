@@ -74,14 +74,16 @@ class RegSetter(Builder):
         # 1) we can set register A to arbitrary value (in self._reg_setting_dict)
         # 2) we can move register A to another register, preferably an unseen one
         mover_graph = self.chain_builder._reg_mover._graph
-        all_chains = []
+        rop_blocks = []
+        new_regs = set()
         for src in self._reg_setting_dict:
             for dst in self.arch.reg_set:
                 if src == dst:
                     continue
-                if dst in self._reg_setting_dict: # does not introduce new capabilities
+                if dst in self._reg_setting_dict or dst in new_regs: # does not introduce new capabilities
                     continue
                 paths = nx.all_simple_paths(mover_graph, src, dst)
+                all_chains = []
                 for path in paths:
                     path_chain = [self._reg_setting_dict[src]]
                     edges = zip(path, path[1:])
@@ -89,15 +91,17 @@ class RegSetter(Builder):
                         edge_blocks = mover_graph.get_edge_data(edge[0], edge[1])['block']
                         path_chain.append(edge_blocks)
                     all_chains += list(itertools.product(*path_chain))
+                all_chains = sorted(all_chains, key=lambda c: sum(g.stack_change for g in c))
+                for c in all_chains:
+                    try:
+                        c = RopBlock.from_gadget_list(self._mixins_to_gadgets(c), self)
+                        if dst in c.popped_regs:
+                            rop_blocks.append(c)
+                            new_regs.add(dst)
+                            break
+                    except RopException:
+                        pass
 
-        # FIXME: blockify is very slow
-        rop_blocks = []
-        for c in all_chains:
-            try:
-                c = RopBlock.from_gadget_list(self._mixins_to_gadgets(c), self)
-                rop_blocks.append(c)
-            except RopException:
-                pass
         self._insert_to_reg_dict(rop_blocks)
 
         # second, see whether we can use non-self-contained gadgets to set hard registers
