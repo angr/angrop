@@ -487,6 +487,18 @@ class GadgetAnalyzer:
             if len(controllers) != 0:
                 gadget.reg_controllers[reg] = set(controllers)
 
+    @staticmethod
+    def _is_add_int(final_val, init_val):
+        if final_val.depth != 2 or final_val.op not in ("__add__", "__sub__"):
+            return False
+        arg0 = final_val.args[0]
+        arg1 = final_val.args[1]
+        if arg0 is init_val:
+            return not arg1.symbolic
+        if arg1 is init_val:
+            return not arg0.symbolic
+        return False
+
     def _check_reg_movers(self, init_state, final_state, gadget):
         """
         Checks if any data is directly copied from one register to another
@@ -508,6 +520,8 @@ class GadgetAnalyzer:
                 continue
             init_val = init_state.registers.load(from_reg)
             if init_val is final_val:
+                gadget.reg_moves.append(RopRegMove(from_reg, reg, self.project.arch.bits))
+            elif self._is_add_int(final_val, init_val): # rax = rbx + <int> should be also considered as move
                 gadget.reg_moves.append(RopRegMove(from_reg, reg, self.project.arch.bits))
             else:
                 # try lower 32 bits (this is intended for amd64)

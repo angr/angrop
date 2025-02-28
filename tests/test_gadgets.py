@@ -316,6 +316,11 @@ def test_reg_moves():
     gadget = rop.analyze_gadget(0x4027c4) # mov esi, esi; mov edi, r15d; call qword ptr [r12 + rbx*8]
     assert len(gadget.reg_moves) == 1
 
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "aarch64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=True, only_check_near_rets=False)
+    g = rop.analyze_gadget(0x4ebad4)
+    assert len(g.reg_moves) == 1
+
 def test_oop_access():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "bronze_ropchain"), auto_load_libs=False)
     rop = proj.analyses.ROP()

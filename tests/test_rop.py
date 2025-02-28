@@ -248,6 +248,10 @@ def test_roptest_aarch64():
     proj = angr.Project(os.path.join(public_bin_location, "aarch64", "libc.so.6"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=True, only_check_near_rets=False)
 
+    """
+    0x4b7ca8: ldp x19, x30, [sp]; add sp, sp, #0x20; ret
+    0x4ebad4: add x0, x19, #0x260; ldr x19, [sp, #0x10]; ldp x29, x30, [sp], #0x20; ret
+    """
     rop.analyze_gadget(0x4b7ca8)
     rop.analyze_gadget(0x4ebad4)
 
