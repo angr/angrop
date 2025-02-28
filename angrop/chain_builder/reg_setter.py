@@ -69,12 +69,14 @@ class RegSetter(Builder):
         # first, see whether we can use reg_mover to set hard-registers
         # basically, we are looking for situations like this:
         # 1) we can set register A to arbitrary value (in self._reg_setting_dict)
-        # 2) we can move register A to another register, preferably a unseen one
+        # 2) we can move register A to another register, preferably an unseen one
         mover_graph = self.chain_builder._reg_mover._graph
         all_chains = []
         for src in self._reg_setting_dict:
             for dst in self.arch.reg_set:
                 if src == dst:
+                    continue
+                if dst in self._reg_setting_dict: # does not introduce new capabilities
                     continue
                 paths = nx.all_simple_paths(mover_graph, src, dst)
                 for path in paths:
@@ -228,11 +230,54 @@ class RegSetter(Builder):
         #                            max_length=max_length)
 
     #### Chain Building Algorithm 0: super graph search algorithm described in the angrop-paper ####
+    def _handle_hard_regs(self, gadgets, registers, preserve_regs):
+        # handle register set that contains bad byte (so it can't be popped)
+        # and cannot be directly set using concrete values
+        hard_regs = [reg for reg, val in registers.items() if self._word_contain_badbyte(val)]
+        if len(hard_regs) > 1:
+            l.error("too many registers contain bad bytes! bail out! %s", registers)
+            raise RopException("too many registers contain bad bytes")
+        if not hard_regs:
+            return
+        if registers[hard_regs[0]].symbolic:
+            return
+
+        # if hard_regs exists, try to use concrete values to craft the value
+        hard_chain = []
+        reg = hard_regs[0]
+        val = registers[reg].concreted
+        key = (reg, val)
+        if key in self.hard_chain_cache:
+            hard_chain = self.hard_chain_cache[key]
+        else:
+            hard_chains = self._find_concrete_chains(gadgets, {reg: val})
+            if hard_chains:
+                hard_chain = hard_chains[0]
+            else:
+                hard_chain = self._find_add_chain(gadgets, reg, val)
+            if hard_chain:
+                self.hard_chain_cache[key] = hard_chain # we cache the result even if it fails
+        if not hard_chain:
+            l.error("Fail to set register: %s to: %#x", reg, val)
+            raise RopException("Fail to set hard registers")
+        registers.pop(reg)
+        return hard_chain
+
     def find_candidate_chains_giga_graph_search(self, registers, preserve_regs):
         if preserve_regs is None:
             preserve_regs = set()
+        else:
+            preserve_regs = preserve_regs.copy()
+        registers = registers.copy()
+
+        # handle hard registers
+        gadgets = self._find_relevant_gadgets(allow_mem_access=False, **registers)
+        hard_chain = self._handle_hard_regs(gadgets, registers, preserve_regs)
+        if not registers:
+            return [hard_chain]
+
+        # now do the giga graph search
         regs = sorted(list(registers.keys()))
-        assert len(regs)
 
         graph = nx.DiGraph()
 
@@ -272,9 +317,10 @@ class RegSetter(Builder):
             return reg_set
 
         # add edges for pops and concrete values
-        gadgets = self._find_relevant_gadgets(allow_mem_access=False, **registers)
+        total_reg_set = set()
         for g in gadgets:
             reg_set = can_set_regs(g)
+            total_reg_set.update(reg_set)
             for n in nodes:
                 src_node = n
                 dst_node = get_dst_node(n, reg_set)
@@ -282,6 +328,12 @@ class RegSetter(Builder):
                     continue
                 # TODO: take into account clobbered registers
                 add_edge(src_node, dst_node, g)
+
+        # bad, we can't set all registers, no need to try
+        to_set_reg_set = set(registers.keys())
+        if to_set_reg_set - total_reg_set:
+            l.warning("fail to cover all registers using giga_graph_search!\nregister covered: %s", total_reg_set)
+            return []
 
         # TODO: the ability to set a register using concrete_values and then move it to another
         # currently, we don't have a testcase that needs this
@@ -294,7 +346,10 @@ class RegSetter(Builder):
         try:
             paths = nx.all_simple_paths(graph, source=src, target=dst)
             for path in paths:
-                tmp = []
+                if hard_chain:
+                    tmp = [[x] for x in hard_chain]
+                else:
+                    tmp = []
                 edges = zip(path, path[1:])
                 for edge in edges:
                     objects = graph.get_edge_data(edge[0], edge[1])['objects']
@@ -563,16 +618,10 @@ class RegSetter(Builder):
         """
         gadgets = set()
 
-        # this step will add crafted rop_blocks as well
-        for reg in registers:
-            gadgets.update(self._reg_setting_dict[reg])
-
         for g in self._reg_setting_gadgets:
             if not g.self_contained:
                 continue
-            if g.has_symbolic_access():
-                continue
-            if not allow_mem_access and g.num_sym_mem_access:
+            if not allow_mem_access and g.has_symbolic_access():
                 continue
             for reg in registers:
                 if reg in g.popped_regs:
