@@ -579,6 +579,9 @@ class Builder:
         else:
             raise NotImplementedError()
 
+        if rb is None:
+            return None
+
         # TODO
         if rb.oop:
             return None

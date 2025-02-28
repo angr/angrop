@@ -47,6 +47,13 @@ class RopBlock(RopChain):
         return state
 
     @property
+    def oop(self):
+        """
+        whether the gadget contains out of patch access
+        """
+        return any(m.out_of_patch  for m in self.mem_reads + self.mem_writes + self.mem_changes)
+
+    @property
     def num_sym_mem_access(self):
         accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)
         return len([x for x in accesses if x.is_symbolic_access()])

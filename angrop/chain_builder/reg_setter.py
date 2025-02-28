@@ -632,6 +632,9 @@ class RegSetter(Builder):
         for g in self._reg_setting_gadgets:
             if not allow_mem_access and g.has_symbolic_access():
                 continue
+            # TODO: normalize these, use badbyte test as the testcase
+            if g.oop:
+                continue
             for reg in registers:
                 if reg in g.popped_regs:
                     gadgets.add(g)

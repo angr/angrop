@@ -87,7 +87,7 @@ class Shifter(Builder):
                 chain.add_gadget(g)
                 for idx in range(g_cnt):
                     if idx != next_pc_idx:
-                        val = state.memory.load(state.regs.sp+idx*arch_bytes+arch_bytes, arch_bytes, endness=project.arch.memory_endness)
+                        val = state.memory.load(state.regs.sp+idx*arch_bytes+arch_bytes, arch_bytes, endness=self.project.arch.memory_endness)
                         chain.add_value(val)
                     else:
                         next_pc_val = rop_utils.cast_rop_value(
