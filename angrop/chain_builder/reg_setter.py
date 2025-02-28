@@ -31,6 +31,7 @@ class RegSetter(Builder):
         self.hard_chain_cache: dict[tuple, list] = None # type: ignore
         # Estimate of how difficult it is to set each register.
         self._reg_weights: dict[str, int] = None # type: ignore
+        # all self-contained and not symbolic access
         self._reg_setting_dict: dict[str, list] = None # type: ignore
 
     def _insert_to_reg_dict(self, gs):
@@ -48,6 +49,8 @@ class RegSetter(Builder):
         self._reg_setting_dict = defaultdict(list)
         for g in self._reg_setting_gadgets:
             if not g.self_contained:
+                continue
+            if g.has_symbolic_access():
                 continue
             for reg in g.popped_regs:
                 self._reg_setting_dict[reg].append(g)
@@ -618,8 +621,12 @@ class RegSetter(Builder):
         """
         gadgets = set()
 
+        # this step will add crafted rop_blocks as well
+        for reg in registers:
+            gadgets.update(self._reg_setting_dict[reg])
+
         for g in self._reg_setting_gadgets:
-            if not g.self_contained:
+            if g.self_contained: # self-contained gadgets should be all found in _reg_setting_dict
                 continue
             if not allow_mem_access and g.has_symbolic_access():
                 continue
