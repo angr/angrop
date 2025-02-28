@@ -37,7 +37,7 @@ def local_multiprocess_find_gadgets():
     proj = angr.Project(os.path.join(tests_dir, "i386", "bronze_ropchain"), auto_load_libs=False)
     rop = proj.analyses.ROP()
 
-    rop.find_gadgets(show_progress=False)
+    rop.find_gadgets(show_progress=True)
 
     assert all(gadget_exists(rop, x) for x in [0x080a9773, 0x08091cf5, 0x08092d80, 0x080920d3])
 
@@ -248,7 +248,7 @@ def test_syscall_next_block():
     g = rop.analyze_gadget(0x080484d4)
     assert g.can_return is True
 
-    rop.find_gadgets_single_threaded(show_progress=False)
+    rop.find_gadgets(show_progress=True)
     chain = rop.do_syscall(2, [1, 0x41414141, 0x42424242, 0], preserve_regs={'eax'}, needs_return=True)
     assert chain
 
@@ -256,9 +256,12 @@ def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
     for f in sorted(all_functions.keys()):
+        print(f)
         if hasattr(all_functions[f], '__call__'):
             all_functions[f]()
+    print("local_multiprocess_find_gadgets")
     local_multiprocess_find_gadgets()
+    print("local_multiprocess_analyze_gadget_list")
     local_multiprocess_analyze_gadget_list()
 
 if __name__ == "__main__":

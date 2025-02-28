@@ -571,8 +571,16 @@ class Builder:
             preserve_regs = set()
 
         if gadget.transit_type == 'jmp_reg':
-            return self.normalize_jmp_reg(gadget, preserve_regs=preserve_regs)
+            rb = self.normalize_jmp_reg(gadget, preserve_regs=preserve_regs)
         elif gadget.transit_type == 'jmp_mem':
-            return self.normalize_jmp_mem(gadget, preserve_regs=preserve_regs)
+            rb = self.normalize_jmp_mem(gadget, preserve_regs=preserve_regs)
+        elif gadget.transit_type == 'pop_pc':
+            rb = gadget
         else:
             raise NotImplementedError()
+
+        # TODO
+        if rb.oop:
+            return None
+
+        return rb

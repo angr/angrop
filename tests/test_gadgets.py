@@ -316,6 +316,13 @@ def test_reg_moves():
     gadget = rop.analyze_gadget(0x4027c4) # mov esi, esi; mov edi, r15d; call qword ptr [r12 + rbx*8]
     assert len(gadget.reg_moves) == 1
 
+def test_oop_access():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "bronze_ropchain"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    gs = rop.analyze_gadget_list([0x0806b397, 0x0806b395, 0x08091dd2, 0x08091f5a])
+    assert all(g.oop for g in gs)
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

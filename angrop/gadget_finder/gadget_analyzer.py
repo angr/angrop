@@ -714,7 +714,11 @@ class GadgetAnalyzer:
         # handle the memory access address
         # case 1: the address is not symbolic
         if not a.addr.ast.symbolic:
-            mem_access.addr_constant = init_state.solver.eval(a.addr.ast)
+            addr_constant = a.addr.ast.concrete_value
+            mem_access.addr_constant = addr_constant
+            if not final_state.regs.sp.symbolic:
+                if not (init_state.regs.sp.concrete_value < addr_constant < final_state.regs.sp.concrete_value):
+                    mem_access.out_of_patch = True
         # case 2: the symbolic address comes from registers
         elif all(x.startswith("sreg_") for x in a.addr.ast.variables):
             mem_access.addr_dependencies = rop_utils.get_ast_dependency(a.addr.ast)
@@ -879,15 +883,13 @@ class GadgetAnalyzer:
             if pivot_done and a.addr.ast.symbolic and not a.addr.ast.variables - sp_vars:
                 continue
 
-            # ignore read/write on stack
-            if not a.addr.ast.symbolic:
-                addr_constant = init_state.solver.eval(a.addr.ast)
-                stack_min_addr = self._concrete_sp - 0x20
-                # TODO should this be changed, so that we can more easily understand writes outside the frame
-                stack_max_addr = max(stack_min_addr + self._stack_bsize, stack_min_addr + gadget.stack_change)
-                if addr_constant is not None and \
-                        stack_min_addr <= addr_constant < stack_max_addr:
+            # ignore read/write within the stack patch
+            if not a.addr.ast.symbolic and not final_state.regs.sp.symbolic:
+                addr_constant = a.addr.ast.concrete_value
+                # check whether the access is within the stack patch
+                if init_state.regs.sp.concrete_value <= addr_constant < final_state.regs.sp.concrete_value:
                     continue
+
             all_mem_actions.append(a)
 
         # step 2: identify memory change accesses by indexing using the memory address as the key

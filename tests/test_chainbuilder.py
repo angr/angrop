@@ -588,7 +588,7 @@ def test_unexploitable():
 def test_graph_search_reg_setter():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "arjsfxjr"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=False)
-    cache_path = "./duh"
+    cache_path = os.path.join(CACHE_DIR, "arjsfxjr")
 
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)

@@ -622,12 +622,14 @@ class RegSetter(Builder):
         gadgets = set()
 
         # this step will add crafted rop_blocks as well
+        # notice that this step only include rop_blocks that can
+        # POP the register
         for reg in registers:
             gadgets.update(self._reg_setting_dict[reg])
 
+        # add all other gadgets that may be relevant,
+        # including gadgets that set concrete values
         for g in self._reg_setting_gadgets:
-            if g.self_contained: # self-contained gadgets should be all found in _reg_setting_dict
-                continue
             if not allow_mem_access and g.has_symbolic_access():
                 continue
             for reg in registers:

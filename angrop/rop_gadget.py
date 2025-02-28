@@ -27,6 +27,7 @@ class RopMemAccess:
         self.data_constant = None
         self.addr_size = None
         self.data_size = None
+        self.out_of_patch = False
         self.op = None
 
     def is_valid(self):
@@ -144,7 +145,14 @@ class RopGadget:
         e.g. 'jmp_reg' gadgets requires another one setting the registers
         (a gadget like mov rax, [rsp]; add rsp, 8; jmp rax will be considered pop_pc)
         """
-        return (not self.has_conditional_branch) and self.transit_type == 'pop_pc'
+        return (not self.has_conditional_branch) and self.transit_type == 'pop_pc' and not self.oop
+
+    @property
+    def oop(self):
+        """
+        whether the gadget contains out of patch access
+        """
+        return any(m.out_of_patch  for m in self.mem_reads + self.mem_writes + self.mem_changes)
 
     @property
     def num_sym_mem_access(self):
