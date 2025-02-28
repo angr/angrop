@@ -549,7 +549,7 @@ class Builder:
                 if offset == shifter.pc_offset + gadget.stack_change:
                     val = state.solver.BVS("next_pc", self.project.arch.bits)
                 else:
-                    val = state.memory.load(state.regs.sp+rb.stack_change, self.project.arch.bytes, endness=project.arch.memory_endness)
+                    val = state.memory.load(state.regs.sp+rb.stack_change, self.project.arch.bytes, endness=self.project.arch.memory_endness)
                 rb2.add_value(val)
             rb2.set_gadgets([gadget])
 

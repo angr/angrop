@@ -248,7 +248,7 @@ def test_syscall_next_block():
     g = rop.analyze_gadget(0x080484d4)
     assert g.can_return is True
 
-    rop.find_gadgets(show_progress=True)
+    rop.find_gadgets_single_threaded(show_progress=False)
     chain = rop.do_syscall(2, [1, 0x41414141, 0x42424242, 0], preserve_regs={'eax'}, needs_return=True)
     assert chain
 

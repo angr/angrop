@@ -320,8 +320,9 @@ def test_oop_access():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "bronze_ropchain"), auto_load_libs=False)
     rop = proj.analyses.ROP()
 
-    gs = rop.analyze_gadget_list([0x0806b397, 0x0806b395, 0x08091dd2, 0x08091f5a])
-    assert all(g.oop for g in gs)
+    for addr in [0x0806b397, 0x0806b395, 0x08091dd2, 0x08091f5a]:
+        g = rop.analyze_gadget(addr)
+        assert g and g.oop
 
 def run_all():
     functions = globals()
