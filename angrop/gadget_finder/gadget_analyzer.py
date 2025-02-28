@@ -884,10 +884,14 @@ class GadgetAnalyzer:
                 continue
 
             # ignore read/write within the stack patch
-            if not a.addr.ast.symbolic and not final_state.regs.sp.symbolic:
+            if not a.addr.ast.symbolic:
                 addr_constant = a.addr.ast.concrete_value
                 # check whether the access is within the stack patch
-                if init_state.regs.sp.concrete_value <= addr_constant < final_state.regs.sp.concrete_value:
+                # we ignore pushes, which will lead to under patch write then load
+                upper_bound = (1<<final_state.project.arch.bits)-1
+                if not final_state.regs.sp.symbolic:
+                    upper_bound = final_state.regs.sp.concrete_value
+                if init_state.regs.sp.concrete_value-0x20 <= addr_constant < upper_bound:
                     continue
 
             all_mem_actions.append(a)

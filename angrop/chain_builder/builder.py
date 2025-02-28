@@ -115,8 +115,13 @@ class Builder:
                 if collide:
                     continue
                 if all(not self._word_contain_badbyte(x) for x in range(addr, addr+size, self.project.arch.bytes)):
-                    data = self.project.loader.memory.load(addr, size)
-                    data_len = len(data)
+                    data_len = size
+                    if addr >= seg.max_addr:
+                        self._used_writable_ptr.add((addr, size))
+                        return addr
+                    if addr+size > seg.max_addr:
+                        data_len = addr+size - seg.max_addr
+                    data = self.project.loader.memory.load(addr, data_len)
                     if data == null[:data_len]:
                         self._used_writable_ptr.add((addr, size))
                         return addr

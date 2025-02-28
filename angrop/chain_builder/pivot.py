@@ -99,7 +99,7 @@ class Pivot(Builder):
                     chain.add_value(val)
                 state = chain.exec()
                 variables = set(state.regs.sp.variables)
-                if len(variables) == 1 and variables.pop().startswith(f'reg_{reg}'):
+                if len(variables) == 1 and variables.pop().startswith(f'sreg_{reg}'):
                     return chain
                 else:
                     chain_str = chain.dstr()
