@@ -174,5 +174,3 @@ class ChainBuilder:
         # stage 2: optimize reg_mover and reg_setter
         self._reg_mover.optimize()
         self._reg_setter.optimize()
-
-    # should also be able to do execve by providing writable memory

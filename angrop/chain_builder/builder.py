@@ -479,6 +479,8 @@ class Builder:
         for pc_setter in reg_setter._reg_setting_dict[gadget.pc_reg]:
             if pc_setter.has_symbolic_access():
                 continue
+            if pc_setter.changed_regs.intersection(preserve_regs):
+                continue
             total_sc = gadget.stack_change + pc_setter.stack_change
             gadgets = reg_setter._mixins_to_gadgets([pc_setter, gadget])
             try:
