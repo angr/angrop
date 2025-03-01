@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from .rop_chain import RopChain
 from .rop_value import RopValue
 from .rop_gadget import RopGadget
@@ -28,6 +30,7 @@ class RopBlock(RopChain):
         self.reg_dependencies = {}  # like rax might depend on rbx, rcx
         self.reg_controllers = {}  # like rax might be able to be controlled by rbx (for any value of rcx)
         self.reg_moves = []
+        self.pop_equal_set = set() # like pop rax; mov rbx, rax; they must be the same
 
         # memory effect information
         self.mem_reads = []
@@ -101,6 +104,19 @@ class RopBlock(RopChain):
         rb.bbl_addrs = list(final_state.history.bbl_addrs)
         project = init_state.project
         rb.isn_count = sum(project.factory.block(addr).instructions for addr in rb.bbl_addrs)
+
+        d = defaultdict(list)
+        for reg in self._builder.arch.reg_set:
+            d[final_state.registers.load(reg)].append(reg)
+        for k in d:
+            if len(k.variables) != 1:
+                continue
+            variable = list(k.variables)[0]
+            if not variable.startswith("symbolic_stack"):
+                continue
+            if len(d[k]) == 1:
+                continue
+            self.pop_equal_set.add(tuple(d[k]))
 
     def sim_exec(self):
         project = self._p

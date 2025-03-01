@@ -97,6 +97,11 @@ class RegSetter(Builder):
                     try:
                         c = RopBlock.from_gadget_list(self._mixins_to_gadgets(c), self)
                         if dst in c.popped_regs:
+                            if c.pop_equal_set:
+                                for s in c.pop_equal_set:
+                                    if dst in s:
+                                        c.popped_regs -= set(s)
+                                        c.popped_regs.add(dst)
                             rop_blocks.append(c)
                             new_regs.add(dst)
                             break
