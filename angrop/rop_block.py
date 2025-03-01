@@ -177,12 +177,24 @@ class RopBlock(RopChain):
         assert gs
         rb = RopBlock.from_gadget(gs[0], builder)
         project = builder.project
+        arch_bytes = project.arch.bytes
         for g in gs[1:]:
             if g.self_contained:
                 rb = rb._chain_block(RopBlock.from_gadget(g, builder))
-            elif g.stack_change == 0 and g.transit_type == 'jmp_reg':
-                rb.add_gadget(g)
+            elif g.stack_change >= 0 and g.transit_type == 'jmp_reg':
                 init_state, final_state = rb.sim_exec()
+                val_cnt = g.stack_change // arch_bytes
+                new_vals = []
+                for offset in range(0, g.stack_change, arch_bytes):
+                    tmp = final_state.memory.load(final_state.regs.sp+offset, arch_bytes, endness=project.arch.memory_endness)
+                    new_vals.append(rop_utils.cast_rop_value(tmp, project))
+                rb._values[rb.next_pc_idx()] = rop_utils.cast_rop_value(g.addr, project)
+
+                final_state.solver.add(final_state.ip == g.addr)
+                final_state = rop_utils.step_to_unconstrained_successor(project, final_state)
+                rb._gadgets.append(g)
+                rb._values += new_vals
+                rb.payload_len += len(new_vals)*arch_bytes
                 ip_hash = hash(final_state.ip)
                 for idx, val in enumerate(rb._values):
                     if val.symbolic and hash(val.ast) == ip_hash:

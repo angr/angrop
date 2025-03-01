@@ -71,7 +71,7 @@ class RegSetter(Builder):
 
         # first, see whether we can use reg_mover to set hard-registers
         # basically, we are looking for situations like this:
-        # 1) we can set register A to arbitrary value (in self._reg_setting_dict)
+        # 1) we can set register A to arbitrary value (in self._reg_setting_dict) AND
         # 2) we can move register A to another register, preferably an unseen one
         mover_graph = self.chain_builder._reg_mover._graph
         rop_blocks = []
