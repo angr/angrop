@@ -268,11 +268,11 @@ class Builder:
         for gadget in gadgets:
             if isinstance(gadget, RopGadget):
                 map_stack_var(state.ip, gadget)
-                state.solver.add(state.ip == gadget.addr)
+                state.ip = gadget.addr
             elif isinstance(gadget, RopBlock):
                 rb = gadget
                 map_stack_var(state.ip, rb)
-                state.solver.add(state.ip == rb._values[0].concreted)
+                state.ip = rb._values[0].concreted
                 st = rb._blank_state
                 for idx, val in enumerate(rb._values[1:]):
                     state.memory.store(state.regs.sp+idx*arch_bytes, val.data, endness=self.project.arch.memory_endness)

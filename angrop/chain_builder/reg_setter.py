@@ -205,7 +205,29 @@ class RegSetter(Builder):
         return pc_var.startswith("next_pc")
 
     @staticmethod
+    def _expand_ropblocks(mixins):
+        """
+        expand simple ropblocks to gadgets so that we don't encounter solver conflicts
+        when using the same ropblock multiple times
+        """
+        gadgets = []
+        for mixin in mixins:
+            if isinstance(mixin, RopGadget):
+                gadgets.append(mixin)
+            elif isinstance(mixin, RopBlock):
+                if mixin._blank_state.solver.constraints:
+                    gadgets.append(mixin)
+                else:
+                    gadgets += mixin._gadgets
+            else:
+                raise ValueError(f"cannot turn {mixin} into RopBlock!")
+        return gadgets
+
+    @staticmethod
     def _mixins_to_gadgets(mixins):
+        """
+        simply expand all ropblocks to gadgets
+        """
         gadgets = []
         for mixin in mixins:
             if isinstance(mixin, RopGadget):
@@ -235,6 +257,7 @@ class RegSetter(Builder):
             l.debug("building reg_setting chain with chain:\n%s", chain_str)
             stack_change = sum(x.stack_change for x in gadgets)
             try:
+                gadgets = self._expand_ropblocks(gadgets)
                 chain = self._build_reg_setting_chain(gadgets, modifiable_memory_range,
                                                       registers, stack_change)
                 chain._concretize_chain_values(timeout=len(chain._values)*3)
