@@ -76,13 +76,11 @@ class RegSetter(Builder):
         # 2) we can move register A to another register, preferably an unseen one
         mover_graph = self.chain_builder._reg_mover._graph
         rop_blocks = []
-        new_regs = set()
-        for src in self._reg_setting_dict:
-            for dst in self.arch.reg_set:
-                if src == dst:
-                    continue
-                if dst in self._reg_setting_dict or dst in new_regs: # does not introduce new capabilities
-                    continue
+        shortest = {x:y[0].stack_change for x,y in self._reg_setting_dict.items() if y}
+        for src, dst in itertools.product(self._reg_setting_dict, self.arch.reg_set):
+            if src == dst:
+                continue
+            if dst not in self._reg_setting_dict: # this is a hard register
                 paths = nx.all_simple_paths(mover_graph, src, dst)
                 all_chains = []
                 for path in paths:
@@ -93,17 +91,28 @@ class RegSetter(Builder):
                         path_chain.append(edge_blocks)
                     all_chains += list(itertools.product(*path_chain))
                 all_chains = sorted(all_chains, key=lambda c: sum(g.stack_change for g in c))
+
+                # no need to create the chains if we know it is not going to help
+                if not all_chains or (dst in shortest and sum(g.stack_change for g in all_chains[0]) >= shortest[dst]):
+                    continue
+
+                # TODO: optimize this, currently we take the first 5 valid chains with the smallest stack_change
+                cnt = 0
                 for c in all_chains:
                     try:
                         c = RopBlock.from_gadget_list(self._mixins_to_gadgets(c), self)
+                        if dst not in shortest or c.stack_change < shortest[dst]:
+                            shortest[dst] = c.stack_change
                         if dst in c.popped_regs:
+                            cnt +=  1
                             if c.pop_equal_set:
                                 for s in c.pop_equal_set:
                                     if dst in s:
                                         c.popped_regs -= set(s)
                                         c.popped_regs.add(dst)
                             rop_blocks.append(c)
-                            new_regs.add(dst)
+                            break
+                        if cnt == 5:
                             break
                     except RopException:
                         pass
@@ -115,7 +124,7 @@ class RegSetter(Builder):
         #       and we may want to optimize this algorithm since sometimes it will generate functional
         #       equivalent chains multiple times
         new_blocks = set()
-        shortest = {x:y[0] for x,y in self._reg_setting_dict.items()}
+        shortest = {x:y[0] for x,y in self._reg_setting_dict.items() if y}
         arch_bytes = self.project.arch.bytes
         for gadget in self._reg_setting_gadgets:
             if gadget.self_contained:
@@ -412,7 +421,7 @@ class RegSetter(Builder):
 
         chains = [] # here, each "chain" is a list of gadgets
         try:
-            paths = nx.all_simple_paths(graph, source=src, target=dst)
+            paths = nx.shortest_simple_paths(graph, source=src, target=dst)
             for path in paths:
                 if hard_chain:
                     tmp = [[x] for x in hard_chain]
