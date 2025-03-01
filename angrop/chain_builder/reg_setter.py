@@ -2,6 +2,7 @@ import heapq
 import itertools
 import logging
 from collections import defaultdict, Counter
+from functools import cmp_to_key
 from typing import Iterable, Iterator
 
 import claripy
@@ -291,6 +292,29 @@ class RegSetter(Builder):
         registers.pop(reg)
         return hard_chain
 
+    def _reduce_graph(self, graph, regs):
+        """
+        TODO: maybe make the reduction smarter instead of just 5 gadgets each edge
+        """
+        regs = set(regs)
+        def giga_graph_gadget_compare(g1, g2):
+            if g1.stack_change < g2.stack_change:
+                return -1
+            if g1.stack_change > g2.stack_change:
+                return 1
+            side_effect1 = len(g1.changed_regs - regs)
+            side_effect2 = len(g2.changed_regs - regs)
+            if side_effect1 < side_effect2:
+                return -1
+            if side_effect1 > side_effect2:
+                return 1
+            return 0
+
+        for edge in graph.edges:
+            objects = graph.get_edge_data(*edge)['objects']
+            objects = sorted(objects, key=cmp_to_key(giga_graph_gadget_compare))[:5]
+            graph.get_edge_data(*edge)['objects'] = objects
+
     def find_candidate_chains_giga_graph_search(self, modifiable_memory_range, registers, preserve_regs):
         if preserve_regs is None:
             preserve_regs = set()
@@ -371,6 +395,8 @@ class RegSetter(Builder):
         if to_set_reg_set - total_reg_set:
             l.warning("fail to cover all registers using giga_graph_search!\nregister covered: %s, registers to set: %s", total_reg_set, to_set_reg_set)
             return []
+
+        self._reduce_graph(graph, regs)
 
         # TODO: the ability to set a register using concrete_values and then move it to another
         # currently, we don't have a testcase that needs this
