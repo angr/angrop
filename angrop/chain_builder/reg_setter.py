@@ -232,7 +232,7 @@ class RegSetter(Builder):
         raise RopException("Couldn't set registers :(")
 
     def iterate_candidate_chains(self, modifiable_memory_range, preserve_regs, max_length, registers):
-        gadgets = self.find_candidate_chains_giga_graph_search(registers, preserve_regs)
+        gadgets = self.find_candidate_chains_giga_graph_search(modifiable_memory_range, registers, preserve_regs)
         yield from gadgets
         ## algorithm1
         #gadgets, _, _ = self.find_candidate_chains_graph_search(modifiable_memory_range=modifiable_memory_range,
@@ -291,15 +291,16 @@ class RegSetter(Builder):
         registers.pop(reg)
         return hard_chain
 
-    def find_candidate_chains_giga_graph_search(self, registers, preserve_regs):
+    def find_candidate_chains_giga_graph_search(self, modifiable_memory_range, registers, preserve_regs):
         if preserve_regs is None:
             preserve_regs = set()
         else:
             preserve_regs = preserve_regs.copy()
+
         registers = registers.copy()
 
         # handle hard registers
-        gadgets = self._find_relevant_gadgets(allow_mem_access=False, **registers)
+        gadgets = self._find_relevant_gadgets(allow_mem_access=modifiable_memory_range is not None, **registers)
         hard_chain = self._handle_hard_regs(gadgets, registers, preserve_regs)
         if not registers:
             return [hard_chain]
