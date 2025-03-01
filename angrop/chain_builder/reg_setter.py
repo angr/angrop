@@ -122,7 +122,10 @@ class RegSetter(Builder):
             new_moves_to = {x.to_reg for x in gadget.reg_moves if not self._reg_setting_dict[x.to_reg]}
             new_cap = new_regs | new_moves_to
             if new_cap:
-                rb = self.normalize_gadget(gadget)
+                if new_moves_to:
+                    rb = self.normalize_gadget(gadget, preserve_regs=new_moves_to)
+                else:
+                    rb = self.normalize_gadget(gadget)
                 if rb is None:
                     continue
                 if rb.popped_regs.intersection(new_cap):
@@ -321,13 +324,18 @@ class RegSetter(Builder):
             else:
                 graph.add_edge(src, dst, objects={obj})
 
-        def get_dst_node(src, reg_list):
+        def get_dst_node(src, reg_list, clobbered_regs):
             dst = list(src)
             for reg in reg_list:
                 if reg not in regs:
                     continue
                 idx = regs.index(reg)
                 dst[idx] = True
+            for reg in clobbered_regs:
+                if reg not in regs:
+                    continue
+                idx = regs.index(reg)
+                dst[idx] = False
             return tuple(dst)
 
         def can_set_regs(g):
@@ -344,11 +352,14 @@ class RegSetter(Builder):
         # add edges for pops and concrete values
         total_reg_set = set()
         for g in gadgets:
+            if isinstance(g, RopGadget) and not g.self_contained:
+                continue
             reg_set = can_set_regs(g)
+            clobbered_regs = g.changed_regs - reg_set
             total_reg_set.update(reg_set)
             for n in nodes:
                 src_node = n
-                dst_node = get_dst_node(n, reg_set)
+                dst_node = get_dst_node(n, reg_set, clobbered_regs)
                 if src_node == dst_node:
                     continue
                 # TODO: take into account clobbered registers

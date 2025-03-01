@@ -54,6 +54,13 @@ class RopChain:
             result.payload_len -= self._p.arch.bytes
         else:
             result._values.extend(other._values)
+
+        # FIXME: cannot handle cases where a rop_block is used twice and have different constraints
+        # because right now symbolic values go with rop_blocks
+        if self._blank_state.solver._solver.variables.intersection(other._blank_state.solver._solver.variables):
+            if not result._blank_state.satisfiable():
+                raise RopException("cannot use a rop_block with different constraints yet")
+
         return result
 
     def set_timeout(self, timeout):

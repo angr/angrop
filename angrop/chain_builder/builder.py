@@ -183,6 +183,9 @@ class Builder:
         on stack so that users can eval on their own ropvalue and get the correct solves
         TODO: currently, we only support add/sub, Extract/ZeroExt
         """
+        if lhs.op == 'If':
+            raise RopException("cannot handle conditional value atm")
+
         assert self._ast_contains_stack_data(lhs)
         while lhs.depth != 1:
             match lhs.op:
