@@ -109,6 +109,8 @@ class RegSetter(Builder):
         #       and we may want to optimize this algorithm since sometimes it will generate functional
         #       equivalent chains multiple times
         new_blocks = set()
+        shortest = {x:y[0] for x,y in self._reg_setting_dict.items()}
+        arch_bytes = self.project.arch.bytes
         for gadget in self._reg_setting_gadgets:
             if gadget.self_contained:
                 continue
@@ -117,18 +119,35 @@ class RegSetter(Builder):
 
             # check whether it introduces new capabilities
             new_regs = {x for x in gadget.popped_regs if not self._reg_setting_dict[x]}
-            new_moves = {x for x in gadget.reg_moves if not self._reg_setting_dict[x.to_reg]}
-            if not (new_regs | new_moves):
-                continue
+            new_moves_to = {x.to_reg for x in gadget.reg_moves if not self._reg_setting_dict[x.to_reg]}
+            new_cap = new_regs | new_moves_to
+            if new_cap:
+                rb = self.normalize_gadget(gadget)
+                if rb is None:
+                    continue
+                if rb.popped_regs.intersection(new_cap):
+                    new_blocks.add(rb)
+                else:
+                    raise RuntimeError("RegSetter.optimize: plz raise an issue for this!")
 
-            new_stuff = {m.to_reg for m in new_moves} | new_regs
-            rb = self.normalize_gadget(gadget)
-            if rb is None:
-                continue
-            if rb.popped_regs.intersection(new_stuff):
-                new_blocks.add(rb)
-            else:
-                raise RuntimeError("RegSetter.optimize: plz raise an issue for this!")
+            # check whether it shortens any chains
+            better = False
+            for reg in gadget.popped_regs:
+                # it is unlikely we can use one more gadget to normalize it
+                # usually it takes two (pop; ret), so account for it by - arch_ bytes
+                if reg not in shortest or gadget.stack_change < shortest[reg].stack_change - arch_bytes:
+                    # normalizing jmp_mem gadgets use a ton of gadgets, no need to even try
+                    if gadget.transit_type != 'jmp_mem':
+                        better = True
+                        break
+            if better:
+                rb = self.normalize_gadget(gadget)
+                if not rb:
+                    continue
+                for reg in rb.popped_regs:
+                    if reg not in shortest or rb.stack_change < shortest[reg].stack_change:
+                        shortest[reg] = rb
+                        new_blocks.add(rb)
 
         self._insert_to_reg_dict(new_blocks)
 
