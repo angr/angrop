@@ -625,6 +625,20 @@ def test_graph_search_reg_setter():
     assert state.regs.rdx.concrete_value == 0x43434343
     assert state.ip.concrete_value == 0xdeadbeef
 
+def test_rebalance_ast():
+    cache_path = os.path.join(CACHE_DIR, "amd64_glibc_2.19")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    rop.analyze_gadget(0x512ecf) # pop rcx; ret
+    rop.analyze_gadget(0x533e24) # mov eax, dword ptr [rsp]; add rsp, 0x10; pop rbx; ret
+
+    chain = rop.set_regs(rax=0x41414142, rbx=0x42424243, rcx=0x43434344)
+    state = chain.exec()
+    assert state.regs.rax.concrete_value == 0x41414142
+    assert state.regs.rbx.concrete_value == 0x42424243
+    assert state.regs.rcx.concrete_value == 0x43434344
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

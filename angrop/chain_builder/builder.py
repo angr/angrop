@@ -218,8 +218,13 @@ class Builder:
                 case "Extract":
                     assert lhs.length == rhs.length
                     full_size = lhs.args[2].length
-                    assert lhs.args[1] == 0
-                    rhs = claripy.ZeroExt(full_size-rhs.length, rhs)
+                    ext_bits = self.project.arch.bits -1 - lhs.args[0]
+                    padding_bits = lhs.args[1]
+                    if padding_bits:
+                        padding = claripy.BVV(0, padding_bits)
+                        rhs = claripy.Concat(rhs, padding)
+                    if ext_bits:
+                        rhs = claripy.ZeroExt(padding_bits, rhs)
                     lhs = lhs.args[2]
                 case _:
                     raise ValueError(f"{lhs.op} cannot be rebalanced at the moment. plz create an issue!")
