@@ -292,6 +292,7 @@ class Builder:
             else:
                 raise ValueError("huh?")
 
+            # step following the trace
             for addr in gadget.bbl_addrs[1:]:
                 succ = state.step()
                 succ_states = [
@@ -477,6 +478,25 @@ class Builder:
         cls_name = self.__class__.__name__
         raise NotImplementedError(f"`advanced_update` is not implemented for {cls_name}!")
 
+    def normalize_conditional(self, gadget, preserve_regs=None):
+        if preserve_regs is None:
+            preserve_regs = set()
+
+        registers = {}
+        for reg in gadget.branch_dependencies:
+            var = claripy.BVS(f"bvar_{reg}", self.project.arch.bits)
+            registers[reg] = var
+        chain = self.chain_builder._reg_setter.run(preserve_regs=preserve_regs, **registers)
+        gadgets = chain._gadgets
+        gadgets.append(gadget)
+        stack_change = sum(x.stack_change for x in gadgets)
+
+        # we don't need to tell it to set any registers, whatever is set in our reg_setter chain
+        # will be overwritten by our target conditional gadget
+        chain = self._build_reg_setting_chain(gadgets, None, {}, stack_change)
+        rb = RopBlock.from_chain(chain)
+        return rb
+
     def normalize_jmp_reg(self, gadget, preserve_regs=None):
         if preserve_regs is None:
             preserve_regs = set()
@@ -581,19 +601,26 @@ class Builder:
         return None
 
     def normalize_gadget(self, gadget, preserve_regs=None):
-        # TODO
-        assert not gadget.has_conditional_branch
         if preserve_regs is None:
             preserve_regs = set()
 
-        if gadget.transit_type == 'jmp_reg':
-            rb = self.normalize_jmp_reg(gadget, preserve_regs=preserve_regs)
-        elif gadget.transit_type == 'jmp_mem':
-            rb = self.normalize_jmp_mem(gadget, preserve_regs=preserve_regs)
-        elif gadget.transit_type == 'pop_pc':
-            rb = gadget
+        rb = gadget
+
+        # normalize transit_types
+        if rb.transit_type == 'jmp_reg':
+            rb = self.normalize_jmp_reg(rb, preserve_regs=preserve_regs)
+        elif rb.transit_type == 'jmp_mem':
+            rb = self.normalize_jmp_mem(rb, preserve_regs=preserve_regs)
+        elif rb.transit_type == 'pop_pc':
+            pass
         else:
             raise NotImplementedError()
+
+        assert rb.stack_change > 0
+
+        # normalize conditional branches
+        if rb.has_conditional_branch:
+            rb = self.normalize_conditional(rb, preserve_regs=preserve_regs)
 
         if rb is None:
             return None

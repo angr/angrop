@@ -108,7 +108,7 @@ class RopGadget:
         self.popped_regs = set()
         # Stores the stack variables that each register depends on.
         # Used to check for cases where two registers are popped from the same location.
-        self.popped_reg_vars = {}
+        self.popped_reg_vars = {} # deprecated
         self.concrete_regs = {}
         self.reg_dependencies = {}  # like rax might depend on rbx, rcx
         self.reg_controllers = {}  # like rax might be able to be controlled by rbx (for any value of rcx)
@@ -133,7 +133,7 @@ class RopGadget:
         # List of basic block addresses for gadgets with conditional branches
         self.bbl_addrs = []
         # Registers that affect path constraints
-        self.constraint_regs = set()
+        self.branch_dependencies = set()
         # Instruction count to estimate complexity
         self.isn_count: int = None # type: ignore
         self.has_conditional_branch: bool = None # type: ignore

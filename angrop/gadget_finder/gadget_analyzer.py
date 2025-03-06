@@ -271,6 +271,13 @@ class GadgetAnalyzer:
             return False
 
         b = self.project.factory.block(addr)
+
+        if max_steps == 2: # this is the very first basic block
+            # it doesn't make sense to have a gadget that starts with a conditional jump
+            # this type of gadgets should be represented by two gadgets after the jump
+            if b._instructions == 1 and len(b.vex.constant_jump_targets) > 1:
+                return False
+
         constant_jump_targets = list(b.vex.constant_jump_targets)
 
         if not constant_jump_targets:
@@ -374,35 +381,28 @@ class GadgetAnalyzer:
 
         # conditional branch analysis
         if do_cond_branch:
-            constraint_vars = {
-                var
-                for constraint in final_state.history.jump_guards
-                for var in constraint.variables
-            }
+            # list all conditional branch dependencies
+            branch_guard_vars = set()
+            for guard in final_state.history.jump_guards:
+                if claripy.is_true(guard):
+                    continue
+                branch_guard_vars |= guard.variables
+            gadget.has_conditional_branch = bool(branch_guard_vars)
 
-            gadget.has_conditional_branch = len(constraint_vars) > 0
+            # if there is no conditional branch, good, we just finished the analysis
+            if not gadget.has_conditional_branch:
+                return gadget
 
-            for action in final_state.history.actions:
-                if action.type == 'mem':
-                    constraint_vars |= action.addr.variables
-
-            for var in constraint_vars:
+            # now analyze the branch dependencies and filter out gadgets that we do not support yet
+            # TODO: support more guards such as existing flags
+            for var in branch_guard_vars:
                 if var.startswith("sreg_"):
-                    gadget.constraint_regs.add(var.split('_', 1)[1].split('-', 1)[0])
-                elif not var.startswith("symbolic_stack_"):
-                    l.debug("... constraint not controlled by registers and stack")
+                    gadget.branch_dependencies.add(var.split('_', 1)[1].split('-', 1)[0])
+                elif var.startswith("symbolic_stack_"):
+                    raise NotImplementedError("plz raise an issue")
+                else:
+                    l.debug("... branch dependenices not controlled by registers and stack")
                     return None
-
-            gadget.popped_regs = {
-                reg
-                for reg in gadget.popped_regs
-                if final_state.registers.load(reg).variables.isdisjoint(constraint_vars)
-            }
-
-            gadget.popped_reg_vars = {
-                reg: final_state.registers.load(reg).variables
-                for reg in gadget.popped_regs
-            }
 
         return gadget
 

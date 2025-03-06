@@ -120,8 +120,7 @@ class RegSetter(Builder):
         self._insert_to_reg_dict(rop_blocks)
 
         # second, see whether we can use non-self-contained gadgets to set hard registers
-        # TODO: currently, we don't support conditional_branches
-        #       and we may want to optimize this algorithm since sometimes it will generate functional
+        # TODO: we may want to optimize this algorithm since sometimes it will generate functional
         #       equivalent chains multiple times
         new_blocks = set()
         shortest = {x:y[0] for x,y in self._reg_setting_dict.items() if y}
@@ -129,8 +128,8 @@ class RegSetter(Builder):
         for gadget in self._reg_setting_gadgets:
             if gadget.self_contained:
                 continue
-            if gadget.has_conditional_branch:
-                continue
+            #if gadget.has_conditional_branch:
+            #    continue
 
             # check whether it introduces new capabilities
             new_regs = {x for x in gadget.popped_regs if not self._reg_setting_dict[x]}
@@ -729,9 +728,6 @@ class RegSetter(Builder):
         for g in self._reg_setting_gadgets:
             if not allow_mem_access and g.has_symbolic_access():
                 continue
-            # TODO: don't support conditional branch yet
-            if g.has_conditional_branch:
-                continue
             # TODO: normalize these, use badbyte test as the testcase
             if g.oop:
                 continue
@@ -954,9 +950,9 @@ class RegSetter(Builder):
                 return None
             remaining_regs.add(gadget.pc_reg)
 
-        if not gadget.constraint_regs.isdisjoint(remaining_regs):
+        if not gadget.branch_dependencies.isdisjoint(remaining_regs):
             return None
-        remaining_regs |= gadget.constraint_regs
+        remaining_regs |= gadget.branch_dependencies
 
         return remaining_regs
 
