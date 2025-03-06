@@ -478,7 +478,7 @@ class Builder:
         cls_name = self.__class__.__name__
         raise NotImplementedError(f"`advanced_update` is not implemented for {cls_name}!")
 
-    def normalize_conditional(self, gadget, preserve_regs=None):
+    def _normalize_conditional(self, gadget, preserve_regs=None):
         if preserve_regs is None:
             preserve_regs = set()
 
@@ -488,16 +488,9 @@ class Builder:
             registers[reg] = var
         chain = self.chain_builder._reg_setter.run(preserve_regs=preserve_regs, **registers)
         gadgets = chain._gadgets
-        gadgets.append(gadget)
-        stack_change = sum(x.stack_change for x in gadgets)
+        return gadgets
 
-        # we don't need to tell it to set any registers, whatever is set in our reg_setter chain
-        # will be overwritten by our target conditional gadget
-        chain = self._build_reg_setting_chain(gadgets, None, {}, stack_change)
-        rb = RopBlock.from_chain(chain)
-        return rb
-
-    def normalize_jmp_reg(self, gadget, preserve_regs=None):
+    def _normalize_jmp_reg(self, gadget, preserve_regs=None):
         if preserve_regs is None:
             preserve_regs = set()
         reg_setter = self.chain_builder._reg_setter
@@ -516,12 +509,12 @@ class Builder:
                 chain = reg_setter._build_reg_setting_chain(gadgets, None, {}, total_sc)
                 rb = RopBlock.from_chain(chain)
                 assert rb.stack_change == total_sc
-                return rb
+                return rb._gadgets[:-1]
             except RopException:
                 pass
         return None
 
-    def normalize_jmp_mem(self, gadget, preserve_regs=None):
+    def _normalize_jmp_mem(self, gadget, preserve_regs=None):
         if preserve_regs is None:
             preserve_regs = set()
 
@@ -569,8 +562,6 @@ class Builder:
             rb._blank_state.solver.add(claripy.And(*constraints))
             rb._blank_state.solver.add(gadget.pc_target == ptr)
 
-            # step3: now, constrain the jmp_mem target to the location we just wrote into
-
             # step4: chain it with the jmp_mem gadget
             # note that rb2 here is actually the gadget+shifter
             # but shifter is written into memory, so ignore it when building rb2
@@ -601,26 +592,44 @@ class Builder:
         return None
 
     def normalize_gadget(self, gadget, preserve_regs=None):
+        gadgets = [gadget]
+
         if preserve_regs is None:
             preserve_regs = set()
 
-        rb = gadget
+        # TODO: don't support this yet
+        if gadget.has_conditional_branch and gadget.transit_type == 'jmp_mem':
+            return None
+
+        # normalize conditional branches
+        if gadget.has_conditional_branch:
+            tmp = self._normalize_conditional(gadget, preserve_regs=preserve_regs)
+            if tmp is None:
+                return None
+            gadgets = tmp + gadgets
 
         # normalize transit_types
-        if rb.transit_type == 'jmp_reg':
-            rb = self.normalize_jmp_reg(rb, preserve_regs=preserve_regs)
-        elif rb.transit_type == 'jmp_mem':
-            rb = self.normalize_jmp_mem(rb, preserve_regs=preserve_regs)
-        elif rb.transit_type == 'pop_pc':
+        if gadget.transit_type == 'jmp_reg':
+            tmp = self._normalize_jmp_reg(gadget, preserve_regs=preserve_regs)
+            if tmp is None:
+                return None
+            gadgets = tmp + gadgets
+        elif gadget.transit_type == 'jmp_mem':
+            rb = self._normalize_jmp_mem(gadget, preserve_regs=preserve_regs)
+            return rb
+        elif gadget.transit_type == 'pop_pc':
             pass
         else:
             raise NotImplementedError()
 
-        assert rb.stack_change > 0
+        stack_change = sum(x.stack_change for x in gadgets)
+        chain = self._build_reg_setting_chain(gadgets, None, {}, stack_change)
+        rb = RopBlock.from_chain(chain)
 
-        # normalize conditional branches
-        if rb.has_conditional_branch:
-            rb = self.normalize_conditional(rb, preserve_regs=preserve_regs)
+        if rb is None:
+            return None
+
+        assert rb.stack_change > 0
 
         if rb is None:
             return None
