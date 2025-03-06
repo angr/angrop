@@ -128,10 +128,9 @@ class RegSetter(Builder):
         for gadget in self._reg_setting_gadgets:
             if gadget.self_contained:
                 continue
-            #if gadget.has_conditional_branch:
-            #    continue
 
             # check whether it introduces new capabilities
+            rb = None
             new_regs = {x for x in gadget.popped_regs if not self._reg_setting_dict[x]}
             new_moves_to = {x.to_reg for x in gadget.reg_moves if not self._reg_setting_dict[x.to_reg]}
             new_cap = new_regs | new_moves_to
@@ -158,7 +157,8 @@ class RegSetter(Builder):
                         better = True
                         break
             if better:
-                rb = self.normalize_gadget(gadget)
+                if rb is None:
+                    rb = self.normalize_gadget(gadget)
                 if not rb:
                     continue
                 for reg in rb.popped_regs:
