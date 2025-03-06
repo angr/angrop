@@ -398,8 +398,8 @@ class GadgetAnalyzer:
             for var in branch_guard_vars:
                 if var.startswith("sreg_"):
                     gadget.branch_dependencies.add(var.split('_', 1)[1].split('-', 1)[0])
-                elif var.startswith("symbolic_stack_"):
-                    raise NotImplementedError("plz raise an issue")
+                elif var.startswith("symbolic_stack_"): # we definitely can control this, no need to track it
+                    pass
                 else:
                     l.debug("... branch dependenices not controlled by registers and stack")
                     return None

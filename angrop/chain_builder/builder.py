@@ -597,6 +597,11 @@ class Builder:
         if preserve_regs is None:
             preserve_regs = set()
 
+        # TODO: technically, if we constrain the address, there will be no more
+        # symbolic accesses
+        if gadget.has_symbolic_access():
+            return None
+
         # TODO: don't support this yet
         if gadget.has_conditional_branch and gadget.transit_type == 'jmp_mem':
             return None
