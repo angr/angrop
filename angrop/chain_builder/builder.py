@@ -600,9 +600,12 @@ class Builder:
         if preserve_regs is None:
             preserve_regs = set()
 
-        # TODO: technically, if we constrain the address, there will be no more
+        # HACK: technically, if we constrain the address, there will be no more
         # symbolic accesses
-        if gadget.has_symbolic_access():
+        # here, what we actually want to do is to filter out symbolic access other than
+        # where the PC comes from. The following check will let through jmp_mem gadget that has
+        # symbolic access, which is bad
+        if gadget.has_symbolic_access() and gadget.transit_type != 'jmp_mem':
             return None
 
         # TODO: don't support this yet
