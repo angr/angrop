@@ -240,11 +240,9 @@ class RegSetter(Builder):
         for gadgets in self.iterate_candidate_chains(modifiable_memory_range, preserve_regs, max_length, registers):
             chain_str = "\n".join(g.dstr() for g in gadgets)
             l.debug("building reg_setting chain with chain:\n%s", chain_str)
-            stack_change = sum(x.stack_change for x in gadgets)
             try:
                 gadgets = self._expand_ropblocks(gadgets)
-                chain = self._build_reg_setting_chain(gadgets, modifiable_memory_range,
-                                                      registers, stack_change)
+                chain = self._build_reg_setting_chain(gadgets, modifiable_memory_range, registers)
                 chain._concretize_chain_values(timeout=len(chain._values)*3)
                 if self.verify(chain, preserve_regs, registers):
                     #self._chain_cache[reg_tuple].append(gadgets)
@@ -790,8 +788,7 @@ class RegSetter(Builder):
         for g1 in concrete_setter_gadgets:
             for g2 in delta_gadgets:
                 try:
-                    chain = self._build_reg_setting_chain([g1, g2], False, # pylint:disable=too-many-function-args
-                                                         {reg: val}, g1.stack_change+g2.stack_change)
+                    chain = self._build_reg_setting_chain([g1, g2], False, {reg: val})
                     state = chain.exec()
                     bv = state.registers.load(reg)
                     if bv.symbolic:

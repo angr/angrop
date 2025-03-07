@@ -234,8 +234,7 @@ class Builder:
 
     @rop_utils.timeout(8)
     def _build_reg_setting_chain(
-        self, gadgets, modifiable_memory_range, register_dict, stack_change
-    ):
+        self, gadgets, modifiable_memory_range, register_dict):
         """
         This function figures out the actual values needed in the chain
         for a particular set of gadgets and register values
@@ -524,7 +523,7 @@ class Builder:
             total_sc = gadget.stack_change + pc_setter.stack_change
             gadgets = reg_setter._mixins_to_gadgets([pc_setter, gadget])
             try:
-                chain = reg_setter._build_reg_setting_chain(gadgets, None, {}, total_sc)
+                chain = reg_setter._build_reg_setting_chain(gadgets, None, {})
                 rb = RopBlock.from_chain(chain)
                 assert rb.stack_change == total_sc
                 return rb._gadgets[:-1]
@@ -648,8 +647,7 @@ class Builder:
         else:
             raise NotImplementedError()
 
-        stack_change = sum(x.stack_change for x in gadgets)
-        chain = self._build_reg_setting_chain(gadgets, None, {}, stack_change)
+        chain = self._build_reg_setting_chain(gadgets, None, {})
         rb = RopBlock.from_chain(chain)
 
         if rb is None:
