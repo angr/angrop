@@ -195,7 +195,10 @@ class RegMover(Builder):
             # now turn them into blocks
             for gs in block_gadgets:
                 assert gs
-                rb = RopBlock.from_gadget_list(gs, self)
+                # FIXME: we are using the _build_reg_setting_chain API to turn mixin lists to a RopBlock
+                # which is pretty wrong
+                chain = self._build_reg_setting_chain(gs, None, {}, sum(x.stack_change for x in gs))
+                rb = RopBlock.from_chain(chain)
                 rop_blocks.add(rb)
         return rop_blocks
 

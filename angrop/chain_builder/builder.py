@@ -243,7 +243,7 @@ class Builder:
         then constraining the final registers to the values that were requested
         """
 
-        total_sc = sum(g.stack_change for g in gadgets)
+        total_sc = sum(g.stack_change for g in gadgets if g.stack_change >= 0)
         arch_bytes = self.project.arch.bytes
 
         # emulate a 'pop pc' of the first gadget
@@ -368,7 +368,7 @@ class Builder:
 
         # constrain the "filler" values
         if self.roparg_filler is not None:
-            for offset in range(0, stack_change, bytes_per_pop):
+            for offset in range(0, total_sc, bytes_per_pop):
                 sym_word = test_symbolic_state.stack_read(offset, bytes_per_pop)
                 # check if we can constrain val to be the roparg_filler
                 if test_symbolic_state.solver.satisfiable([sym_word == self.roparg_filler]):
@@ -383,7 +383,7 @@ class Builder:
 
         # iterate through the stack values that need to be in the chain
         plain_gadgets = []
-        for offset in range(-bytes_per_pop, stack_change, bytes_per_pop):
+        for offset in range(-bytes_per_pop, total_sc, bytes_per_pop):
             sym_word = test_symbolic_state.stack_read(offset, bytes_per_pop)
             assert len(sym_word.variables) <= 1
             if not sym_word.variables:
@@ -462,6 +462,21 @@ class Builder:
 
             gadgets -= equal_class
         return bests
+
+    @staticmethod
+    def _mixins_to_gadgets(mixins):
+        """
+        simply expand all ropblocks to gadgets
+        """
+        gadgets = []
+        for mixin in mixins:
+            if isinstance(mixin, RopGadget):
+                gadgets.append(mixin)
+            elif isinstance(mixin, RopBlock):
+                gadgets += mixin._gadgets
+            else:
+                raise ValueError(f"cannot turn {mixin} into RopBlock!")
+        return gadgets
 
     @abstractmethod
     def bootstrap(self):
@@ -640,7 +655,25 @@ class Builder:
         if rb is None:
             return None
 
-        assert rb.stack_change > 0
+        # normalize non-positive stack_change
+        if gadget.stack_change <= 0:
+            shift_gadgets = self.chain_builder._shifter.shift_gadgets
+            sc = abs(gadget.stack_change) + self.project.arch.bytes
+            shifter_list = [y for x,y in shift_gadgets.items() if x >= sc]
+            shifter_list = itertools.chain.from_iterable(shifter_list)
+            for shifter in shifter_list:
+                if shifter.pc_offset < abs(gadget.stack_change):
+                    continue
+                if shifter.changed_regs.intersection(preserve_regs):
+                    continue
+                try:
+                    tmp = RopBlock.from_gadget(shifter, self)
+                    rb += tmp
+                    break
+                except RopException:
+                    pass
+            else:
+                return None
 
         if rb is None:
             return None

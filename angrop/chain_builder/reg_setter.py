@@ -131,11 +131,12 @@ class RegSetter(Builder):
 
             # check whether it introduces new capabilities
             rb = None
-            new_regs = {x for x in gadget.popped_regs if not self._reg_setting_dict[x]}
-            new_moves_to = {x.to_reg for x in gadget.reg_moves if not self._reg_setting_dict[x.to_reg]}
-            new_cap = new_regs | new_moves_to
-            if new_cap:
-                if new_moves_to:
+            new_pops = {x for x in gadget.popped_regs if not self._reg_setting_dict[x]}
+            new_moves = {x for x in gadget.reg_moves if not self._reg_setting_dict[x.to_reg] and self._reg_setting_dict[x.from_reg]}
+            if new_pops or new_moves:
+                new_moves_to = {x.to_reg for x in new_moves}
+                new_cap = new_pops | new_moves_to
+                if new_moves:
                     rb = self.normalize_gadget(gadget, preserve_regs=new_moves_to)
                 else:
                     rb = self.normalize_gadget(gadget)
@@ -218,21 +219,6 @@ class RegSetter(Builder):
                     gadgets.append(mixin)
                 else:
                     gadgets += mixin._gadgets
-            else:
-                raise ValueError(f"cannot turn {mixin} into RopBlock!")
-        return gadgets
-
-    @staticmethod
-    def _mixins_to_gadgets(mixins):
-        """
-        simply expand all ropblocks to gadgets
-        """
-        gadgets = []
-        for mixin in mixins:
-            if isinstance(mixin, RopGadget):
-                gadgets.append(mixin)
-            elif isinstance(mixin, RopBlock):
-                gadgets += mixin._gadgets
             else:
                 raise ValueError(f"cannot turn {mixin} into RopBlock!")
         return gadgets

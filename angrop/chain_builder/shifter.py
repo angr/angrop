@@ -4,6 +4,7 @@ from collections import defaultdict
 from .. import rop_utils
 from .builder import Builder
 from ..rop_chain import RopChain
+from ..rop_block import RopBlock
 from ..errors import RopException
 
 l = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ class Shifter(Builder):
             if g.pc_offset != next_pc_idx*arch_bytes:
                 continue
             try:
-                chain = RopChain(self.project, self.chain_builder)
+                chain = RopBlock(self.project, self)
                 state = chain._blank_state
                 chain.add_gadget(g)
                 for idx in range(g_cnt):

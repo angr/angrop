@@ -646,6 +646,24 @@ def test_rebalance_ast():
     assert state.regs.rbx.concrete_value == 0x42424243
     assert state.regs.rcx.concrete_value == 0x43434344
 
+def test_normalize_call():
+    proj = angr.load_shellcode(
+        """
+        pop rsi
+        ret
+        mov edx, ebx
+        mov r8, rax
+        call rsi
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.move_regs(r8="rax")
+    assert chain
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
