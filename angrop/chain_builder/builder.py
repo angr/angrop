@@ -543,7 +543,8 @@ class Builder:
             shifter = None
             # find the smallest shifter
             shift_gadgets = self.chain_builder._shifter.shift_gadgets
-            shifter_list = [y for x,y in shift_gadgets.items() if x >= sc]
+            keys = sorted(shift_gadgets.keys())
+            shifter_list = [shift_gadgets[x] for x in keys if x >= sc]
             if not shifter_list:
                 return None
             shifter_list = itertools.chain.from_iterable(shifter_list)
@@ -657,7 +658,8 @@ class Builder:
         if gadget.stack_change <= 0:
             shift_gadgets = self.chain_builder._shifter.shift_gadgets
             sc = abs(gadget.stack_change) + self.project.arch.bytes
-            shifter_list = [y for x,y in shift_gadgets.items() if x >= sc]
+            keys = sorted(shift_gadgets.keys())
+            shifter_list = [shift_gadgets[x] for x in keys if x >= sc]
             shifter_list = itertools.chain.from_iterable(shifter_list)
             for shifter in shifter_list:
                 if shifter.pc_offset < abs(gadget.stack_change):
