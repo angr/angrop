@@ -423,8 +423,11 @@ class RegSetter(Builder):
                 dst_node = get_dst_node(n, reg_set, clobbered_regs)
                 if src_node == dst_node:
                     continue
-                # TODO: take into account clobbered registers
-                add_edge(src_node, dst_node, g)
+                # greedy algorithm: only add edges that transit to an at least equally good node
+                src_cnt = len([x for x in src_node if x is True])
+                dst_cnt = len([x for x in dst_node if x is True])
+                if dst_cnt > src_cnt:
+                    add_edge(src_node, dst_node, g)
 
         # bad, we can't set all registers, no need to try
         to_set_reg_set = set(registers.keys())
@@ -443,7 +446,7 @@ class RegSetter(Builder):
 
         chains = [] # here, each "chain" is a list of gadgets
         try:
-            paths = nx.shortest_simple_paths(graph, source=src, target=dst)
+            paths = nx.all_simple_paths(graph, source=src, target=dst, cutoff=len(registers)+2)
             for path in paths:
                 if hard_chain:
                     tmp = [[x] for x in hard_chain]
@@ -965,7 +968,8 @@ class RegSetter(Builder):
         # gadget grouping
         d = defaultdict(list)
         for g in gadgets:
-            key = (len(g.changed_regs-g.popped_regs), g.stack_change, g.num_sym_mem_access, g.isn_count, int(g.has_conditional_branch))
+            key = (len(g.changed_regs-g.popped_regs), g.stack_change, g.num_sym_mem_access,
+                   g.isn_count, int(g.has_conditional_branch is True))
             d[key].append(g)
         if len(d) == 0:
             return set()
