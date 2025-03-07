@@ -486,7 +486,10 @@ class Builder:
         for reg in gadget.branch_dependencies:
             var = claripy.BVS(f"bvar_{reg}", self.project.arch.bits)
             registers[reg] = var
-        chain = self.chain_builder._reg_setter.run(preserve_regs=preserve_regs, **registers)
+        try:
+            chain = self.chain_builder._reg_setter.run(preserve_regs=preserve_regs, **registers)
+        except RopException:
+            return None
         gadgets = chain._gadgets
         return gadgets
 

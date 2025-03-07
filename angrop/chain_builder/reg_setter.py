@@ -965,7 +965,7 @@ class RegSetter(Builder):
         # gadget grouping
         d = defaultdict(list)
         for g in gadgets:
-            key = (len(g.changed_regs), g.stack_change, g.num_sym_mem_access, g.isn_count)
+            key = (len(g.changed_regs-g.popped_regs), g.stack_change, g.num_sym_mem_access, g.isn_count, int(g.has_conditional_branch))
             d[key].append(g)
         if len(d) == 0:
             return set()
@@ -980,7 +980,7 @@ class RegSetter(Builder):
             # check if nothing is better than k1
             for k2 in bests|keys:
                 # if k2 is better than k1
-                if all(k2[i] <= k1[i] for i in range(4)):
+                if all(k2[i] <= k1[i] for i in range(len(key))):
                     break
             else:
                 bests.add(k1)
@@ -1001,8 +1001,6 @@ class RegSetter(Builder):
         if g1.reg_dependencies != g2.reg_dependencies:
             return False
         if g1.transit_type != g2.transit_type:
-            return False
-        if g1.has_conditional_branch != g2.has_conditional_branch:
             return False
         return True
 
