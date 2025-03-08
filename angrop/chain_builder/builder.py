@@ -176,6 +176,30 @@ class Builder:
         rop_values = {x:RopValue(y[1], self.project) for x,y in var_map.items()}
         return rop_values, consts
 
+    def _solve_ast_constraint(self, ast, value):
+        variables = set()
+        for x in ast.children_asts():
+            if x.op != 'BVS':
+                continue
+            variables.add(x)
+        solver = claripy.Solver()
+        solver.add(ast == value)
+
+        variables = list(variables)
+
+        res = solver.batch_eval(variables, 1)
+        assert res
+
+        res = res[0]
+        regs = []
+        for v in variables:
+            name = v.args[0]
+            assert name.startswith("sreg_")
+            reg = name.split('_')[1][:-1]
+            regs.append(reg)
+        d = dict(zip(regs, res))
+        return d
+
     def _rebalance_ast(self, lhs, rhs):
         """
         we know that lhs (stack content with modification) == rhs (user ropvalue)
@@ -566,19 +590,18 @@ class Builder:
             state = rb._blank_state
 
             # step3: identify the registers that we can't fully control yet in pc_target, then set them using RegSetter
-            rop_values, constraints = self._build_ast_constraints(gadget.pc_target)
+            init_state, final_state = rb.sim_exec()
+            rop_values = self._solve_ast_constraint(gadget.pc_target, ptr)
             to_set_regs = {x:y for x,y in rop_values.items() if x not in rb.popped_regs}
-            preserve_regs = rb.popped_regs - set(rop_values.keys())
+            preserve_regs = set(rop_values.keys()) - set(to_set_regs.keys())
             if any(x for x in to_set_regs if x not in self.chain_builder._reg_setter._reg_setting_dict):
                 return None
-            chain = self.chain_builder._reg_setter.run(**to_set_regs, preserve_regs=preserve_regs)
-            if to_set_regs and chain:
-                raise NotImplementedError("reg setting inside normalized_jmp_mem is not supported yet, plz create an issue :)")
-            init_state, final_state = rb.sim_exec()
-            for reg in rop_values:
-                rb._blank_state.solver.add(final_state.registers.load(reg) == rop_values[reg].ast)
-            rb._blank_state.solver.add(claripy.And(*constraints))
-            rb._blank_state.solver.add(gadget.pc_target == ptr)
+            if preserve_regs:
+                for reg in preserve_regs:
+                    rb._blank_state.solver.add(final_state.registers.load(reg) == rop_values[reg])
+            if to_set_regs:
+                chain = self.chain_builder._reg_setter.run(**to_set_regs, preserve_regs=preserve_regs)
+                rb += RopBlock.from_chain(chain)
 
             # step4: chain it with the jmp_mem gadget
             # note that rb2 here is actually the gadget+shifter
@@ -597,11 +620,6 @@ class Builder:
                     val = state.memory.load(state.regs.sp+rb.stack_change, self.project.arch.bytes, endness=self.project.arch.memory_endness)
                 rb2.add_value(val)
             rb2.set_gadgets([gadget])
-
-            # stitch two blocks together: the final registers of the first block should be the initial registers of the second block
-            st = rb2._blank_state
-            for reg in rop_values:
-                rb._blank_state.solver.add(final_state.registers.load(reg) == st.registers.load(reg))
 
             rb += rb2
             return rb

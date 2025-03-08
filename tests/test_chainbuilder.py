@@ -708,6 +708,10 @@ def test_normalize_jmp_mem():
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
     rop.find_gadgets_single_threaded(show_progress=False)
 
+    chain = rop.set_regs(r10=0x41414141)
+    state = chain.exec()
+    assert state.regs.r10.concrete_value == 0x41414141
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
