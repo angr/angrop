@@ -349,6 +349,10 @@ class GadgetAnalyzer:
                     if gadget.pc_offset >= gadget.stack_change:
                         return None
                 case 'jmp_reg': # record pc_reg
+                    # TODO: we should support gadgets like `add rax, 0x1000; call rax`
+                    # use test_chainbuilder.test_normalize_call as the testcase
+                    if final_state.ip.depth > 1:
+                        return None
                     gadget.pc_reg = list(final_state.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
                 case 'jmp_mem': # record pc_target
                     for a in reversed(final_state.history.actions):

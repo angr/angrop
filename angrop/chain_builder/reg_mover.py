@@ -182,24 +182,27 @@ class RegMover(Builder):
         for move in target_moves:
             # only consider the shortest path
             # TODO: we should use longer paths if the shortest one does work
-            paths = nx.all_shortest_paths(graph, source=move.from_reg, target=move.to_reg)
-            block_gadgets = []
-            for path in paths:
-                edges = zip(path, path[1:])
-                edge_block_list = []
-                for edge in edges:
-                    edge_blocks = graph.get_edge_data(edge[0], edge[1])['block']
-                    edge_block_list.append(edge_blocks)
-                block_gadgets += list(itertools.product(*edge_block_list))
+            try:
+                paths = nx.all_shortest_paths(graph, source=move.from_reg, target=move.to_reg)
+                block_gadgets = []
+                for path in paths:
+                    edges = zip(path, path[1:])
+                    edge_block_list = []
+                    for edge in edges:
+                        edge_blocks = graph.get_edge_data(edge[0], edge[1])['block']
+                        edge_block_list.append(edge_blocks)
+                    block_gadgets += list(itertools.product(*edge_block_list))
 
-            # now turn them into blocks
-            for gs in block_gadgets:
-                assert gs
-                # FIXME: we are using the _build_reg_setting_chain API to turn mixin lists to a RopBlock
-                # which is pretty wrong
-                chain = self._build_reg_setting_chain(gs, None, {})
-                rb = RopBlock.from_chain(chain)
-                rop_blocks.add(rb)
+                # now turn them into blocks
+                for gs in block_gadgets:
+                    assert gs
+                    # FIXME: we are using the _build_reg_setting_chain API to turn mixin lists to a RopBlock
+                    # which is pretty wrong
+                    chain = self._build_reg_setting_chain(gs, None, {})
+                    rb = RopBlock.from_chain(chain)
+                    rop_blocks.add(rb)
+            except nx.exception.NetworkXNoPath:
+                raise RopException(f"There is no chain can move {move.from_reg} to {move.to_reg}")
         return rop_blocks
 
     def filter_gadgets(self, gadgets):

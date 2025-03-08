@@ -539,7 +539,7 @@ class Builder:
 
         try:
             # step1: find a shifter that clean up the jmp_mem call
-            sc = -gadget.stack_change + self.project.arch.bytes
+            sc = abs(gadget.stack_change) + self.project.arch.bytes
             shifter = None
             # find the smallest shifter
             shift_gadgets = self.chain_builder._shifter.shift_gadgets

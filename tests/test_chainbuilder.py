@@ -664,6 +664,50 @@ def test_normalize_call():
     chain = rop.move_regs(r8="rax")
     assert chain
 
+    proj = angr.load_shellcode(
+        """
+        pop rax
+        ret
+        lea rsp, [rsp + 8]
+        ret
+        add eax, 0x2f484c7
+        mov rdx, r12
+        mov r8, rbx
+        call rax
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    try:
+        chain = rop.move_regs(r8="rax")
+        assert chain is None
+    except RopException:
+        pass
+
+def test_normalize_jmp_mem():
+    proj = angr.load_shellcode(
+        """
+        pop rbx
+        pop r10
+        call qword ptr [rbp + 0x48]
+        pop rbp
+        ret
+        pop rax
+        pop rbx
+        ret
+        mov qword ptr [rbx], rax;
+        ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
