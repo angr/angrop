@@ -37,7 +37,7 @@ class RegMover(Builder):
             if not new_moves:
                 continue
             preserve_regs = {m.from_reg for m in new_moves}
-            rb = self.normalize_gadget(gadget, preserve_regs=preserve_regs)
+            rb = self.normalize_gadget(gadget, pre_preserve=preserve_regs)
             if rb is None:
                 continue
             for move in rb.reg_moves:

@@ -573,6 +573,8 @@ class Builder:
                 return None
             shifter_list = itertools.chain.from_iterable(shifter_list)
             for shifter in shifter_list:
+                if shifter.pc_offset < abs(gadget.stack_change):
+                    continue
                 if not shifter.changed_regs.intersection(preserve_regs):
                     break
             else:
@@ -627,11 +629,17 @@ class Builder:
             return None
         return None
 
-    def normalize_gadget(self, gadget, preserve_regs=None):
+    def normalize_gadget(self, gadget, pre_preserve=None, post_preserve=None):
+        """
+        pre_preserve: what registers to preserve before executing the gadget
+        post_preserve: what registers to preserve after executing the gadget
+        """
         gadgets = [gadget]
 
-        if preserve_regs is None:
-            preserve_regs = set()
+        if pre_preserve is None:
+            pre_preserve = set()
+        if post_preserve is None:
+            post_preserve = set()
 
         # HACK: technically, if we constrain the address, there will be no more
         # symbolic accesses
@@ -647,19 +655,19 @@ class Builder:
 
         # normalize conditional branches
         if gadget.has_conditional_branch:
-            tmp = self._normalize_conditional(gadget, preserve_regs=preserve_regs)
+            tmp = self._normalize_conditional(gadget, preserve_regs=pre_preserve)
             if tmp is None:
                 return None
             gadgets = tmp + gadgets
 
         # normalize transit_types
         if gadget.transit_type == 'jmp_reg':
-            tmp = self._normalize_jmp_reg(gadget, preserve_regs=preserve_regs)
+            tmp = self._normalize_jmp_reg(gadget, preserve_regs=pre_preserve)
             if tmp is None:
                 return None
             gadgets = tmp + gadgets
         elif gadget.transit_type == 'jmp_mem':
-            rb = self._normalize_jmp_mem(gadget, preserve_regs=preserve_regs)
+            rb = self._normalize_jmp_mem(gadget, preserve_regs=pre_preserve)
             return rb
         elif gadget.transit_type == 'pop_pc':
             pass
@@ -682,7 +690,7 @@ class Builder:
             for shifter in shifter_list:
                 if shifter.pc_offset < abs(gadget.stack_change):
                     continue
-                if shifter.changed_regs.intersection(preserve_regs):
+                if shifter.changed_regs.intersection(post_preserve):
                     continue
                 try:
                     tmp = RopBlock.from_gadget(shifter, self)

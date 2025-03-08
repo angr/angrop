@@ -137,15 +137,16 @@ class RegSetter(Builder):
                 new_moves_to = {x.to_reg for x in new_moves}
                 new_cap = new_pops | new_moves_to
                 if new_moves:
-                    rb = self.normalize_gadget(gadget, preserve_regs=new_moves_to)
+                    rb = self.normalize_gadget(gadget, post_preserve=new_moves_to)
                 else:
-                    rb = self.normalize_gadget(gadget)
+                    rb = self.normalize_gadget(gadget, post_preserve=new_pops)
                 if rb is None:
                     continue
                 if rb.popped_regs.intersection(new_cap):
                     new_blocks.add(rb)
                 else:
-                    raise RuntimeError("RegSetter.optimize: plz raise an issue for this!")
+                    l.warn("normalizing \n%s does not yield any wanted new reg setting capability: %s", rb.dstr(), new_cap)
+                    continue
 
             # check whether it shortens any chains
             better = False
