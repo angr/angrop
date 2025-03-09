@@ -100,7 +100,9 @@ class RegSetter(Builder):
                 cnt = 0
                 for c in all_chains:
                     try:
-                        c = RopBlock.from_gadget_list(self._mixins_to_gadgets(c), self)
+                        gadgets = self._expand_ropblocks(c)
+                        c = self._build_reg_setting_chain(gadgets, None, {})
+                        c = RopBlock.from_chain(c)
                         if dst not in shortest or c.stack_change < shortest[dst]:
                             shortest[dst] = c.stack_change
                         if dst in c.popped_regs:
