@@ -67,7 +67,7 @@ class Pivot(Builder):
 
                     val = final_state.solver.eval(sym_word)
                     chain.add_value(val)
-                state = chain.exec()
+                state = chain.exec(stop_at_pivot=True)
                 if state.solver.eval(state.regs.sp == addr.data):
                     return chain
             except Exception: # pylint: disable=broad-exception-caught
@@ -97,7 +97,7 @@ class Pivot(Builder):
 
                     val = final_state.solver.eval(sym_word)
                     chain.add_value(val)
-                state = chain.exec()
+                state = chain.exec(stop_at_pivot=True)
                 variables = set(state.regs.sp.variables)
                 if len(variables) == 1 and variables.pop().startswith(f'sreg_{reg}'):
                     return chain
@@ -128,6 +128,6 @@ class Pivot(Builder):
         return True
 
     def filter_gadgets(self, gadgets):
-        gadgets = [x for x in gadgets if not x.has_conditional_branch]
+        gadgets = [x for x in gadgets if not x.has_conditional_branch and x.transit_type != 'jmp_reg' and not x.has_symbolic_access()]
         gadgets = self._filter_gadgets(gadgets)
         return sorted(gadgets, key=functools.cmp_to_key(cmp))

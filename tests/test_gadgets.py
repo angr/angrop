@@ -119,6 +119,9 @@ def test_pivot_gadget():
     assert len(gadget.sp_controllers) == 1
     assert len(gadget.sp_reg_controllers) == 0
 
+    chain = rop.pivot(0x600000)
+    assert chain
+
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "bronze_ropchain"), auto_load_libs=False)
     rop = proj.analyses.ROP()
 

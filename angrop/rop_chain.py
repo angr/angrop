@@ -1,5 +1,7 @@
 import logging
 
+import angr
+
 from . import rop_utils
 from .errors import RopException
 from .rop_gadget import RopGadget
@@ -33,6 +35,8 @@ class RopChain:
         self.badbytes = badbytes if badbytes else []
 
         self._timeout = self.cls_timeout
+
+        self._pivoted = False
 
     def __add__(self, other):
         # need to add the values from the other's stack and the constraints to the result state
@@ -122,7 +126,17 @@ class RopChain:
             return symbol.name
         return None
 
-    def exec(self, timeout=None):
+    def _check_pivot(self, s):
+        for act in s.history.actions.hardcopy:
+            if act.type == 'reg' and act.action == 'write':
+                reg_name = self._p.arch.translate_register_name(act.offset)
+                if reg_name != self._builder.arch.stack_pointer:
+                    continue
+                diff = act.data.ast - s.regs.sp
+                if diff.symbolic or diff.concrete_value > 0x1000:
+                    self._pivoted = True
+
+    def exec(self, timeout=None, stop_at_pivot=False):
         """
         symbolically execute the ROP chain and return the final state
         """
@@ -147,10 +161,19 @@ class RopChain:
             state.memory.store(state.regs.sp+offset, val[0], project.arch.bytes, endness=project.arch.memory_endness)
         state.regs.pc = state.stack_pop()
 
-        # execute the chain using simgr
+        if stop_at_pivot:
+            self._pivoted = False
+            bp = state.inspect.b('reg_write', when=angr.BP_AFTER, action=self._check_pivot)
+
         simgr = project.factory.simgr(state, save_unconstrained=True)
+
+        # execute the chain using simgr
         while simgr.active:
             simgr.step()
+            if stop_at_pivot and self._pivoted:
+                assert len(simgr.active) == 1
+                simgr.active[0].inspect.remove_breakpoint('reg_write', bp)
+                return simgr.active[0]
             if len(simgr.active + simgr.unconstrained) != 1:
                 code = self.payload_code(print_instructions=True)
                 l.error("The following chain fails to execute!")
