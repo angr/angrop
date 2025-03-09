@@ -549,6 +549,13 @@ class Builder:
             try:
                 chain = reg_setter._build_reg_setting_chain(gadgets, None, {})
                 rb = RopBlock.from_chain(chain)
+
+                # TODO: technically, we should support chains like:
+                # pop rax; add eax, 0x1000; ret + <useful stuff>; call rax;
+                # but I'm too lazy to implement it atm
+                init_state, final_state = rb.sim_exec()
+                if final_state.ip.depth > 1:
+                    continue
                 assert rb.stack_change == total_sc
                 return rb._gadgets[:-1]
             except RopException:
