@@ -53,7 +53,7 @@ class X86(ROPArch):
         if not self.kernel_mode:
             if "fs:" in capstr or "gs:" in capstr or "iret" in capstr:
                 return False
-        if block.size < 1 or block.bytes[0] == 0x4f:
+        if block.size < 1:
             return False
         return True
 

@@ -1,9 +1,13 @@
+import logging
 from collections import defaultdict
 
 from .rop_chain import RopChain
 from .rop_value import RopValue
 from .rop_gadget import RopGadget
+from .errors import RopException
 from . import rop_utils
+
+l = logging.getLogger(__name__)
 
 class RopBlock(RopChain):
     """
@@ -131,7 +135,9 @@ class RopBlock(RopChain):
         simgr = self._p.factory.simgr(state, save_unconstrained=True)
         while simgr.active:
             simgr.step()
-            assert len(simgr.active + simgr.unconstrained) == 1
+            if len(simgr.active + simgr.unconstrained) != 1:
+                l.warn("fail to sim_exec:\n%s", self.dstr())
+                raise RopException("fail to sim_exec")
         final_state = simgr.unconstrained[0]
         return state, final_state
 

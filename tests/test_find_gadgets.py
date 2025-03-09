@@ -1,5 +1,6 @@
 import os
 import logging
+from io import BytesIO
 
 import angr
 import angrop  # pylint: disable=unused-import
@@ -251,6 +252,21 @@ def test_syscall_next_block():
     rop.find_gadgets_single_threaded(show_progress=False)
     chain = rop.do_syscall(2, [1, 0x41414141, 0x42424242, 0], preserve_regs={'eax'}, needs_return=True)
     assert chain
+
+def test_rex_pop_r10():
+    f = BytesIO()
+    f.write(b"OZ\xc3")
+    proj = angr.Project(
+        BytesIO(b"OZ\xc3"),
+        main_opts={
+            "backend": "blob",
+            "arch": "amd64",
+            "entry_point": 0,
+            "base_addr": 0,
+        })
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    g = rop.analyze_gadget(0)
+    assert g is not None
 
 def run_all():
     functions = globals()
