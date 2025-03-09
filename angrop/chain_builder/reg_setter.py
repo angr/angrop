@@ -81,7 +81,7 @@ class RegSetter(Builder):
             if src == dst:
                 continue
             if not self._reg_setting_dict[dst]: # this is a hard register
-                paths = nx.all_simple_paths(mover_graph, src, dst)
+                paths = nx.all_simple_paths(mover_graph, src, dst, cutoff=3)
                 all_chains = []
                 for path in paths:
                     path_chain = [self._reg_setting_dict[src]]
