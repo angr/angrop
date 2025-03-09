@@ -618,7 +618,7 @@ class Builder:
                 return None
             if preserve_regs:
                 for reg in preserve_regs:
-                    rb._blank_state.solver.add(final_state.registers.load(reg) == rop_values[reg])
+                    rb._blank_state.solver.add(final_state.registers.load(reg) == reg_solves[reg])
             if to_set_regs:
                 chain = self.chain_builder._reg_setter.run(**to_set_regs, preserve_regs=preserve_regs)
                 rb += RopBlock.from_chain(chain)
