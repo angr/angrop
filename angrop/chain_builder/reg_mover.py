@@ -33,7 +33,21 @@ class RegMover(Builder):
         for gadget in self._reg_moving_gadgets:
             if gadget.self_contained:
                 continue
-            new_moves = [m for m in gadget.reg_moves if not self._graph.has_edge(m.from_reg, m.to_reg)]
+
+            # check whether the gadget brings new_moves:
+            # 1. the edge doesn't exist at all
+            # 2. it moves more bits than all existing ones
+            new_moves = []
+            for m in gadget.reg_moves:
+                edge = (m.from_reg, m.to_reg)
+                if not self._graph.has_edge(*edge):
+                    new_moves.append(m)
+                    continue
+                edge_data = self._graph.get_edge_data(*edge)
+                if m.bits > edge_data['bits']:
+                    new_moves.append(m)
+                    continue
+
             if not new_moves:
                 continue
             preserve_regs = {m.from_reg for m in new_moves}
@@ -43,10 +57,13 @@ class RegMover(Builder):
             for move in rb.reg_moves:
                 edge = (move.from_reg, move.to_reg)
                 if self._graph.has_edge(*edge):
-                    edge_blocks = self._graph.get_edge_data(*edge)['block']
+                    edge_data = self._graph.get_edge_data(*edge)
+                    edge_blocks = edge_data['block']
                     edge_blocks.add(rb)
+                    if move.bits > edge_data['bits']:
+                        edge_data['bits'] = move.bits
                 else:
-                    self._graph.add_edge(*edge, block={rb})
+                    self._graph.add_edge(*edge, block={rb}, bits=move.bits)
 
     def _build_move_graph(self):
         self._graph = nx.DiGraph()
@@ -55,11 +72,15 @@ class RegMover(Builder):
         graph.add_nodes_from(self.arch.reg_set)
         # an edge means there is a move from the src register to the dst register
         objects = defaultdict(set)
+        max_bits_dict = defaultdict(int)
         for block in self._reg_moving_blocks:
             for move in block.reg_moves:
-                objects[(move.from_reg, move.to_reg)].add(block)
-        for key, val in objects.items():
-            graph.add_edge(key[0], key[1], block=val)
+                edge = (move.from_reg, move.to_reg)
+                objects[edge].add(block)
+                if move.bits > max_bits_dict[edge]:
+                    max_bits_dict[edge] = move.bits
+        for edge, val in objects.items():
+            graph.add_edge(edge[0], edge[1], block=val, bits=max_bits_dict[edge])
 
     def verify(self, chain, preserve_regs, registers):
         """
@@ -210,7 +231,7 @@ class RegMover(Builder):
         filter gadgets having the same effect
         """
         # first: filter out gadgets that don't do register move
-        gadgets = {g for g in gadgets if g.reg_moves and not g.has_conditional_branch and not g.has_symbolic_access()}
+        gadgets = {g for g in gadgets if g.reg_moves and not g.has_conditional_branch and (not g.has_symbolic_access() or g.transit_type == 'jmp_mem')}
         gadgets = self._filter_gadgets(gadgets)
         new_gadgets = set(x for x in gadgets if any(y.from_reg != y.to_reg for y in x.reg_moves))
         return new_gadgets

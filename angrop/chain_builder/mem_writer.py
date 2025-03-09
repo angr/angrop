@@ -244,6 +244,8 @@ class MemWriter(Builder):
         reg_vals = {}
         name = addr_bvs._encoded_name.decode()
         for reg in set(all_deps):
+            if reg in preserve_regs:
+                raise RopException(f"this gadget will overwrite {reg}, which is in preserve_regs")
             var = test_state.solver.eval(test_state.registers.load(reg))
             # check whether this reg will propagate to addr
             # if yes, propagate its rebase value

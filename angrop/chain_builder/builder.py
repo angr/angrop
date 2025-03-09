@@ -604,7 +604,7 @@ class Builder:
             ptr_val = rop_utils.cast_rop_value(ptr, self.project)
             data = struct.pack(self.project.arch.struct_fmt(), shifter.addr)
             # we ensure the content it points to is zeroed out, so we don't need to write trailing 0s
-            chain = mem_writer.write_to_mem(ptr_val, data.rstrip(b'\x00'), fill_byte=b'\x00')
+            chain = mem_writer.write_to_mem(ptr_val, data.rstrip(b'\x00'), fill_byte=b'\x00', preserve_regs=preserve_regs)
             rb = RopBlock.from_chain(chain)
             st = chain._blank_state
             state = rb._blank_state
