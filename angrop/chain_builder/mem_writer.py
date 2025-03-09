@@ -65,40 +65,41 @@ class MemWriter(Builder):
         if self._good_mem_write_gadgets:
             yield from self._good_mem_write_gadgets
 
-        possible_gadgets = {g for g in self._mem_write_gadgets.copy() if g.transit_type != 'jmp_reg'}
+        # now look for gadgets that require least stack change
+        possible_gadgets = {g for g in self._mem_write_gadgets if g.self_contained}
         possible_gadgets -= self._good_mem_write_gadgets # already yield these
 
-        # use the graph-search to gain a rough idea about (stack_change, register setting)
-        registers = dict((reg, 0x41) for reg in self.arch.reg_set)
-        l.debug("getting reg data for mem writes")
         reg_setter = self.chain_builder._reg_setter
-        _, _, reg_data = reg_setter.find_candidate_chains_graph_search(max_stack_change=0x50, **registers)
-        l.debug("trying mem_write gadgets")
-
-        # find a write gadget that induces the smallest stack_change
+        can_set_regs = {x for x in reg_setter._reg_setting_dict if reg_setter._reg_setting_dict[x]}
         while possible_gadgets:
+            to_remove = set()
             # limit the maximum size of the chain
             best_stack_change = 0x400
             best_gadget = None
-            # regs: according to the graph search, what registers can be controlled
-            # vals[1]: stack_change to set those registers
-            for regs, vals in reg_data.items():
-                reg_set_stack_change = vals[1]
-                if reg_set_stack_change > best_stack_change:
+
+            for g in possible_gadgets:
+                mem_write = g.mem_writes[0]
+                dep_regs = mem_write.addr_dependencies | mem_write.data_dependencies
+                if not dep_regs.issubset(can_set_regs):
+                    to_remove.add(g)
                     continue
-                for g in possible_gadgets:
-                    mem_write = g.mem_writes[0]
-                    if not (mem_write.addr_dependencies | mem_write.data_dependencies).issubset(regs):
-                        continue
-                    stack_change = g.stack_change + reg_set_stack_change
-                    bytes_per_write = mem_write.data_size // 8
-                    num_writes = (len(string_data) + bytes_per_write - 1)//bytes_per_write
-                    stack_change *= num_writes
-                    if stack_change < best_stack_change:
-                        best_gadget = g
-                        best_stack_change = stack_change
-                    if stack_change == best_stack_change and self._better_than(g, best_gadget):
-                        best_gadget = g
+
+                # estimate the stack_change cost of the gadget
+                stack_change = g.stack_change
+                for reg in dep_regs:
+                    stack_change += reg_setter._reg_setting_dict[reg][0].stack_change
+                bytes_per_write = mem_write.data_size // 8
+                num_writes = (len(string_data) + bytes_per_write - 1)//bytes_per_write
+                stack_change *= num_writes
+
+                if stack_change < best_stack_change:
+                    best_gadget = g
+                    best_stack_change = stack_change
+                if stack_change == best_stack_change and self._better_than(g, best_gadget):
+                    best_gadget = g
+
+            if to_remove:
+                possible_gadgets -= to_remove
 
             if best_gadget:
                 possible_gadgets.remove(best_gadget)

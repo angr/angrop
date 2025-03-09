@@ -98,9 +98,14 @@ class Builder:
         currently, we force it to point to a NULL region
         it shouldn't contain bad byte
         """
-        # get all writable segments
-        segs = [ s for s in self.project.loader.main_object.segments if s.is_writable ]
         null = b'\x00'*size
+
+        # get all writable segments
+        if self.arch.kernel_mode:
+            segs = [x for x in self.project.loader.main_object.sections if x.name in ('.data', '.bss')]
+        else:
+            segs = [ s for s in self.project.loader.main_object.segments if s.is_writable ]
+
         # enumerate through all address to find a good address
         for seg in segs:
             # we should use project.loader.memory.find API, but it is currently broken as reported here:
