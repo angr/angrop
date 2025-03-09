@@ -712,6 +712,30 @@ def test_normalize_jmp_mem():
     state = chain.exec()
     assert state.regs.r10.concrete_value == 0x41414141
 
+    proj = angr.load_shellcode(
+        """
+        pop r9
+        pop rbp
+        call qword ptr [rbp + 0x48]
+        pop rbp
+        ret
+        pop rax
+        pop rbx
+        ret
+        mov qword ptr [rbx], rax;
+        ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.set_regs(r9=0x41414141)
+    state = chain.exec()
+    assert state.regs.r9.concrete_value == 0x41414141
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

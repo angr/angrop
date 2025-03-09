@@ -1,3 +1,4 @@
+import re
 import math
 import struct
 import itertools
@@ -189,16 +190,26 @@ class Builder:
 
         res = solver.batch_eval(variables, 1)
         assert res
-
         res = res[0]
-        regs = []
-        for v in variables:
+
+        reg_d = dict()
+        stack_d = dict()
+        for idx, v in enumerate(variables):
             name = v.args[0]
-            assert name.startswith("sreg_")
-            reg = name.split('_')[1][:-1]
-            regs.append(reg)
-        d = dict(zip(regs, res))
-        return d
+            if name.startswith("sreg_"):
+                reg = name.split('_')[1][:-1]
+                reg_d[reg] = res[idx]
+            elif name.startswith("symbolic_stack_"):
+                re_res = re.match(r"symbolic_stack_(\d+)_", name)
+                offset = int(re_res.group(1))
+                val = res[idx]
+                if self.project.arch.memory_endness == "Iend_LE":
+                    val = claripy.Reverse(claripy.BVV(val, self.project.arch.bits))
+                    val = val.concrete_value
+                stack_d[offset] = val
+            else:
+                raise NotImplementedError("plz raise an issue")
+        return reg_d, stack_d
 
     def _rebalance_ast(self, lhs, rhs):
         """
@@ -600,9 +611,9 @@ class Builder:
 
             # step3: identify the registers that we can't fully control yet in pc_target, then set them using RegSetter
             init_state, final_state = rb.sim_exec()
-            rop_values = self._solve_ast_constraint(gadget.pc_target, ptr)
-            to_set_regs = {x:y for x,y in rop_values.items() if x not in rb.popped_regs}
-            preserve_regs = set(rop_values.keys()) - set(to_set_regs.keys())
+            reg_solves, stack_solves = self._solve_ast_constraint(gadget.pc_target, ptr)
+            to_set_regs = {x:y for x,y in reg_solves.items() if x not in rb.popped_regs}
+            preserve_regs = set(reg_solves.keys()) - set(to_set_regs.keys())
             if any(x for x in to_set_regs if x not in self.chain_builder._reg_setter._reg_setting_dict):
                 return None
             if preserve_regs:
@@ -629,6 +640,9 @@ class Builder:
                     val = state.memory.load(state.regs.sp+rb.stack_change, self.project.arch.bytes, endness=self.project.arch.memory_endness)
                 rb2.add_value(val)
             rb2.set_gadgets([gadget])
+            for offset, val in stack_solves.items():
+                # +1 because we insert a gadget before the stack patch
+                rb2._values[offset+1] = rop_utils.cast_rop_value(val, self.project)
 
             rb += rb2
             return rb
