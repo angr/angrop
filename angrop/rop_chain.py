@@ -37,6 +37,7 @@ class RopChain:
         self._timeout = self.cls_timeout
 
         self._pivoted = False
+        self._init_sp = None
 
     def __add__(self, other):
         # need to add the values from the other's stack and the constraints to the result state
@@ -127,14 +128,22 @@ class RopChain:
         return None
 
     def _check_pivot(self, s):
+        bits = self._p.arch.bits
         for act in s.history.actions.hardcopy:
             if act.type == 'reg' and act.action == 'write':
                 reg_name = self._p.arch.translate_register_name(act.offset)
                 if reg_name != self._builder.arch.stack_pointer:
                     continue
-                diff = act.data.ast - s.regs.sp
-                if diff.symbolic or diff.concrete_value > 0x1000:
+                diff = act.data.ast - self._init_sp
+                if diff.symbolic:
                     self._pivoted = True
+                    return
+                value = diff.concrete_value
+                if value >> (bits-1): # if the MSB is 1, this value is negative
+                    value -= (1<<bits)
+                if value >= 0x1000 or value < -0x1000:
+                    self._pivoted = True
+                    return
 
     def exec(self, timeout=None, stop_at_pivot=False):
         """
@@ -163,6 +172,7 @@ class RopChain:
 
         if stop_at_pivot:
             self._pivoted = False
+            self._init_sp = state.regs.sp
             bp = state.inspect.b('reg_write', when=angr.BP_AFTER, action=self._check_pivot)
 
         simgr = project.factory.simgr(state, save_unconstrained=True)
@@ -171,9 +181,10 @@ class RopChain:
         while simgr.active:
             simgr.step()
             if stop_at_pivot and self._pivoted:
-                assert len(simgr.active) == 1
-                simgr.active[0].inspect.remove_breakpoint('reg_write', bp)
-                return simgr.active[0]
+                states = simgr.active + simgr.unconstrained
+                assert len(states) == 1
+                states[0].inspect.remove_breakpoint('reg_write', bp)
+                return states[0]
             if len(simgr.active + simgr.unconstrained) != 1:
                 code = self.payload_code(print_instructions=True)
                 l.error("The following chain fails to execute!")
