@@ -31,7 +31,7 @@ class RopChain:
         self.payload_len = 0
 
         # blank state used for solving
-        self._blank_state = rop_utils.make_symbolic_state(self._p, builder.arch.reg_set, stack_gsize=0) if state is None else state
+        self._blank_state = rop_utils.make_symbolic_state(self._p, builder.arch.reg_set, 0) if state is None else state
         self.badbytes = badbytes if badbytes else []
 
         self._timeout = self.cls_timeout

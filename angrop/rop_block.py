@@ -49,7 +49,7 @@ class RopBlock(RopChain):
         state = rop_utils.make_symbolic_state(
                                 builder.project,
                                 builder.arch.reg_set,
-                                stack_gsize=stack_gsize)
+                                stack_gsize)
         return state
 
     @property
