@@ -1,6 +1,8 @@
 import logging
 import functools
 
+import claripy
+
 from .builder import Builder
 from .. import rop_utils
 from ..errors import RopException
@@ -61,11 +63,10 @@ class Pivot(Builder):
                 # iterate through the stack values that need to be in the chain
                 sp = init_state.regs.sp
                 arch_bytes = self.project.arch.bytes
-                for i in range(gadget.stack_change // arch_bytes):
-                    sym_word = init_state.memory.load(sp + arch_bytes*i, arch_bytes,
-                                                      endness=self.project.arch.memory_endness)
-
-                    val = final_state.solver.eval(sym_word)
+                for idx in range(gadget.stack_change // arch_bytes):
+                    tmp = claripy.BVS(f"symbolic_stack_{idx}", self.project.arch.bits)
+                    state.memory.store(state.regs.sp+idx*arch_bytes, tmp)
+                    val = state.memory.load(state.regs.sp+idx*arch_bytes, self.project.arch.bytes, endness=self.project.arch.memory_endness)
                     chain.add_value(val)
                 state = chain.exec(stop_at_pivot=True)
                 if state.solver.eval(state.regs.sp == addr.data):

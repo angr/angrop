@@ -199,7 +199,6 @@ class RopBlock(RopChain):
                 rb = rb._chain_block(RopBlock.from_gadget(g, builder))
             elif g.stack_change >= 0 and g.transit_type == 'jmp_reg':
                 init_state, final_state = rb.sim_exec()
-                val_cnt = g.stack_change // arch_bytes
                 new_vals = []
                 for offset in range(0, g.stack_change, arch_bytes):
                     tmp = final_state.memory.load(final_state.regs.sp+offset, arch_bytes, endness=project.arch.memory_endness)

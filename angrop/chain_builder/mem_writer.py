@@ -269,10 +269,10 @@ class MemWriter(Builder):
 
         chain = self._set_regs(**reg_vals, preserve_regs=preserve_regs)
         chain = RopBlock.from_chain(chain)
-        init_state, final_state = chain.sim_exec()
+        _, final_state = chain.sim_exec()
         chain.add_gadget(gadget)
 
-        bytes_per_pop = self.project.arch.bytes
+        arch_bytes = self.project.arch.bytes
         pc_offset = None
         if gadget.transit_type == 'pop_pc':
             pc_offset = gadget.pc_offset
@@ -280,16 +280,18 @@ class MemWriter(Builder):
             raise ValueError(f"Unknown gadget transit_type: {gadget.transit_type}")
 
         state = final_state
-        arch_bytes = self.project.arch.bytes
-        for idx in range(gadget.stack_change // bytes_per_pop):
-            if idx == pc_offset//bytes_per_pop:
+        for idx in range(gadget.stack_change // arch_bytes):
+            if idx == pc_offset//arch_bytes:
                 next_pc_val = rop_utils.cast_rop_value(
                     chain._blank_state.solver.BVS("next_pc", self.project.arch.bits),
                     self.project,
                 )
                 chain.add_value(next_pc_val)
                 continue
-            val = state.memory.load(state.regs.sp+idx*arch_bytes+arch_bytes, arch_bytes, endness=self.project.arch.memory_endness)
+
+            tmp = claripy.BVS(f"symbolic_stack_{idx}", self.project.arch.bits)
+            state.memory.store(state.regs.sp+idx*arch_bytes, tmp)
+            val = state.memory.load(state.regs.sp+idx*arch_bytes, self.project.arch.bytes, endness=self.project.arch.memory_endness)
             chain.add_value(val)
 
         # verify the write actually works

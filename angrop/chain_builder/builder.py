@@ -277,7 +277,7 @@ class Builder:
         test_symbolic_state = rop_utils.make_symbolic_state(
             self.project,
             self.arch.reg_set,
-            total_sc//arch_bytes,
+            total_sc//arch_bytes+1, # compensate for the first gadget
         )
         test_symbolic_state.ip = test_symbolic_state.stack_pop()
 
