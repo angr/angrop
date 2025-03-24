@@ -179,6 +179,9 @@ class GadgetAnalyzer:
     def _valid_state(self, init_state, final_state):
         if self._change_arch_state(init_state, final_state):
             return False
+        # stack change is too large
+        if not final_state.regs.sp.symbolic and final_state.regs.sp.concrete_value - self._concrete_sp > self._stack_bsize:
+            return False
         return True
 
     def _change_arch_state(self, init_state, final_state):

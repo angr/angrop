@@ -268,6 +268,18 @@ def test_rex_pop_r10():
     g = rop.analyze_gadget(0)
     assert g is not None
 
+def test_max_stack_change():
+    proj = angr.load_shellcode("""
+            xchg ebp, eax
+            ret 0xd020
+        """,
+        "amd64",
+    )
+
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    g = rop.analyze_gadget(0)
+    assert g is None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
