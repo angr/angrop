@@ -44,14 +44,6 @@ class RopBlock(RopChain):
         self.bbl_addrs = []
         self.isn_count: int = None # type: ignore
 
-    @staticmethod
-    def new_sim_state(builder, stack_gsize):
-        state = rop_utils.make_symbolic_state(
-                                builder.project,
-                                builder.arch.reg_set,
-                                stack_gsize)
-        return state
-
     @property
     def oop(self):
         """
@@ -164,7 +156,10 @@ class RopBlock(RopChain):
         # build the block(chain) state first
         project = builder.project
         bytes_per_pop = project.arch.bytes
-        state = RopBlock.new_sim_state(builder, gadget.stack_change//bytes_per_pop)
+        state = rop_utils.make_symbolic_state(
+                                builder.project,
+                                builder.arch.reg_set,
+                                gadget.stack_change//bytes_per_pop)
         next_pc_val = rop_utils.cast_rop_value(
             state.solver.BVS("next_pc", project.arch.bits),
             project,
