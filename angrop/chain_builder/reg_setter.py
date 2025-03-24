@@ -147,7 +147,7 @@ class RegSetter(Builder):
                 if rb.popped_regs.intersection(new_cap):
                     new_blocks.add(rb)
                 else:
-                    l.warn("normalizing \n%s does not yield any wanted new reg setting capability: %s", rb.dstr(), new_cap)
+                    l.warning("normalizing \n%s does not yield any wanted new reg setting capability: %s", rb.dstr(), new_cap)
                     continue
 
             # check whether it shortens any chains

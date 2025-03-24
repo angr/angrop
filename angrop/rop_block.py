@@ -135,7 +135,7 @@ class RopBlock(RopChain):
         while simgr.active:
             simgr.step()
             if len(simgr.active + simgr.unconstrained) != 1:
-                l.warn("fail to sim_exec:\n%s", self.dstr())
+                l.warning("fail to sim_exec:\n%s", self.dstr())
                 raise RopException("fail to sim_exec")
         final_state = simgr.unconstrained[0]
         return state, final_state
