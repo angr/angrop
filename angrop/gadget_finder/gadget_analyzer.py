@@ -20,7 +20,7 @@ class GadgetAnalyzer:
     """
     find and analyze gadgets from binary code
     """
-    def __init__(self, project, fast_mode, kernel_mode=False, arch=None, stack_gsize=80):
+    def __init__(self, project, fast_mode, kernel_mode=False, arch=None, stack_gsize=20):
         """
         stack_gsize: number of controllable gadgets on the stack
         """
@@ -693,7 +693,13 @@ class GadgetAnalyzer:
             init_sym_sp = None # type: ignore
             prev_act = None
             bits = self.project.arch.bits
+            max_prev_pivot_sc = 0
             for act in final_state.history.actions:
+                if act.type == 'mem' and not act.addr.ast.symbolic:
+                    end = act.addr.ast.concrete_value + act.size//8
+                    sc = end - self._concrete_sp
+                    if sc > max_prev_pivot_sc:
+                        max_prev_pivot_sc = sc
                 if act.type == 'reg' and act.action == 'write' and act.size == bits and \
                             act.storage == self.arch.stack_pointer:
                     if not act.data.ast.symbolic:
@@ -706,6 +712,8 @@ class GadgetAnalyzer:
                 gadget.stack_change = self._to_signed((last_sp - init_state.regs.sp).concrete_value)
             else:
                 gadget.stack_change = 0
+
+            gadget.stack_change_before_pivot = max_prev_pivot_sc
 
             assert init_sym_sp is not None, "there is no sybmolic sp, how does the pivoting work?"
 

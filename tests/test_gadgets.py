@@ -115,6 +115,7 @@ def test_pivot_gadget():
     """
     gadget = rop.analyze_gadget(0x5719da)
     assert gadget.stack_change == 0x4
+    assert gadget.stack_change_before_pivot == 0x4
     assert gadget.stack_change_after_pivot == 0x4
     assert len(gadget.sp_controllers) == 1
     assert len(gadget.sp_reg_controllers) == 0
@@ -132,6 +133,7 @@ def test_pivot_gadget():
     gadget = rop.analyze_gadget(0x80488e8)
     assert type(gadget) == PivotGadget
     assert gadget.stack_change == 0
+    assert gadget.stack_change_before_pivot == 0
     assert gadget.stack_change_after_pivot == 0x8
     assert len(gadget.sp_controllers) == 1 and gadget.sp_controllers.pop() == 'ebp'
 
@@ -153,6 +155,7 @@ def test_pivot_gadget():
     gadget = rop.analyze_gadget(0x8048998)
     assert type(gadget) == PivotGadget
     assert gadget.stack_change == 0xc
+    assert gadget.stack_change_before_pivot == 0xc
     assert gadget.stack_change_after_pivot == 0x4
     assert len(gadget.sp_controllers) == 1 and gadget.sp_controllers.pop().startswith('symbolic_stack_')
 
@@ -163,6 +166,7 @@ def test_pivot_gadget():
     gadget = rop.analyze_gadget(0x8048fd6)
     assert type(gadget) == PivotGadget
     assert gadget.stack_change == 0
+    assert gadget.stack_change_before_pivot == 0
     assert gadget.stack_change_after_pivot == 0x4
     assert len(gadget.sp_controllers) == 1 and gadget.sp_controllers.pop() == 'eax'
 
@@ -177,6 +181,7 @@ def test_pivot_gadget():
     gadget = rop.analyze_gadget(0x8052cac)
     assert type(gadget) == PivotGadget
     assert gadget.stack_change == 0
+    assert gadget.stack_change_before_pivot == 0
     assert gadget.stack_change_after_pivot == 0x14
     assert len(gadget.sp_controllers) == 1 and gadget.sp_controllers.pop() == 'ebp'
 
@@ -203,6 +208,7 @@ def test_pivot_gadget():
     gadget = rop.analyze_gadget(0x4c7b5a+1)
     assert type(gadget) == PivotGadget
     assert gadget.stack_change == 0
+    assert gadget.stack_change_before_pivot == 0
     assert gadget.stack_change_after_pivot == 0x24
     assert len(gadget.sp_controllers) == 1 and gadget.sp_controllers.pop() == 'r7'
 
@@ -218,6 +224,7 @@ def test_pivot_gadget():
     gadget = rop.analyze_gadget(0x1040c)
     assert type(gadget) == PivotGadget
     assert gadget.stack_change == 0
+    assert gadget.stack_change_before_pivot == 0
     assert gadget.stack_change_after_pivot == 0x4
     assert len(gadget.sp_controllers) == 1 and gadget.sp_controllers.pop() == 'r11'
 

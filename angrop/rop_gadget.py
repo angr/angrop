@@ -249,11 +249,10 @@ class PivotGadget(RopGadget):
     """
     stack pivot gadget, the definition of a PivotGadget is that
     it can arbitrarily control the stack pointer register, and do the pivot exactly once
-    TODO: so currently, it cannot directly construct a `pop rbp; leave ret;`
-    chain to pivot stack
     """
     def __init__(self, addr):
         super().__init__(addr)
+        self.stack_change_before_pivot = None
         self.stack_change_after_pivot = None
         # TODO: sp_controllers can be registers, payload on stack, and symbolic read data
         # but we do not handle symbolic read data, yet
