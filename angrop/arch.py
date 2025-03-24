@@ -21,16 +21,18 @@ class ROPArch:
 
     def _get_reg_set(self):
         """
-        get the set of names of general-purpose registers
+        get the set of names of general-purpose registers + bp
+        because bp is usually considered as general-purpose these days
         """
         arch = self.project.arch
         _sp_reg = arch.register_names[arch.sp_offset]
         _ip_reg = arch.register_names[arch.ip_offset]
+        _bp_reg = arch.register_names[arch.bp_offset]
 
         # get list of general-purpose registers
         default_regs = arch.default_symbolic_registers
         # prune the register list of the instruction pointer and the stack pointer
-        return {r for r in default_regs if r not in (_sp_reg, _ip_reg)}
+        return {r for r in default_regs if r not in (_sp_reg, _ip_reg)} | {_bp_reg}
 
     def block_make_sense(self, block):
         return True

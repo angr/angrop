@@ -43,8 +43,6 @@ class Builder:
         and emulate a `pop pc` situation
         """
         state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set, stack_gsize=stack_gsize)
-        rop_utils.make_reg_symbolic(state, self.arch.base_pointer)
-
         state.stack_pop()
         state.regs.ip = pc
         return state
@@ -281,7 +279,6 @@ class Builder:
             self.arch.reg_set,
             stack_gsize=total_sc,
         )
-        rop_utils.make_reg_symbolic(test_symbolic_state, self.arch.base_pointer)
         test_symbolic_state.ip = test_symbolic_state.stack_pop()
 
         # Maps each stack variable to the RopValue or RopGadget that should be placed there.

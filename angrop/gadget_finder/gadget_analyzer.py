@@ -33,12 +33,11 @@ class GadgetAnalyzer:
         # initial state that others are based off, all analysis should copy the state first and work on
         # the copied state
         self._stack_bsize = stack_gsize * self.project.arch.bytes # number of controllable bytes on stack
-        sym_reg_set = self.arch.reg_set.union({self.arch.base_pointer})
         if isinstance(self.arch, X86):
             extra_reg_set = self.arch.segment_regs
         else:
             extra_reg_set = None
-        self._state = rop_utils.make_symbolic_state(self.project, sym_reg_set,
+        self._state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set,
                                                     extra_reg_set=extra_reg_set, stack_gsize=stack_gsize,
                                                     fast_mode=self._fast_mode)
         self._concrete_sp = self._state.solver.eval(self._state.regs.sp)
@@ -672,7 +671,7 @@ class GadgetAnalyzer:
                 raise RopException("SP has multiple dependencies")
             if len(dependencies) == 0 and sp_change.symbolic:
                 raise RopException("SP change is uncontrolled")
-            assert self.arch.base_pointer not in dependencies
+            assert not dependencies
             if len(dependencies) == 0 and not sp_change.symbolic:
                 stack_changes = [init_state.solver.eval(sp_change)]
             elif list(dependencies)[0] == self.arch.stack_pointer:
