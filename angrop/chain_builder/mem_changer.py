@@ -163,7 +163,8 @@ class MemChanger(Builder):
 
         # constrain the successor to be at the gadget
         # emulate 'pop pc'
-        test_state = self.make_sim_state(gadget.addr)
+        arch_bytes = self.project.arch.bytes
+        test_state = self.make_sim_state(gadget.addr, gadget.stack_change//arch_bytes)
 
         if difference is not None:
             test_state.memory.store(addr.concreted, claripy.BVV(~(difference.concreted), data_size)) # pylint:disable=invalid-unary-operand-type

@@ -211,7 +211,7 @@ class MemWriter(Builder):
 
         # constrain the successor to be at the gadget
         # emulate 'pop pc'
-        test_state = self.make_sim_state(gadget.addr)
+        test_state = self.make_sim_state(gadget.addr, gadget.stack_change//self.project.arch.bytes)
 
         # step the gadget
         pre_gadget_state = test_state

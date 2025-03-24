@@ -44,7 +44,7 @@ class Pivot(Builder):
         for gadget in self._pivot_gadgets:
             # constrain the successor to be at the gadget
             # emulate 'pop pc'
-            init_state = self.make_sim_state(gadget.addr)
+            init_state = self.make_sim_state(gadget.addr, gadget.stack_change_before_pivot//self.project.arch.bytes)
 
             # step the gadget
             final_state = rop_utils.step_to_unconstrained_successor(self.project, init_state)
@@ -81,7 +81,7 @@ class Pivot(Builder):
             if reg not in gadget.sp_reg_controllers:
                 continue
 
-            init_state = self.make_sim_state(gadget.addr)
+            init_state = self.make_sim_state(gadget.addr, gadget.stack_change_before_pivot//self.project.arch.bytes)
             final_state = rop_utils.step_to_unconstrained_successor(self.project, init_state)
 
             chain = self.chain_builder.set_regs()

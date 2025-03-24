@@ -52,7 +52,7 @@ class GadgetFinder:
     a class to find ROP gadgets
     """
     def __init__(self, project, fast_mode=None, only_check_near_rets=True, max_block_size=None,
-                 max_sym_mem_access=None, is_thumb=False, kernel_mode=False, stack_gsize=80):
+                 max_sym_mem_access=None, is_thumb=False, kernel_mode=False, stack_gsize=20):
         # configurations
         self.project = project
         self.fast_mode = fast_mode

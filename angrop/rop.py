@@ -22,7 +22,7 @@ class ROP(Analysis):
     """
 
     def __init__(self, only_check_near_rets=True, max_block_size=None, max_sym_mem_access=None,
-                 fast_mode=None, rebase=None, is_thumb=False, kernel_mode=False, stack_gsize=80):
+                 fast_mode=None, rebase=None, is_thumb=False, kernel_mode=False, stack_gsize=20):
         """
         Initializes the rop gadget finder
         :param only_check_near_rets: If true we skip blocks that are not near rets
@@ -34,7 +34,8 @@ class ROP(Analysis):
         :param is_thumb:  execute ROP chain in thumb mode. Only makes difference on ARM architecture.
                           angrop does not switch mode within a rop chain
         :param kernel_mode: find kernel mode gadgets
-        :param stack_gsize: change the maximum allowable stack change for gadgets
+        :param stack_gsize: change the maximum allowable stack change for gadgets, where
+                            the max stack_change = stack_gsize * arch.bytes
         :return:
         """
 

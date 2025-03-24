@@ -27,11 +27,6 @@ class Builder:
                                                True,
                                                kernel_mode=False,
                                                arch=self.arch)
-        self._sim_state = rop_utils.make_symbolic_state(
-                                self.project,
-                                self.arch.reg_set,
-                                stack_gsize=80*3
-                                )
         self._used_writable_ptr = set()
 
     @property
@@ -42,21 +37,16 @@ class Builder:
     def roparg_filler(self):
         return self.chain_builder.roparg_filler
 
-    def make_sim_state(self, pc):
+    def make_sim_state(self, pc, stack_gsize):
         """
         make a symbolic state with all general purpose register + base pointer symbolized
         and emulate a `pop pc` situation
         """
-        arch_bytes = self.project.arch.bytes
-        arch_endness = self.project.arch.memory_endness
-
-        state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set, stack_gsize=80*3)
+        state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set, stack_gsize=stack_gsize)
         rop_utils.make_reg_symbolic(state, self.arch.base_pointer)
 
+        state.stack_pop()
         state.regs.ip = pc
-        state.add_constraints(state.memory.load(state.regs.sp, arch_bytes, endness=arch_endness) == pc)
-        state.regs.sp += arch_bytes
-        state.solver._solver.timeout = 5000
         return state
 
     @staticmethod
@@ -289,11 +279,10 @@ class Builder:
         test_symbolic_state = rop_utils.make_symbolic_state(
             self.project,
             self.arch.reg_set,
-            stack_gsize=80*3,
+            stack_gsize=total_sc,
         )
         rop_utils.make_reg_symbolic(test_symbolic_state, self.arch.base_pointer)
         test_symbolic_state.ip = test_symbolic_state.stack_pop()
-        test_symbolic_state.solver._solver.timeout = 5000
 
         # Maps each stack variable to the RopValue or RopGadget that should be placed there.
         stack_var_to_value = {}

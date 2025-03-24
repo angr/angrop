@@ -215,14 +215,14 @@ def make_initial_state(project, stack_gsize, fast_mode=False):
     initial_state.memory.store(initial_state.regs.sp, symbolic_stack)
     if initial_state.arch.bp_offset != initial_state.arch.sp_offset:
         initial_state.regs.bp = initial_state.regs.sp + 20*initial_state.arch.bytes
-    initial_state.solver._solver.timeout = 500  # only solve for half a second at most
+    initial_state.solver._solver.timeout = 1000  # only solve for a second at most
 
     angr.SimState.register_default("sym_memory", angr.storage.DefaultMemory)
 
     return initial_state
 
 
-def make_symbolic_state(project, reg_set, extra_reg_set=None, stack_gsize=80, fast_mode=False):
+def make_symbolic_state(project, reg_set, extra_reg_set=None, stack_gsize=20, fast_mode=False):
     """
     converts an input state into a state with symbolic registers
     :return: the symbolic state
