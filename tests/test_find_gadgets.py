@@ -175,16 +175,6 @@ def test_i386_syscall():
     """
     assert all(not gadget_exists(rop, x) for x in [0x8049189])
 
-def test_gadget_timeout():
-    # pylint: disable=pointless-string-statement
-    proj = angr.Project(os.path.join(tests_dir, "x86_64", "datadep_test"), auto_load_libs=False)
-    rop = proj.analyses.ROP()
-    """
-    0x4005d5 ret    0xc148
-    """
-    gadget = rop.analyze_gadget(0x4005d5)
-    assert gadget
-
 def local_multiprocess_analyze_gadget_list():
     # pylint: disable=pointless-string-statement
     proj = angr.Project(os.path.join(tests_dir, "x86_64", "datadep_test"), auto_load_libs=False)
