@@ -597,11 +597,10 @@ class Builder:
             # we ensure the content it points to is zeroed out, so we don't need to write trailing 0s
             chain = mem_writer.write_to_mem(ptr_val, data.rstrip(b'\x00'), fill_byte=b'\x00', preserve_regs=preserve_regs)
             rb = RopBlock.from_chain(chain)
-            st = chain._blank_state
             state = rb._blank_state
 
             # step3: identify the registers that we can't fully control yet in pc_target, then set them using RegSetter
-            init_state, final_state = rb.sim_exec()
+            _, final_state = rb.sim_exec()
             reg_solves, stack_solves = self._solve_ast_constraint(gadget.pc_target, ptr)
             to_set_regs = {x:y for x,y in reg_solves.items() if x not in rb.popped_regs}
             preserve_regs = set(reg_solves.keys()) - set(to_set_regs.keys())
@@ -628,7 +627,12 @@ class Builder:
                 if offset == shifter.pc_offset + gadget.stack_change:
                     val = state.solver.BVS("next_pc", self.project.arch.bits)
                 else:
-                    val = state.memory.load(state.regs.sp+rb.stack_change, self.project.arch.bytes, endness=self.project.arch.memory_endness)
+                    # FIXME: currently, the endness handling is a mess. Need to rewrite this part in a uniformed way
+                    # the following code is a compromise to the mess
+                    idx = (rb.stack_change + offset)//self.project.arch.bytes
+                    data = claripy.BVS(f"symbolic_stack_{idx}", self.project.arch.bits)
+                    state.memory.store(state.regs.sp+rb.stack_change+offset, data)
+                    val = state.memory.load(state.regs.sp+rb.stack_change+offset, self.project.arch.bytes, endness=self.project.arch.memory_endness)
                 rb2.add_value(val)
             rb2.set_gadgets([gadget])
             for offset, val in stack_solves.items():
@@ -639,7 +643,6 @@ class Builder:
             return rb
         except RopException:
             return None
-        return None
 
     def normalize_gadget(self, gadget, pre_preserve=None, post_preserve=None):
         """
