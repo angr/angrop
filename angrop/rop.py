@@ -22,7 +22,7 @@ class ROP(Analysis):
     """
 
     def __init__(self, only_check_near_rets=True, max_block_size=None, max_sym_mem_access=None,
-                 fast_mode=None, rebase=None, is_thumb=False, kernel_mode=False, stack_gsize=20):
+                 fast_mode=None, rebase=None, is_thumb=False, kernel_mode=False, stack_gsize=80):
         """
         Initializes the rop gadget finder
         :param only_check_near_rets: If true we skip blocks that are not near rets

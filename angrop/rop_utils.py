@@ -222,7 +222,7 @@ def make_initial_state(project, stack_gsize, fast_mode=False):
     return initial_state
 
 
-def make_symbolic_state(project, reg_set, extra_reg_set=None, stack_gsize=20, fast_mode=False):
+def make_symbolic_state(project, reg_set, extra_reg_set=None, stack_gsize=80, fast_mode=False):
     """
     converts an input state into a state with symbolic registers
     :return: the symbolic state

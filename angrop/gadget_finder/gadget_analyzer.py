@@ -20,7 +20,7 @@ class GadgetAnalyzer:
     """
     find and analyze gadgets from binary code
     """
-    def __init__(self, project, fast_mode, kernel_mode=False, arch=None, stack_gsize=20):
+    def __init__(self, project, fast_mode, kernel_mode=False, arch=None, stack_gsize=80):
         """
         stack_gsize: number of controllable gadgets on the stack
         """
