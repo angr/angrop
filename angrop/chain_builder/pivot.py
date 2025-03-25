@@ -1,8 +1,6 @@
 import logging
 import functools
 
-import claripy
-
 from .builder import Builder
 from .. import rop_utils
 from ..errors import RopException
@@ -46,7 +44,7 @@ class Pivot(Builder):
         for gadget in self._pivot_gadgets:
             # constrain the successor to be at the gadget
             # emulate 'pop pc'
-            init_state = self.make_sim_state(gadget.addr, gadget.stack_change_before_pivot//self.project.arch.bytes)
+            init_state = self.make_sim_state(gadget.addr, gadget.stack_change_before_pivot//self.project.arch.bytes+1)
 
             # step the gadget
             final_state = rop_utils.step_to_unconstrained_successor(self.project, init_state)
@@ -63,10 +61,10 @@ class Pivot(Builder):
                 # iterate through the stack values that need to be in the chain
                 sp = init_state.regs.sp
                 arch_bytes = self.project.arch.bytes
-                for idx in range(gadget.stack_change // arch_bytes):
-                    tmp = claripy.BVS(f"symbolic_stack_{idx}", self.project.arch.bits)
-                    state.memory.store(state.regs.sp+idx*arch_bytes, tmp)
-                    val = state.memory.load(state.regs.sp+idx*arch_bytes, self.project.arch.bytes, endness=self.project.arch.memory_endness)
+                for i in range(gadget.stack_change_before_pivot // arch_bytes):
+                    sym_word = init_state.memory.load(sp + arch_bytes*i, arch_bytes,
+                                                      endness=self.project.arch.memory_endness)
+                    val = final_state.solver.eval(sym_word)
                     chain.add_value(val)
                 state = chain.exec(stop_at_pivot=True)
                 if state.solver.eval(state.regs.sp == addr.data):
