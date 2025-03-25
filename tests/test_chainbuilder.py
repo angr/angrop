@@ -736,6 +736,15 @@ def test_normalize_jmp_mem():
     state = chain.exec()
     assert state.regs.r9.concrete_value == 0x41414141
 
+def test_jmp_mem_normalize_simple_target():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
+    rop.analyze_gadget(0x004a9d67)
+    rop.analyze_gadget(0x004cbbb7)
+    rop.analyze_gadget(0x004c1317)
+    chain = rop.move_regs(r5="r1")
+    assert chain
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

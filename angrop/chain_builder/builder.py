@@ -172,10 +172,13 @@ class Builder:
 
     def _solve_ast_constraint(self, ast, value):
         variables = set()
-        for x in ast.children_asts():
-            if x.op != 'BVS':
-                continue
-            variables.add(x)
+        if ast.op == 'BVS':
+            variables.add(ast)
+        else:
+            for x in ast.children_asts():
+                if x.op != 'BVS':
+                    continue
+                variables.add(x)
         solver = claripy.Solver()
         solver.add(ast == value)
 
