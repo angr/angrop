@@ -404,6 +404,9 @@ class RegSetter(Builder):
                 continue
             reg_set = can_set_regs(g)
             clobbered_regs = g.changed_regs - reg_set
+            # don't add the edge if changes registers that we want to preserve
+            if g.changed_regs.intersection(preserve_regs):
+                continue
             total_reg_set.update(reg_set)
             for n in nodes:
                 src_node = n
