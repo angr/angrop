@@ -713,7 +713,8 @@ class GadgetAnalyzer:
 
             gadget.stack_change_before_pivot = max_prev_pivot_sc
 
-            assert init_sym_sp is not None, "there is no sybmolic sp, how does the pivoting work?"
+            if init_sym_sp is None:
+                raise RopException("PivotGadget does not work with conditional branches")
 
             # if is popped from stack, we need to compensate for the popped sp value on the stack
             # if it is a pop, then sp comes from stack and the previous action must be a mem read
