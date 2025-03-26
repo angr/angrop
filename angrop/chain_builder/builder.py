@@ -242,7 +242,7 @@ class Builder:
                     rhs = claripy.Reverse(rhs)
                 case "ZeroExt":
                     rhs_leading = claripy.Extract(rhs.length-1, rhs.length-lhs.args[0], rhs)
-                    if rhs_leading.concrete_value != 0:
+                    if not rhs_leading.symbolic and rhs_leading.concrete_value != 0:
                         raise RopException("rebalance unsat")
                     rhs = claripy.Extract(rhs.length-lhs.args[0]-1, 0, rhs)
                     lhs = lhs.args[1]
