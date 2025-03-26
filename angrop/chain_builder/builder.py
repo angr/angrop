@@ -257,6 +257,8 @@ class Builder:
                     if ext_bits:
                         rhs = claripy.ZeroExt(ext_bits, rhs)
                     lhs = lhs.args[2]
+                case "Concat":
+                    raise RopException("cannot rebalance Concat")
                 case _:
                     raise ValueError(f"{lhs.op} cannot be rebalanced at the moment. plz create an issue!")
         assert self._ast_contains_stack_data(lhs)
