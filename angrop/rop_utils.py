@@ -273,6 +273,22 @@ def is_kernel_addr(project, addr):
         return True
     return False
 
+def step_one_inst(project, state, stop_at_syscall=False):
+    if is_in_kernel(project, state):
+        if stop_at_syscall:
+            return state
+        succ = project.factory.successors(state)
+        return step_one_inst(project, succ.flat_successors[0])
+
+    if project.is_hooked(state.addr):
+        succ = project.factory.successors(state)
+        return step_one_inst(project, succ.flat_successors[0])
+
+    succ = project.factory.successors(state, num_inst=1)
+    if not succ.flat_successors:
+        raise RopException(f"fail to step state: {state}")
+    return succ.flat_successors[0]
+
 def step_to_unconstrained_successor(project, state, max_steps=2, allow_simprocedures=False,
                                     stop_at_syscall=False):
     """
