@@ -652,78 +652,81 @@ class Builder:
         pre_preserve: what registers to preserve before executing the gadget
         post_preserve: what registers to preserve after executing the gadget
         """
-        gadgets = [gadget]
+        try:
+            gadgets = [gadget]
 
-        if pre_preserve is None:
-            pre_preserve = set()
-        if post_preserve is None:
-            post_preserve = set()
+            if pre_preserve is None:
+                pre_preserve = set()
+            if post_preserve is None:
+                post_preserve = set()
 
-        # HACK: technically, if we constrain the address, there will be no more
-        # symbolic accesses
-        # here, what we actually want to do is to filter out symbolic access other than
-        # where the PC comes from. The following check will let through jmp_mem gadget that has
-        # symbolic access, which is bad
-        if gadget.has_symbolic_access() and gadget.transit_type != 'jmp_mem':
-            return None
-
-        # TODO: don't support this yet
-        if gadget.has_conditional_branch and gadget.transit_type == 'jmp_mem':
-            return None
-
-        # normalize conditional branches
-        if gadget.has_conditional_branch:
-            tmp = self._normalize_conditional(gadget, preserve_regs=pre_preserve)
-            if tmp is None:
+            # HACK: technically, if we constrain the address, there will be no more
+            # symbolic accesses
+            # here, what we actually want to do is to filter out symbolic access other than
+            # where the PC comes from. The following check will let through jmp_mem gadget that has
+            # symbolic access, which is bad
+            if gadget.has_symbolic_access() and gadget.transit_type != 'jmp_mem':
                 return None
-            gadgets = tmp + gadgets
 
-        # normalize transit_types
-        if gadget.transit_type == 'jmp_reg':
-            tmp = self._normalize_jmp_reg(gadget, preserve_regs=pre_preserve)
-            if tmp is None:
+            # TODO: don't support this yet
+            if gadget.has_conditional_branch and gadget.transit_type == 'jmp_mem':
                 return None
-            gadgets = tmp + gadgets
-        elif gadget.transit_type == 'jmp_mem':
-            rb = self._normalize_jmp_mem(gadget, preserve_regs=pre_preserve)
-            return rb
-        elif gadget.transit_type == 'pop_pc':
-            pass
-        else:
-            raise NotImplementedError()
 
-        chain = self._build_reg_setting_chain(gadgets, None, {})
-        rb = RopBlock.from_chain(chain)
+            # normalize conditional branches
+            if gadget.has_conditional_branch:
+                tmp = self._normalize_conditional(gadget, preserve_regs=pre_preserve)
+                if tmp is None:
+                    return None
+                gadgets = tmp + gadgets
 
-        if rb is None:
-            return None
-
-        # normalize non-positive stack_change
-        if gadget.stack_change <= 0:
-            shift_gadgets = self.chain_builder._shifter.shift_gadgets
-            sc = abs(gadget.stack_change) + self.project.arch.bytes
-            keys = sorted(shift_gadgets.keys())
-            shifter_list = [shift_gadgets[x] for x in keys if x >= sc]
-            shifter_list = itertools.chain.from_iterable(shifter_list)
-            for shifter in shifter_list:
-                if shifter.pc_offset < abs(gadget.stack_change):
-                    continue
-                if shifter.changed_regs.intersection(post_preserve):
-                    continue
-                try:
-                    tmp = RopBlock.from_gadget(shifter, self)
-                    rb += tmp
-                    break
-                except RopException:
-                    pass
+            # normalize transit_types
+            if gadget.transit_type == 'jmp_reg':
+                tmp = self._normalize_jmp_reg(gadget, preserve_regs=pre_preserve)
+                if tmp is None:
+                    return None
+                gadgets = tmp + gadgets
+            elif gadget.transit_type == 'jmp_mem':
+                rb = self._normalize_jmp_mem(gadget, preserve_regs=pre_preserve)
+                return rb
+            elif gadget.transit_type == 'pop_pc':
+                pass
             else:
+                raise NotImplementedError()
+
+            chain = self._build_reg_setting_chain(gadgets, None, {})
+            rb = RopBlock.from_chain(chain)
+
+            if rb is None:
                 return None
 
-        if rb is None:
-            return None
+            # normalize non-positive stack_change
+            if gadget.stack_change <= 0:
+                shift_gadgets = self.chain_builder._shifter.shift_gadgets
+                sc = abs(gadget.stack_change) + self.project.arch.bytes
+                keys = sorted(shift_gadgets.keys())
+                shifter_list = [shift_gadgets[x] for x in keys if x >= sc]
+                shifter_list = itertools.chain.from_iterable(shifter_list)
+                for shifter in shifter_list:
+                    if shifter.pc_offset < abs(gadget.stack_change):
+                        continue
+                    if shifter.changed_regs.intersection(post_preserve):
+                        continue
+                    try:
+                        tmp = RopBlock.from_gadget(shifter, self)
+                        rb += tmp
+                        break
+                    except RopException:
+                        pass
+                else:
+                    return None
 
-        # TODO
-        if rb.oop:
-            return None
+            if rb is None:
+                return None
 
-        return rb
+            # TODO
+            if rb.oop:
+                return None
+
+            return rb
+        except RopException:
+            return None

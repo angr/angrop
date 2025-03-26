@@ -745,6 +745,27 @@ def test_jmp_mem_normalize_simple_target():
     chain = rop.move_regs(r5="r1")
     assert chain
 
+def test_normalize_conditional():
+    proj = angr.load_shellcode(
+        """
+        pop rbp
+        ret
+        cmp ebp, esp
+        pop rax
+        pop rdx
+        jne 0x4072a8
+        pop rbx
+        pop rbp
+        pop r12
+        ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
