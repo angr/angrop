@@ -270,6 +270,12 @@ def test_max_stack_change():
     g = rop.analyze_gadget(0)
     assert g is None
 
+def test_symbolized_got():
+    proj = angr.Project(os.path.join(tests_dir, "x86_64", "ALLSTAR_acct_sa"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    g = rop.analyze_gadget(0x40156A)
+    assert g is not None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

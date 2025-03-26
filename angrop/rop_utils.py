@@ -249,6 +249,20 @@ def make_symbolic_state(project, reg_set, stack_gsize, extra_reg_set=None, fast_
     symbolic_state.regs.sp = input_state.regs.sp
     return symbolic_state
 
+def symbolize_got_table(project, state):
+    for s in project.loader.main_object.sections:
+        if s.name == '.got.plt':
+            break
+    else:
+        return
+    # FULL RELRO
+    if not s.is_writable:
+        return
+    endness = project.arch.memory_endness
+    for i in range(0, s.memsize//project.arch.bytes):
+        bv = claripy.BVS(f"symbolic_read_unconstrained_got_{i}", project.arch.bits)
+        state.memory.store(s.vaddr + i*project.arch.bytes, bv, endness=endness)
+
 def make_reg_symbolic(state, reg):
     state.registers.store(reg,
     state.solver.BVS("sreg_" + reg + "-", state.arch.bits))
