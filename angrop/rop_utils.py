@@ -200,7 +200,9 @@ def make_initial_state(project, stack_gsize, fast_mode=False):
     add_set = {angr.options.CONSERVATIVE_READ_STRATEGY, angr.options.AVOID_MULTIVALUED_WRITES,
                angr.options.NO_SYMBOLIC_JUMP_RESOLUTION, angr.options.CGC_NO_SYMBOLIC_RECEIVE_LENGTH,
                angr.options.NO_SYMBOLIC_SYSCALL_RESOLUTION, angr.options.TRACK_ACTION_HISTORY,
-               angr.options.ADD_AUTO_REFS, angr.options.SPECIAL_MEMORY_FILL}
+               angr.options.ADD_AUTO_REFS, angr.options.SPECIAL_MEMORY_FILL,
+               angr.options.NO_CROSS_INSN_OPT, # for instruction-precise sim_action tracking
+               }
 
     initial_state = project.factory.blank_state(
         special_memory_filler=fast_uninitialized_filler,
@@ -271,59 +273,8 @@ def is_kernel_addr(project, addr):
         return True
     return False
 
-def step_one_block(project, state, stop_at_syscall=False):
-    block = state.block()
-    num_insts = len(block.capstone.insns)
-
-    if not num_insts:
-        raise RopException("No instructions!")
-
-    if project.is_hooked(state.addr):
-        succ = project.factory.successors(state)
-        return succ, None
-
-    if is_in_kernel(project, state):
-        succ = project.factory.successors(state)
-        if stop_at_syscall:
-            return None, succ.flat_successors[0]
-        return succ, None
-
-    if project.arch.linux_name.startswith("mips"):
-        last_inst_addr = block.capstone.insns[-2].address
-    else:
-        last_inst_addr = block.capstone.insns[-1].address
-    for _ in range(num_insts): # considering that it may get into kernel mode
-        if state.addr != last_inst_addr:
-            state = step_one_inst(project, state, stop_at_syscall=stop_at_syscall)
-            if stop_at_syscall and is_in_kernel(project, state):
-                return None, state
-        else:
-            succ = project.factory.successors(state, num_inst=1)
-            if not succ.flat_successors:
-                return succ, None
-            if stop_at_syscall and is_in_kernel(project, succ.flat_successors[0]):
-                return None, succ.flat_successors[0]
-            return succ, None
-    raise RopException("Fail to reach the last instruction!")
-
-def step_one_inst(project, state, stop_at_syscall=False):
-    if is_in_kernel(project, state):
-        if stop_at_syscall:
-            return state
-        succ = project.factory.successors(state)
-        return step_one_inst(project, succ.flat_successors[0])
-
-    if project.is_hooked(state.addr):
-        succ = project.factory.successors(state)
-        return step_one_inst(project, succ.flat_successors[0])
-
-    succ = project.factory.successors(state, num_inst=1)
-    if not succ.flat_successors:
-        raise RopException(f"fail to step state: {state}")
-    return succ.flat_successors[0]
-
 def step_to_unconstrained_successor(project, state, max_steps=2, allow_simprocedures=False,
-                                    stop_at_syscall=False, precise_action=False):
+                                    stop_at_syscall=False):
     """
     steps up to two times to try to find an unconstrained successor
     :param state: the input state
@@ -336,19 +287,11 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
         state.options.add(angr.options.BYPASS_UNSUPPORTED_SYSCALL)
 
         succ: SimSuccessors = None # type: ignore
-        if not precise_action:
-            succ = project.factory.successors(state)
-            if stop_at_syscall and succ.flat_successors:
-                next_state = succ.flat_successors[0]
-                if is_in_kernel(project, next_state):
-                    return next_state
-        else:
-            # FIXME: we step instruction by instruction because of an angr bug: xxxx
-            # the bug makes angr may merge sim_actions from two instructions into one
-            # making analysis based on sim_actions inaccurate
-            succ, state = step_one_block(project, state, stop_at_syscall=stop_at_syscall)
-            if state:
-                return state
+        succ = project.factory.successors(state)
+        if stop_at_syscall and succ.flat_successors:
+            next_state = succ.flat_successors[0]
+            if is_in_kernel(project, next_state):
+                return next_state
 
         if len(succ.flat_successors) + len(succ.unconstrained_successors) != 1:
             raise RopException("Does not get to a single successor")
@@ -358,8 +301,7 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
                 raise RopException("Skipping simprocedure")
             return step_to_unconstrained_successor(project, succ.flat_successors[0], max_steps=max_steps-1,
                                                    allow_simprocedures=allow_simprocedures,
-                                                   stop_at_syscall=stop_at_syscall,
-                                                   precise_action=precise_action)
+                                                   stop_at_syscall=stop_at_syscall)
         if len(succ.flat_successors) == 1 and max_steps == 0:
             raise RopException("Does not get to an unconstrained successor")
         return succ.unconstrained_successors[0]

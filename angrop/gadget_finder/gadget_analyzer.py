@@ -685,7 +685,7 @@ class GadgetAnalyzer:
 
         elif type(gadget) is PivotGadget:
             # FIXME: step_to_unconstrained_successor is not compatible with conditional_branches
-            final_state = rop_utils.step_to_unconstrained_successor(self.project, state=init_state, precise_action=True)
+            final_state = rop_utils.step_to_unconstrained_successor(self.project, state=init_state)
             dependencies = self._get_reg_dependencies(final_state, "sp")
             last_sp = None
             init_sym_sp = None # type: ignore
