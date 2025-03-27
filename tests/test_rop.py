@@ -254,6 +254,7 @@ def test_roptest_aarch64():
     """
     rop.analyze_gadget(0x4b7ca8)
     rop.analyze_gadget(0x4ebad4)
+    rop.chain_builder.optimize()
 
     data = claripy.BVS("data", 64)
     chain = rop.set_regs(x0=data)

@@ -742,6 +742,7 @@ def test_jmp_mem_normalize_simple_target():
     rop.analyze_gadget(0x004a9d67)
     rop.analyze_gadget(0x004cbbb7)
     rop.analyze_gadget(0x004c1317)
+    rop.chain_builder.optimize()
     chain = rop.move_regs(r5="r1")
     assert chain
 
@@ -774,6 +775,7 @@ def test_normalize_moves_in_reg_setter():
     rop.analyze_gadget(0x0000000000401a50) # pop rbp ; ret
     rop.analyze_gadget(0x0000000000404149) # mov dword ptr [rsi + 0x30], eax; xor eax, eax; pop rbx; ret
     rop.analyze_gadget(0x0000000000402d7a) # mov edx, ebp; mov rsi, r12; mov edi, r13d; call 0x401790; jmp qword ptr [rip + 0x2058ca]
+    rop.chain_builder.optimize()
 
     chain = rop.set_regs(rdx=0x41414141)
     assert chain is not None

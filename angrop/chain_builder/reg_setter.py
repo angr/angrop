@@ -198,6 +198,7 @@ class RegSetter(Builder):
         rb = reg_setter + rb
 
         return rb
+
     def verify(self, chain, preserve_regs, registers):
         """
         given a potential chain, verify whether the chain can set the registers correctly by symbolically
