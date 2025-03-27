@@ -138,10 +138,12 @@ class RegSetter(Builder):
             if new_pops or new_moves:
                 if new_moves:
                     for new_move in new_moves:
-                        rb = self.normalize_gadget(gadget, pre_preserve={new_move.from_reg}, post_preserve={new_move.to_reg})
+                        rb = self.normalize_gadget(gadget, post_preserve={new_move.to_reg})
                         if rb is None:
                             continue
-                        rb = RopBlock.from_gadget(self._reg_setting_dict[new_move.from_reg][0], self) + rb
+                        if new_move.to_reg not in rb.popped_regs and new_move in rb.reg_moves:
+                            # FIXME: the first setter may not be a Gadget
+                            rb = RopBlock.from_gadget(self._reg_setting_dict[new_move.from_reg][0], self) + rb
                         if new_move.to_reg in rb.popped_regs:
                             new_blocks.add(rb)
                         else:
