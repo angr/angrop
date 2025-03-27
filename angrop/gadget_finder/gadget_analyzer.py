@@ -108,7 +108,7 @@ class GadgetAnalyzer:
             return [], []
         except RopTimeoutException:
             return [], []
-        except ctypes.ArgumentError:
+        except (ctypes.ArgumentError, RecursionError):
             return [], []
 
         final_states = list(simgr.unconstrained)
@@ -171,7 +171,7 @@ class GadgetAnalyzer:
                 continue
             except (angr.errors.AngrError, angr.errors.AngrRuntimeError, angr.errors.SimError):
                 continue
-            except ctypes.ArgumentError as e:
+            except (ctypes.ArgumentError, RecursionError):
                 continue
 
         return gadgets
