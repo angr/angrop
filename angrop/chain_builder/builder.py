@@ -88,18 +88,30 @@ class Builder:
         """
         null = b'\x00'*size
 
+        plt_sec = None
         # get all writable segments
         if self.arch.kernel_mode:
             segs = [x for x in self.project.loader.main_object.sections if x.name in ('.data', '.bss')]
         else:
             segs = [ s for s in self.project.loader.main_object.segments if s.is_writable ]
+            for sec in self.project.loader.main_object.sections:
+                if sec.name == '.got.plt':
+                    plt_sec = sec
+                    break
 
         # enumerate through all address to find a good address
         for seg in segs:
             # we should use project.loader.memory.find API, but it is currently broken as reported here:
             # https://github.com/angr/angr/issues/5330
             max_addr = math.ceil(seg.max_addr / 0x1000)*0x1000 # // round up to page size
+            contains_plt = False
+            # my lazy implementation of avoiding taking addresses from the GOT table
+            # because they may not be zero during runtime even though they appear to be so in the binary
+            if plt_sec:
+                contains_plt = seg.min_addr <= plt_sec.min_addr and seg.max_addr >= plt_sec.max_addr
             for addr in range(seg.min_addr, max_addr):
+                if plt_sec and contains_plt and plt_sec.contains_addr(addr):
+                    continue
                 # can't collide with used regions
                 collide = False
                 for a, s in self._used_writable_ptr:
