@@ -299,6 +299,27 @@ def test_acct_sa():
     assert state.regs.rsi.concrete_value == 0x42424242
     assert state.regs.rdx.concrete_value == 0x43434343
 
+def test_liblog():
+    """
+    yet another system test
+    the difficulty here is that it needs to be able to normalize a jmp_mem gadget that requries moves
+    """
+    proj = angr.Project(os.path.join(public_bin_location, "x86_64", "ALLSTAR_android-libzipfile-dev_liblog.so.0.21.0"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    cache_path = os.path.join(test_data_location, "ALLSTAR_liblog")
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    chain = rop.set_regs(rdx=0x41414141)
+    assert chain is not None
+
+    chain = rop.func_call(0xdeadbeef, [0x41414141, 0x42424242, 0x43434343])
+    assert chain is not None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

@@ -766,6 +766,18 @@ def test_normalize_conditional():
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
     rop.find_gadgets_single_threaded(show_progress=False)
 
+def test_normalize_moves_in_reg_setter():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "ALLSTAR_android-libzipfile-dev_liblog.so.0.21.0"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.analyze_gadget(0x0000000000403765) # pop rax; ret
+    rop.analyze_gadget(0x000000000040236e) # pop rsi; ret
+    rop.analyze_gadget(0x0000000000401a50) # pop rbp ; ret
+    rop.analyze_gadget(0x0000000000404149) # mov dword ptr [rsi + 0x30], eax; xor eax, eax; pop rbx; ret
+    rop.analyze_gadget(0x0000000000402d7a) # mov edx, ebp; mov rsi, r12; mov edi, r13d; call 0x401790; jmp qword ptr [rip + 0x2058ca]
+
+    chain = rop.set_regs(rdx=0x41414141)
+    assert chain is not None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

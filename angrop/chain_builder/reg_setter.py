@@ -136,19 +136,25 @@ class RegSetter(Builder):
             new_pops = {x for x in gadget.popped_regs if not self._reg_setting_dict[x]}
             new_moves = {x for x in gadget.reg_moves if not self._reg_setting_dict[x.to_reg] and self._reg_setting_dict[x.from_reg]}
             if new_pops or new_moves:
-                new_moves_to = {x.to_reg for x in new_moves}
-                new_cap = new_pops | new_moves_to
                 if new_moves:
-                    rb = self.normalize_gadget(gadget, post_preserve=new_moves_to)
+                    for new_move in new_moves:
+                        rb = self.normalize_gadget(gadget, pre_preserve={new_move.from_reg}, post_preserve={new_move.to_reg})
+                        if rb is None:
+                            continue
+                        rb = RopBlock.from_gadget(self._reg_setting_dict[new_move.from_reg][0], self) + rb
+                        if new_move.to_reg in rb.popped_regs:
+                            new_blocks.add(rb)
+                        else:
+                            l.warning("normalizing \n%s does not yield any wanted new reg setting capability: %s", rb.dstr(), new_move.to_reg)
                 else:
                     rb = self.normalize_gadget(gadget, post_preserve=new_pops)
-                if rb is None:
-                    continue
-                if rb.popped_regs.intersection(new_cap):
-                    new_blocks.add(rb)
-                else:
-                    l.warning("normalizing \n%s does not yield any wanted new reg setting capability: %s", rb.dstr(), new_cap)
-                    continue
+                    if rb is None:
+                        continue
+                    if rb.popped_regs.intersection(new_pops):
+                        new_blocks.add(rb)
+                    else:
+                        l.warning("normalizing \n%s does not yield any wanted new reg setting capability: %s", rb.dstr(), new_pops)
+                        continue
 
             # check whether it shortens any chains
             better = False

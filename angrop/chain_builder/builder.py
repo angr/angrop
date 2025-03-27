@@ -608,11 +608,16 @@ class Builder:
             assert shifter.transit_type == 'pop_pc'
 
             # step2: write the shifter to a writable location
-            ptr = self._get_ptr_to_writable(self.project.arch.bytes)
-            ptr_val = rop_utils.cast_rop_value(ptr, self.project)
             data = struct.pack(self.project.arch.struct_fmt(), shifter.addr)
-            # we ensure the content it points to is zeroed out, so we don't need to write trailing 0s
-            chain = mem_writer.write_to_mem(ptr_val, data.rstrip(b'\x00'), fill_byte=b'\x00', preserve_regs=preserve_regs)
+            if gadget.pc_target.symbolic:
+                ptr = self._get_ptr_to_writable(self.project.arch.bytes)
+                # we ensure the content it points to is zeroed out, so we don't need to write trailing 0s
+                # but we can't do so for GOT because they may have leftovers there
+                data = data.rstrip(b'\x00')
+            else:
+                ptr = gadget.pc_target.concrete_value
+            ptr_val = rop_utils.cast_rop_value(ptr, self.project)
+            chain = mem_writer.write_to_mem(ptr_val, data, fill_byte=b'\x00', preserve_regs=preserve_regs)
             rb = RopBlock.from_chain(chain)
             state = rb._blank_state
 
@@ -674,12 +679,11 @@ class Builder:
             if post_preserve is None:
                 post_preserve = set()
 
-            # HACK: technically, if we constrain the address, there will be no more
-            # symbolic accesses
-            # here, what we actually want to do is to filter out symbolic access other than
-            # where the PC comes from. The following check will let through jmp_mem gadget that has
-            # symbolic access, which is bad
-            if gadget.has_symbolic_access() and gadget.transit_type != 'jmp_mem':
+            # filter out symbolic access other than where the PC comes from
+            # by definition, jmp_mem gadgets' PC come from symbolic access, so handle that specially
+            if gadget.transit_type != 'jmp_mem' and gadget.has_symbolic_access():
+                return None
+            if gadget.transit_type == 'jmp_mem' and gadget.num_sym_mem_access > 1:
                 return None
 
             # TODO: don't support this yet
