@@ -138,12 +138,9 @@ class RegSetter(Builder):
             if new_pops or new_moves:
                 if new_moves:
                     for new_move in new_moves:
-                        rb = self.normalize_gadget(gadget, post_preserve={new_move.to_reg})
+                        rb = self.normalize_for_move(gadget, new_move)
                         if rb is None:
                             continue
-                        if new_move.to_reg not in rb.popped_regs and new_move in rb.reg_moves:
-                            # FIXME: the first setter may not be a Gadget
-                            rb = RopBlock.from_gadget(self._reg_setting_dict[new_move.from_reg][0], self) + rb
                         if new_move.to_reg in rb.popped_regs:
                             new_blocks.add(rb)
                         else:
@@ -180,6 +177,27 @@ class RegSetter(Builder):
 
         self._insert_to_reg_dict(new_blocks)
 
+    def normalize_for_move(self, gadget, new_move):
+        """
+        two methods:
+        1. normalize it and hope the from_reg to be set during normalization
+        2. normalize it and make sure the from_reg won't be clobbered during normalization and then prepend it
+        """
+        rb = self.normalize_gadget(gadget, post_preserve={new_move.to_reg})
+        if rb is None: # if this does not exist, no need to try the more strict version
+            return None
+        if new_move.to_reg in rb.popped_regs:
+            return rb
+
+        rb = self.normalize_gadget(gadget, pre_preserve={new_move.from_reg}, post_preserve={new_move.to_reg})
+        if rb is None:
+            return None
+        reg_setter = self._reg_setting_dict[new_move.from_reg][0]
+        if isinstance(reg_setter, RopGadget):
+            reg_setter = RopBlock.from_gadget(reg_setter, self)
+        rb = reg_setter + rb
+
+        return rb
     def verify(self, chain, preserve_regs, registers):
         """
         given a potential chain, verify whether the chain can set the registers correctly by symbolically
