@@ -108,6 +108,8 @@ class GadgetAnalyzer:
             return [], []
         except RopTimeoutException:
             return [], []
+        except ctypes.ArgumentError:
+            return [], []
 
         final_states = list(simgr.unconstrained)
         if "syscall" in simgr.stashes:
