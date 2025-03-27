@@ -273,6 +273,32 @@ def test_roptest_aarch64():
     chain = rop.execve(path=b'/bin/sh')
     verify_execve_chain(chain)
 
+def test_acct_sa():
+    """
+    just a system test
+    """
+    proj = angr.Project(os.path.join(public_bin_location, "x86_64", "ALLSTAR_acct_sa"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    cache_path = os.path.join(test_data_location, "ALLSTAR_acct_sa")
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    chain = rop.set_regs(rax=0x41414141)
+    assert chain is not None
+    state = chain.exec()
+    assert state.regs.rax.concrete_value == 0x41414141
+
+    chain = rop.func_call(0xdeadbeef, [0x41414141, 0x42424242, 0x43434343])
+    assert chain is not None
+    state = chain.concrete_exec_til_addr(0xdeadbeef)
+    assert state.regs.rdi.concrete_value == 0x41414141
+    assert state.regs.rsi.concrete_value == 0x42424242
+    assert state.regs.rdx.concrete_value == 0x43434343
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

@@ -276,6 +276,11 @@ def test_symbolized_got():
     g = rop.analyze_gadget(0x40156A)
     assert g is not None
 
+    # this will be considered pop, but it is not pop
+    # pop rax; add al, 0; add al, al; ret
+    g = rop.analyze_gadget(0x406850)
+    assert g is None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

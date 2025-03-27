@@ -465,9 +465,12 @@ class GadgetAnalyzer:
             # verify the stack controls it
             # we need to make sure they arent equal to the exit target otherwise they arent controlled
             # TODO what to do about moves to bp
-            if final_state.registers.load(reg) is exit_target:
+            ast = final_state.registers.load(reg)
+            if ast is exit_target:
                 gadget.changed_regs.add(reg)
-            elif self._check_if_stack_controls_ast(final_state.registers.load(reg), init_state, stack_change):
+            elif self._check_if_stack_controls_ast(ast, init_state, stack_change):
+                if ast.op == 'Concat':
+                    raise RopException("cannot handle Concat")
                 gadget.popped_regs.add(reg)
                 gadget.changed_regs.add(reg)
             else:
