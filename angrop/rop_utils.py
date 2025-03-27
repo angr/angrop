@@ -179,7 +179,7 @@ def fast_uninitialized_filler(_, addr, size, state):
     return state.solver.BVS("uninitialized" + hex(addr), size, explicit_name=True)
 
 
-def make_initial_state(project, stack_gsize, fast_mode=False):
+def make_initial_state(project, stack_gsize):
     """
     :return: an initial state with a symbolic stack and good options for rop
     """
@@ -194,9 +194,7 @@ def make_initial_state(project, stack_gsize, fast_mode=False):
 
     angr.SimState.register_default("sym_memory", SpecialMem)
 
-    remove_set = angr.options.resilience | angr.options.simplification | {angr.options.AVOID_MULTIVALUED_READS}
-    if fast_mode:
-        remove_set.add(angr.options.SUPPORT_FLOATING_POINT)
+    remove_set = angr.options.resilience | angr.options.simplification | {angr.options.AVOID_MULTIVALUED_READS, angr.options.SUPPORT_FLOATING_POINT}
     add_set = {angr.options.CONSERVATIVE_READ_STRATEGY, angr.options.AVOID_MULTIVALUED_WRITES,
                angr.options.NO_SYMBOLIC_JUMP_RESOLUTION, angr.options.CGC_NO_SYMBOLIC_RECEIVE_LENGTH,
                angr.options.NO_SYMBOLIC_SYSCALL_RESOLUTION, angr.options.TRACK_ACTION_HISTORY,
@@ -224,14 +222,14 @@ def make_initial_state(project, stack_gsize, fast_mode=False):
     return initial_state
 
 
-def make_symbolic_state(project, reg_set, stack_gsize, extra_reg_set=None, fast_mode=False):
+def make_symbolic_state(project, reg_set, stack_gsize, extra_reg_set=None):
     """
     converts an input state into a state with symbolic registers
     :return: the symbolic state
     """
     if extra_reg_set is None:
         extra_reg_set = set()
-    input_state = make_initial_state(project, stack_gsize, fast_mode)
+    input_state = make_initial_state(project, stack_gsize)
     symbolic_state = input_state.copy()
     # overwrite all registers
     for reg in reg_set:
@@ -247,6 +245,9 @@ def make_symbolic_state(project, reg_set, stack_gsize, extra_reg_set=None, fast_
 
     # restore sp
     symbolic_state.regs.sp = input_state.regs.sp
+
+    # symbolic got table if it is not FULL RELRO
+    symbolize_got_table(project, symbolic_state)
     return symbolic_state
 
 def symbolize_got_table(project, state):

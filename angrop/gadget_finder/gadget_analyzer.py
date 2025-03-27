@@ -38,8 +38,7 @@ class GadgetAnalyzer:
         else:
             extra_reg_set = None
         self._state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set, stack_gsize,
-                                                    extra_reg_set=extra_reg_set, fast_mode=self._fast_mode)
-        rop_utils.symbolize_got_table(project, self._state)
+                                                    extra_reg_set=extra_reg_set)
         self._concrete_sp = self._state.solver.eval(self._state.regs.sp)
 
     def analyze_gadget(self, addr, allow_conditional_branches=None) -> list[RopGadget] | RopGadget | None:
