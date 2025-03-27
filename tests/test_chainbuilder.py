@@ -780,6 +780,23 @@ def test_normalize_moves_in_reg_setter():
     chain = rop.set_regs(rdx=0x41414141)
     assert chain is not None
 
+def test_normalize_oop_jmp_mem():
+    proj = angr.load_shellcode(
+        """
+        mov rax, qword ptr [rsp + 8]; mov edx, ebp; mov esi, ebx; mov rdi, rax; call qword ptr [rax + 0x68]
+        pop rdi;
+        ret
+        pop rsi;
+        ret
+        mov qword ptr[rdi], rsi; ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

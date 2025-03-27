@@ -663,7 +663,7 @@ class Builder:
 
             rb += rb2
             return rb
-        except RopException:
+        except (RopException, IndexError):
             return None
 
     def normalize_gadget(self, gadget, pre_preserve=None, post_preserve=None):
