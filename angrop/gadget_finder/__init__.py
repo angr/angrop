@@ -82,6 +82,7 @@ class GadgetFinder:
         self._cache: dict = None # type: ignore
         self._gadget_analyzer: gadget_analyzer.GadgetAnalyzer = None # type: ignore
         self._executable_ranges = None
+        self._simple_instruction_cache = set()
 
         # silence annoying loggers
         logging.getLogger('angr.engines.vex.ccall').setLevel(logging.CRITICAL)
@@ -262,11 +263,39 @@ class GadgetFinder:
             iterable = tqdm.tqdm(iterable=iterable, smoothing=0, total=num_addrs,
                                  desc="ROP", maxinterval=0.5, dynamic_ncols=True)
 
+        skip_addrs = set()
+        skip_cache = set()
+        count = 0
+
         for a in iterable:
+            if a in skip_addrs:
+                continue
+            if self._addr_block_in_cache(a):
+                continue
+            if self._addr_block_in_skip(a, skip_cache):
+                continue
+
             try:
-                bl = self.project.factory.block(a)
+                bl = self.project.factory.block(a, skip_stmts=True, max_size=self.arch.max_block_size+16)
                 if bl.size > self.arch.max_block_size:
+                    # add ones to skip to avoid a second decode
+                    for ins_addr in bl.instruction_addrs:
+                        size = bl.size-(ins_addr-a)
+                        if size > self.arch.max_block_size:
+                            skip_addrs.add(ins_addr)
                     continue
+
+                if bl.vex_nostmt.jumpkind == "Ijk_SigTRAP" or bl.vex_nostmt.jumpkind == "Ijk_SigTRAP":
+                    for ins_addr in bl.instruction_addrs:
+                        bad = self.bytes_hash(bl.bytes[ins_addr-a:])
+                        skip_cache.add(bad)
+
+                # in fast mode only allow ret, sys, boring
+                if self.fast_mode and bl.vex_nostmt.jumpkind != "Ijk_Ret" and bl.vex_nostmt.jumpkind != 'Ijk_Sys_syscall' and not bl.vex_nostmt.jumpkind.startswith("Ijk_Boring"):
+                    for ins_addr in bl.instruction_addrs:
+                        skip_addrs.add(ins_addr)
+                    continue
+
             except (SimEngineError, SimMemoryError):
                 continue
             if self._is_simple_gadget(a, bl):
@@ -274,16 +303,16 @@ class GadgetFinder:
                 if h not in self._cache:
                     self._cache[h] = {a}
                 else:
-                    # we only return the first unique gadget
-                    # so skip duplicates
-                    self._cache[h].add(a)
+                    # in cache
+                    # only syscalls get here?
                     continue
             yield a
 
-    def block_hash(self, block):
+    def block_hash(self, block):# pylint:disable=no-self-use
         """
         a hash to uniquely identify a simple block
         """
+
         if block.vex.jumpkind == 'Ijk_Sys_syscall':
             next_addr = block.addr + block.size
             obj = self.project.loader.find_object_containing(next_addr)
@@ -291,7 +320,37 @@ class GadgetFinder:
                 return block.bytes
             next_block = self.project.factory.block(next_addr)
             return block.bytes + next_block.bytes
-        return block.bytes
+        return self.bytes_hash(block.bytes)
+
+    def bytes_hash(self, block_bytes):# pylint:disable=no-self-use
+        return block_bytes
+
+    def _addr_block_in_cache(self, addr):
+        """
+        To avoid loading the block, we first check if the data that we would
+        disassemble is already in the cache first
+        """
+        data = self.project.loader.memory.load(addr, self.arch.max_block_size)
+        align = self.arch.alignment
+        for i in range(align, len(data)+align, align):
+            h = self.bytes_hash(data[0:i])
+            if h in self._cache:
+                self._cache[h].add(addr)
+                return True
+        return False
+
+    def _addr_block_in_skip(self, addr, skip_cache):
+        """
+        To avoid loading the block, we first check if the data that we would
+        disassemble is already in the cache first
+        """
+        data = self.project.loader.memory.load(addr, self.arch.max_block_size)
+        align = self.arch.alignment
+        for i in range(align, len(data)+1, align):
+            h = self.bytes_hash(data[0:i])
+            if h in skip_cache:
+                return True
+        return False
 
     def _get_executable_ranges(self):
         """
@@ -331,6 +390,7 @@ class GadgetFinder:
         """
         # align block size
         alignment = self.arch.alignment
+        # FIXME wtf are we supposed to do for arm???
         offset = 1 if isinstance(self.arch, ARM) and self.arch.is_thumb else 0
         if self.only_check_near_rets:
             block_size = (self.arch.max_block_size & ((1 << self.project.arch.bits) - alignment)) + alignment
@@ -387,9 +447,9 @@ class GadgetFinder:
                 if addr in seen:
                     continue
                 try:
-                    block = self.project.factory.block(addr)
+                    block = self.project.factory.block(addr, skip_stmts=True)
                     # if it has a ret get the return address
-                    if block.vex.jumpkind.startswith("Ijk_Ret"):
+                    if block.vex_nostmt.jumpkind.startswith("Ijk_Ret"):
                         ret_addr = block.instruction_addrs[-1]
                         # hack for mips pipelining
                         if self.project.arch.linux_name.startswith("mips"):
@@ -438,15 +498,41 @@ class GadgetFinder:
             addrs += [segment.min_addr + m.start() for m in re.finditer(fmt, read_bytes)]
         return sorted(addrs)
 
+    def _instruction_opcodes(self, block): # pylint: disable=no-self-use
+        """
+        returns the opcodes for all instructions in the block
+        """
+        addrs = block.vex_nostmt.instruction_addresses
+        insns = []
+        if len(addrs) == 0:
+            return insns
+        start_addr = addrs[0]
+        for i in range(len(addrs)-1):
+            insns.append(block.bytes[addrs[i]-start_addr:addrs[i+1]-start_addr])
+
+        insns.append(block.bytes[addrs[-1]-start_addr:])
+        return insns
+
     def _is_simple_gadget(self, addr, block):
         """
         is the gadget a simple gadget like
         pop rax; ret
         """
-        if block.vex.jumpkind not in {'Ijk_Boring', 'Ijk_Call', 'Ijk_Ret', 'Ijk_Sys_syscall'}:
-            return False
-        if block.vex.constant_jump_targets:
-            return False
+        if block.vex_nostmt.jumpkind not in {'Ijk_Boring', 'Ijk_Call', 'Ijk_Ret', 'Ijk_Sys_syscall'}:
+             return False
+        if block.vex_nostmt.constant_jump_targets:
+             return False
+
+        # if all instructions are simple
+        insns = set(self._instruction_opcodes(block))
+        if insns.issubset(self._simple_instruction_cache):
+            return True
+
         if self._block_has_ip_relative(addr, block):
-            return False
+             return False
+
+        # add instructions to simple cache
+        self._simple_instruction_cache.update(insns)
+
         return True
+

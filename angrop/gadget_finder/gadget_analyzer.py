@@ -23,6 +23,10 @@ class GadgetAnalyzer:
         """
         stack_gsize: number of controllable gadgets on the stack
         """
+        self._concrete_stack_s = None
+        self._concrete_stack = None
+        self._stack_constraint = None
+
         # params
         self.project = project
         self.arch = get_arch(project, kernel_mode=kernel_mode) if arch is None else arch
@@ -41,6 +45,7 @@ class GadgetAnalyzer:
                                                     extra_reg_set=extra_reg_set, stack_gsize=stack_gsize,
                                                     fast_mode=self._fast_mode)
         self._concrete_sp = self._state.solver.eval(self._state.regs.sp)
+        self._init_segment_regs = None
 
     def analyze_gadget(self, addr, allow_conditional_branches=None) -> list[RopGadget] | RopGadget | None:
         """
@@ -118,7 +123,7 @@ class GadgetAnalyzer:
 
         return final_states, bad_states
 
-    @rop_utils.timeout(3)
+    #@rop_utils.timeout(3)
     def _analyze_gadget(self, addr, allow_conditional_branches):
         l.info("Analyzing 0x%x", addr)
 
@@ -128,7 +133,8 @@ class GadgetAnalyzer:
             return []
 
         # Step 2: get all potential successor states
-        init_state = self._state.copy()
+        # no need to copy here
+        init_state = self._state
         init_state.ip = addr
         final_states, bad_states = self._step_to_gadget_stopping_states(init_state)
 
@@ -146,6 +152,10 @@ class GadgetAnalyzer:
                 if not ctrl_type:
                     # for example, jump outside of the controllable region
                     l.debug("... cannot maintain the control flow hijacking primitive after executing the gadget")
+                    continue
+
+                if ctrl_type == 'syscall' and (bad_states or len(final_states) != 1):
+                    # don't allow syscall from conditional for now
                     continue
 
                 # Step 3: gadget effect analysis
@@ -182,11 +192,18 @@ class GadgetAnalyzer:
 
     def _change_arch_state(self, init_state, final_state):
         if isinstance(self.arch, X86):
+            if self._init_segment_regs is None:
+                self._init_segment_regs = dict()
+                for reg in self.arch.segment_regs:
+                    init_reg = init_state.registers.load(reg)
+                    self._init_segment_regs[reg] = init_reg
+
             for reg in self.arch.segment_regs:
-                init_reg= init_state.registers.load(reg)
+                init_reg = self._init_segment_regs[reg]
                 final_reg = final_state.registers.load(reg)
                 # check whether there is any possibility that they can be different
-                if final_state.solver.satisfiable([init_reg != final_reg]):
+                # we use ast comparison instead of solving here, if the asts are different we will be safe and assume the values could be different
+                if init_reg is not final_reg:
                     return True
         return False
 
@@ -230,6 +247,16 @@ class GadgetAnalyzer:
             if "Ity_F16" in block.vex.tyenv.types or "Ity_F32" in block.vex.tyenv.types \
                     or "Ity_F64" in block.vex.tyenv.types or "Ity_F128" in block.vex.tyenv.types:
                 return False
+
+            if self._fast_mode and "Ity_V128" in block.vex.tyenv.types:
+                return False
+
+            # No writes to segment regs
+            for s in block.vex.statements:
+                if s.tag == "Ist_Put" and s.offset in self.project.arch.register_names:
+                    reg = self.project.arch.register_names[s.offset]
+                    if reg in self.arch.segment_regs:
+                        return False
 
         except angr.errors.SimEngineError:
             l.debug("... some simengine error")
@@ -461,7 +488,7 @@ class GadgetAnalyzer:
             # TODO what to do about moves to bp
             if final_state.registers.load(reg) is exit_target:
                 gadget.changed_regs.add(reg)
-            elif self._check_if_stack_controls_ast(final_state.registers.load(reg), init_state, stack_change):
+            elif self._check_if_stack_controls_ast(final_state, final_state.registers.load(reg), init_state, stack_change):
                 gadget.popped_regs.add(reg)
                 gadget.changed_regs.add(reg)
             else:
@@ -526,7 +553,7 @@ class GadgetAnalyzer:
             return 'syscall'
 
         # the ip is controlled by stack (ret)
-        if self._check_if_stack_controls_ast(ip, init_state):
+        if self._check_if_stack_controls_ast(final_state, ip, init_state):
             return "stack"
 
         # the ip is not controlled by regs/mem
@@ -548,6 +575,7 @@ class GadgetAnalyzer:
 
         return None
 
+    #TODO this isn't used??
     @staticmethod
     def _check_if_jump_gadget(final_state, init_state):
         """
@@ -570,31 +598,42 @@ class GadgetAnalyzer:
 
         return True
 
-    def _check_if_stack_controls_ast(self, ast, initial_state, gadget_stack_change=None):
+    def _check_if_stack_controls_ast(self, final_state, ast, initial_state, gadget_stack_change=None):
         if gadget_stack_change is not None and gadget_stack_change <= 0:
             return False
 
-        # if we had the lemma cache this might be already there!
-        test_val = 0x4242424242424242 % (1 << self.project.arch.bits)
+        # fast check
+        stripped_ast = ast
+        while stripped_ast.op == 'Reverse':
+            stripped_ast = stripped_ast.args[0]
+        if stripped_ast.op == "BVS" and stripped_ast.length == self.project.arch.bits and list(ast.variables)[0].startswith("symbolic_stack"):
+            pass
+        else:
+            return False
 
         # TODO add test where we recognize a value past the end of the stack frame isn't controlled
         # this is an annoying problem but this code should handle it
 
-        # prefilter
-        if len(ast.variables) != 1 or not list(ast.variables)[0].startswith("symbolic_stack"):
-            return False
-
         stack_bytes_length = self._stack_bsize # number of controllable bytes
         if gadget_stack_change is not None:
             stack_bytes_length = min(max(gadget_stack_change, 0), stack_bytes_length)
-        concrete_stack = claripy.BVV(b"B" * stack_bytes_length)
-        const = initial_state.memory.load(initial_state.regs.sp, stack_bytes_length) == concrete_stack
-        test_constraint = ast != test_val
-        # stack must have set the register and it must be able to set the register to all 1's or all 0's
-        ans = not initial_state.solver.satisfiable(extra_constraints=(const, test_constraint,)) and \
-                rop_utils.fast_unconstrained_check(initial_state, ast)
 
-        return ans
+        # find where the ast is read from
+        ast_loc = None
+        for act in final_state.history.actions:
+            if act.type == 'mem' and act.action == 'read':
+                if act.data.ast is ast:
+                    ast_loc = act.addr.ast
+                    break
+        if ast_loc.symbolic:
+            return False
+
+        diff = initial_state.solver.eval(ast_loc) - self._concrete_sp
+        if diff < 0 or diff+ast.size()/8 > stack_bytes_length:
+            return False
+
+        return True
+
 
     def _check_if_stack_pivot(self, init_state, final_state):
         ip_variables = list(final_state.ip.variables)
@@ -619,17 +658,20 @@ class GadgetAnalyzer:
                     and isinstance(act.data.ast, claripy.ast.BV)
                     and not (act.data.ast == ip).symbolic
                 ):
-                    if init_state.solver.eval(act.data.ast == ip):
+                    if act.data.ast is ip:
                         saved_ip_addr = act.addr.ast
                         break
         if saved_ip_addr is None:
             return None
 
         # if the saved ip is too far away from the final sp, that's a bad gadget
-        sols = final_state.solver.eval_upto(final_state.regs.sp - saved_ip_addr, 2)
-        if len(sols) != 1: # the saved ip has a symbolic distance from the final sp, bad
-            return None
-        offset = sols[0]
+        if final_state.regs.sp.symbolic or saved_ip_addr.symbolic:
+            sols = final_state.solver.eval_upto(final_state.regs.sp - saved_ip_addr, 2)
+            if len(sols) != 1: # the saved ip has a symbolic distance from the final sp, bad
+                return None
+            offset = sols[0]
+        else:
+            offset = final_state.solver.eval(final_state.regs.sp - saved_ip_addr)
         if offset > self._stack_bsize: # filter out gadgets like mov rsp, rax; ret 0x1000
             return None
         if offset % self.project.arch.bytes != 0: # filter misaligned gadgets
@@ -762,7 +804,11 @@ class GadgetAnalyzer:
                         succ_state.registers.load(reg) != a.data.ast.zero_extend(bits_to_extend),
                         succ_state.registers.load(reg) != a.data.ast.sign_extend(bits_to_extend))
 
-                    if not succ_state.solver.satisfiable(extra_constraints=(test_constraint,)):
+                    # fast check for if it's a dependency before solving
+                    if succ_state.registers.load(reg) is a.data.ast.zero_extend(bits_to_extend) or succ_state.registers.load is a.data.ast.sign_extend(bits_to_extend):
+                        mem_access.data_dependencies.add(reg)
+                    # only do the expensive sat check if it's not an exact match
+                    elif not succ_state.solver.satisfiable(extra_constraints=(test_constraint,)):
                         mem_access.data_dependencies.add(reg)
 
         mem_access.data_size = a.data.ast.size()
