@@ -333,6 +333,8 @@ class GadgetFinder:
         alignment = self.arch.alignment
         offset = 1 if isinstance(self.arch, ARM) and self.arch.is_thumb else 0
         if self.only_check_near_rets:
+            for addr in self._syscall_locations:
+                yield addr+offset
             block_size = (self.arch.max_block_size & ((1 << self.project.arch.bits) - alignment)) + alignment
             slices = [(addr-block_size, addr) for addr in self._ret_locations]
             current_addr = 0
