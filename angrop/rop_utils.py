@@ -176,7 +176,7 @@ def _asts_must_be_equal(state, ast1, ast2):
 
 
 def fast_uninitialized_filler(_, addr, size, state):
-    return state.solver.BVS("uninitialized" + hex(addr), size, explicit_name=True)
+    return state.solver.BVS("uninitialized_" + hex(addr), size, explicit_name=True)
 
 
 def make_initial_state(project, stack_gsize):

@@ -281,6 +281,20 @@ def test_symbolized_got():
     g = rop.analyze_gadget(0x406850)
     assert g is None
 
+def test_syscall_when_ret_only():
+    proj = angr.load_shellcode(
+        """
+        syscall
+        """,
+        "amd64",
+        load_address=0x400000,
+        simos='linux',
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=True)
+    rop.find_gadgets_single_threaded()
+    assert rop._all_gadgets
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
