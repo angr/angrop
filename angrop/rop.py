@@ -141,7 +141,7 @@ class ROP(Analysis):
         self._screen_gadgets()
         return self.rop_gadgets
 
-    def find_gadgets(self, processes=4, show_progress=True, optimize=True):
+    def find_gadgets(self, optimize=True, **kwargs):
         """
         Finds all the gadgets in the binary by calling analyze_gadget on every address near a ret.
         Saves rop gadgets in self.rop_gadgets
@@ -151,8 +151,7 @@ class ROP(Analysis):
         :param optimize: whether to run chain_builder.optimize(), this may take some time,
                          but makes the chain builder more powerful
         """
-        self._all_gadgets, self._duplicates = self.gadget_finder.find_gadgets(processes=processes,
-                                                                              show_progress=show_progress)
+        self._all_gadgets, self._duplicates = self.gadget_finder.find_gadgets(**kwargs)
         self._screen_gadgets()
         if optimize:
             self.chain_builder.optimize()

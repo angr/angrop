@@ -1,4 +1,5 @@
 import re
+import time
 import logging
 import itertools
 from functools import partial
@@ -168,7 +169,8 @@ class GadgetFinder:
         cache = self._cache
         return {k:v for k,v in cache.items() if len(v) >= 2}
 
-    def find_gadgets(self, processes=4, show_progress=True):
+    def find_gadgets(self, processes=4, show_progress=True, timeout=None):
+        gadgets = []
         self._cache = {}
 
         initargs = (self.gadget_analyzer,)
@@ -180,15 +182,12 @@ class GadgetFinder:
             # so we periodically restart the worker processes.
             maxtasksperchild=64,
         ) as pool:
-            gadgets = list(
-                itertools.chain.from_iterable(
-                    pool.imap_unordered(
-                        run_worker,
-                        self._addresses_to_check_with_caching(show_progress),
-                        chunksize=5,
-                    )
-                )
-            )
+            start = time.time()
+            it = pool.imap_unordered(run_worker, self._addresses_to_check_with_caching(show_progress), chunksize=5)
+            for new_gadgets in it:
+                gadgets += new_gadgets
+                if timeout and time.time() - start > timeout:
+                    break
 
         for g in gadgets:
             g.project = self.project
