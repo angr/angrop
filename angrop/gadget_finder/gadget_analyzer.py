@@ -20,7 +20,7 @@ class GadgetAnalyzer:
     """
     find and analyze gadgets from binary code
     """
-    def __init__(self, project, fast_mode, kernel_mode=False, arch=None, stack_gsize=80):
+    def __init__(self, project, fast_mode, kernel_mode=False, arch=None, stack_gsize=80, cond_br=False):
         """
         stack_gsize: number of controllable gadgets on the stack
         """
@@ -28,7 +28,7 @@ class GadgetAnalyzer:
         self.project = project
         self.arch = get_arch(project, kernel_mode=kernel_mode) if arch is None else arch
         self._fast_mode = fast_mode
-        self._allow_conditional_branches = not self._fast_mode
+        self._allow_conditional_branches = cond_br
 
         # initial state that others are based off, all analysis should copy the state first and work on
         # the copied state
