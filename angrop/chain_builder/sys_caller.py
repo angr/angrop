@@ -170,7 +170,7 @@ class SysCaller(FuncCaller):
         def key_func(g):
             good_sets = set()
             for reg, val in g.prologue.concrete_regs.items():
-                if target_regs[reg] == val:
+                if reg in target_regs and target_regs[reg] == val:
                     good_sets.add(reg)
             return len(good_sets)
         gadgets = sorted(gadgets, reverse=True, key=key_func)

@@ -50,7 +50,7 @@ class X86(ROPArch):
     def _x86_block_make_sense(self, block):
         capstr = str(block.capstone).lower()
         # currently, angrop does not handle "repz ret" correctly, we filter it
-        if any(x in capstr for x in ('cli', 'rex', 'repz ret')):
+        if any(x in capstr for x in ('cli', 'rex', 'repz ret', 'retf', 'hlt', 'wait', 'loop', 'lock')):
             return False
         if not self.kernel_mode:
             if "fs:" in capstr or "gs:" in capstr or "iret" in capstr:
