@@ -505,7 +505,7 @@ def test_aarch64_cond_branch():
         load_address=0x400000,
         auto_load_libs=False,
     )
-    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, cond_br=True)
     rop.find_gadgets_single_threaded(show_progress=False)
     addrs = [x.addr for x in rop._all_gadgets]
 
