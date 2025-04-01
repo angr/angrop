@@ -249,7 +249,7 @@ def test_add_to_mem():
 
     cache_path = os.path.join(CACHE_DIR, "armel_glibc_2.31")
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
-    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True, cond_br=False)
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:

@@ -359,6 +359,12 @@ def test_negative_stack_change():
     g = rop.analyze_gadget(0x4bf661)
     assert g is None
 
+def test_arm_jmp_mem():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
+    g = rop.analyze_gadget(0x456951)
+    assert g is None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

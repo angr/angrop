@@ -90,9 +90,8 @@ def compare_gadgets(test_gadgets, known_gadgets):
             for test_gadget in test_gadget_dict[g.addr]
             if test_gadget.bbl_addrs == g.bbl_addrs
         ]
-        assert len(matching_gadgets) == 1
+        assert len(matching_gadgets) == 1, matching_gadgets
         assert_gadgets_equal(g, matching_gadgets[0])
-
 
 def execute_chain(project, chain):
     s = project.factory.blank_state()

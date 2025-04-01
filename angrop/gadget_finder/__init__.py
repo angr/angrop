@@ -343,6 +343,8 @@ class GadgetFinder:
                 current_addr = max(current_addr, st)
                 end_addr = st + block_size + alignment
                 for i in range(current_addr, end_addr, alignment):
+                    if i in self._syscall_locations:
+                        continue
                     if self._addr_in_executable_memory(i):
                         yield i+offset
                 current_addr = max(current_addr, end_addr)
@@ -353,6 +355,8 @@ class GadgetFinder:
                 l.debug("Analyzing segment with address range: 0x%x, 0x%x", segment.min_addr, segment.max_addr)
                 start = alignment * ((segment.min_addr + alignment - 1) // alignment)
                 for addr in range(start, start+segment.memsize, alignment):
+                    if addr in self._syscall_locations:
+                        continue
                     yield addr+offset
 
     def _num_addresses_to_check(self):
