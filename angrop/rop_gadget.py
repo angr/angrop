@@ -156,12 +156,19 @@ class RopGadget:
 
     @property
     def num_sym_mem_access(self):
+        """
+        by definition, jmp_mem gadgets have one symbolic memory access, which is its PC
+        we take into account that
+        """
         accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)
-        return len([x for x in accesses if x.is_symbolic_access()])
+        res = len([x for x in accesses if x.is_symbolic_access()])
+        if self.transit_type == 'jmp_mem' and self.pc_target.symbolic:
+            assert res > 0
+            res -= 1
+        return res
 
     def has_symbolic_access(self):
-        accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)
-        return any(x.is_symbolic_access() for x in accesses)
+        return self.num_sym_mem_access > 0
 
     def dstr(self):
         return "; ".join(addr_to_asmstring(self.project, addr) for addr in self.bbl_addrs)

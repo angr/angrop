@@ -231,7 +231,7 @@ class RegMover(Builder):
         filter gadgets having the same effect
         """
         # first: filter out gadgets that don't do register move
-        gadgets = {g for g in gadgets if g.reg_moves and not g.has_conditional_branch and (not g.has_symbolic_access() or g.transit_type == 'jmp_mem')}
+        gadgets = {g for g in gadgets if g.reg_moves and not g.has_conditional_branch and not g.has_symbolic_access()}
         gadgets = self._filter_gadgets(gadgets)
         new_gadgets = set(x for x in gadgets if any(y.from_reg != y.to_reg for y in x.reg_moves))
         return new_gadgets

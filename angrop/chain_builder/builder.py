@@ -679,11 +679,8 @@ class Builder:
             if post_preserve is None:
                 post_preserve = set()
 
-            # filter out symbolic access other than where the PC comes from
-            # by definition, jmp_mem gadgets' PC come from symbolic access, so handle that specially
-            if gadget.transit_type != 'jmp_mem' and gadget.has_symbolic_access():
-                return None
-            if gadget.transit_type == 'jmp_mem' and gadget.num_sym_mem_access > 1:
+            # filter out gadgets with symbolic access
+            if gadget.has_symbolic_access():
                 return None
 
             # TODO: don't support this yet

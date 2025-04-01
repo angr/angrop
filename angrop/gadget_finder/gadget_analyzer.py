@@ -358,11 +358,15 @@ class GadgetAnalyzer:
                         return None
                     gadget.pc_reg = list(final_state.ip.variables)[0].split('_', 1)[1].rsplit('-')[0]
                 case 'jmp_mem': # record pc_target
+                    # TODO: we currently don't support jmp_mem gadgets that look like
+                    # pop rax; pop rbx; jmp [rax+rbx]
                     for a in reversed(final_state.history.actions):
                         if a.type == 'mem' and a.action == 'read' and a.size == arch_bits:
                             if (a.data.ast == final_state.ip).is_true():
                                 gadget.pc_target = a.addr.ast
                                 break
+                    if gadget.pc_target is None:
+                        return None
 
         # register effect analysis
         l.info("... checking for controlled regs")

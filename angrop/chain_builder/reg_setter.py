@@ -177,6 +177,8 @@ class RegSetter(Builder):
 
         self._insert_to_reg_dict(new_blocks)
 
+        # third, see whether we can use non-self-contained gadgets to set hard registers
+
     def normalize_for_move(self, gadget, new_move):
         """
         two methods:

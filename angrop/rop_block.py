@@ -53,8 +53,16 @@ class RopBlock(RopChain):
 
     @property
     def num_sym_mem_access(self):
+        """
+        by definition, jmp_mem gadgets have one symbolic memory access, which is its PC
+        we take into account that
+        """
         accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)
-        return len([x for x in accesses if x.is_symbolic_access()])
+        res = len([x for x in accesses if x.is_symbolic_access()])
+        return res
+
+    def has_symbolic_access(self):
+        return self.num_sym_mem_access > 0
 
     def _chain_block(self, other):
         assert type(other) is RopBlock
@@ -233,10 +241,6 @@ class RopBlock(RopChain):
         rb.payload_len = chain.payload_len
         rb._analyze_effect()
         return rb
-
-    def has_symbolic_access(self):
-        accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)
-        return any(x.is_symbolic_access() for x in accesses)
 
     def copy(self):
         cp = super().copy()
