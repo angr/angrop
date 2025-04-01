@@ -101,7 +101,7 @@ class RegSetter(Builder):
                 for c in all_chains:
                     try:
                         gadgets = self._expand_ropblocks(c)
-                        c = self._build_reg_setting_chain(gadgets, None, {})
+                        c = self._build_reg_setting_chain(gadgets, {})
                         c = RopBlock.from_chain(c)
                         if dst not in shortest or c.stack_change < shortest[dst]:
                             shortest[dst] = c.stack_change
@@ -128,7 +128,7 @@ class RegSetter(Builder):
         shortest = {x:y[0] for x,y in self._reg_setting_dict.items() if y}
         arch_bytes = self.project.arch.bytes
         for gadget in self._reg_setting_gadgets:
-            if gadget.self_contained:
+            if gadget.self_contained and not gadget.has_symbolic_access():
                 continue
 
             # check whether it introduces new capabilities
@@ -177,8 +177,6 @@ class RegSetter(Builder):
 
         self._insert_to_reg_dict(new_blocks)
 
-        # third, see whether we can use non-self-contained gadgets to set hard registers
-
     def normalize_for_move(self, gadget, new_move):
         """
         two methods:
@@ -212,7 +210,7 @@ class RegSetter(Builder):
             if act.type not in ("mem", "reg"):
                 continue
             if act.type == 'mem':
-                if act.addr.ast.variables:
+                if act.addr.ast.variables and any(not x.startswith('sym_addr') for x in act.addr.ast.variables):
                     l.exception("memory access outside stackframe\n%s\n", chain_str)
                     return False
             if act.type == 'reg' and act.action == 'write':
@@ -274,7 +272,7 @@ class RegSetter(Builder):
             l.debug("building reg_setting chain with chain:\n%s", chain_str)
             try:
                 gadgets = self._expand_ropblocks(gadgets)
-                chain = self._build_reg_setting_chain(gadgets, modifiable_memory_range, registers)
+                chain = self._build_reg_setting_chain(gadgets, registers)
                 chain._concretize_chain_values(timeout=len(chain._values)*3)
                 if self.verify(chain, preserve_regs, registers):
                     #self._chain_cache[reg_tuple].append(gadgets)
@@ -823,7 +821,7 @@ class RegSetter(Builder):
         for g1 in concrete_setter_gadgets:
             for g2 in delta_gadgets:
                 try:
-                    chain = self._build_reg_setting_chain([g1, g2], False, {reg: val})
+                    chain = self._build_reg_setting_chain([g1, g2], {reg: val})
                     state = chain.exec()
                     bv = state.registers.load(reg)
                     if bv.symbolic:

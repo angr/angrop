@@ -43,7 +43,7 @@ class RopValue:
         return cp
 
     def determined(self, chain):
-        res = chain._blank_state.solver.eval_upto(self._value, 2)
+        res = chain._blank_state.solver.eval_to_ast(self._value, 2)
         return len(res) <= 1
 
     def rebase_ptr(self):

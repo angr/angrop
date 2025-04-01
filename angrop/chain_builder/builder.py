@@ -277,9 +277,9 @@ class Builder:
         assert lhs.length == rhs.length
         return lhs, rhs
 
-    @rop_utils.timeout(8)
+    @rop_utils.timeout(3)
     def _build_reg_setting_chain(
-        self, gadgets, modifiable_memory_range, register_dict):
+        self, gadgets, register_dict):
         """
         This function figures out the actual values needed in the chain
         for a particular set of gadgets and register values
@@ -354,7 +354,7 @@ class Builder:
                 )
             state = succ.unconstrained_successors[0]
 
-        if len(state.solver.eval_upto(state.ip, 2)) < 2:
+        if len(state.solver.eval_to_ast(state.ip, 2)) < 2:
             raise RopException("The final pc is not unconstrained!")
 
         # Record the variable that controls the final ip.
@@ -390,14 +390,9 @@ class Builder:
         # Constrain memory access addresses.
         for action in state.history.actions:
             if action.type == action.MEM and action.addr.symbolic:
-                if len(state.solver.eval_upto(action.addr, 2)) == 1:
+                if len(state.solver.eval_to_ast(action.addr, 2)) == 1:
                     continue
-                if modifiable_memory_range is None:
-                    raise RopException(
-                        "Symbolic memory address without modifiable memory range"
-                    )
-                state.solver.add(action.addr.ast >= modifiable_memory_range[0])
-                state.solver.add(action.addr.ast < modifiable_memory_range[1])
+                state.solver.add(action.addr.ast == self._get_ptr_to_writable(action.size.ast//arch_bytes))
 
         # now import the constraints from the state that has reached the end of the ropchain
         test_symbolic_state.solver.add(*state.solver.constraints)
@@ -566,7 +561,7 @@ class Builder:
             total_sc = gadget.stack_change + pc_setter.stack_change
             gadgets = reg_setter._mixins_to_gadgets([pc_setter, gadget])
             try:
-                chain = reg_setter._build_reg_setting_chain(gadgets, None, {})
+                chain = reg_setter._build_reg_setting_chain(gadgets, {})
                 rb = RopBlock.from_chain(chain)
 
                 # TODO: technically, we should support chains like:
@@ -678,14 +673,24 @@ class Builder:
                 pre_preserve = set()
             if post_preserve is None:
                 post_preserve = set()
+            m = None
 
-            # filter out gadgets with symbolic access
-            if gadget.has_symbolic_access():
+            # filter out gadgets with too many symbolic access
+            if gadget.num_sym_mem_access > 1:
                 return None
 
-            # TODO: don't support this yet
-            if gadget.has_conditional_branch and gadget.transit_type == 'jmp_mem':
-                return None
+            # TODO: don't support these yet
+            if gadget.transit_type == 'jmp_mem':
+                if gadget.has_conditional_branch or gadget.has_symbolic_access():
+                    return None
+
+            # at this point, we know for sure all gadget symbolic accesses should be normalized
+            # because they can't be jmp_mem gadgets
+            sim_accesses = [x for x in gadget.mem_reads + gadget.mem_writes + gadget.mem_changes if x.is_symbolic_access()]
+            assert len(sim_accesses) <= 1
+            if sim_accesses:
+                m = sim_accesses[0]
+                pre_preserve = pre_preserve.union(m.addr_controllers)
 
             # normalize conditional branches
             if gadget.has_conditional_branch:
@@ -708,7 +713,7 @@ class Builder:
             else:
                 raise NotImplementedError()
 
-            chain = self._build_reg_setting_chain(gadgets, None, {})
+            chain = self._build_reg_setting_chain(gadgets, {})
             rb = RopBlock.from_chain(chain)
 
             if rb is None:
@@ -741,6 +746,21 @@ class Builder:
             # TODO
             if rb.oop:
                 return None
+
+            # constrain memory accesses
+            if m is not None:
+                request = {}
+                for reg in m.addr_controllers:
+                    data = claripy.BVS('sym_addr', self.project.arch.bits)
+                    request[reg] = data
+                tmp = self.chain_builder._reg_setter.run(**request)
+                tmp = RopBlock.from_chain(tmp)
+                _, final_state = tmp.sim_exec()
+                st = rb._blank_state
+                for reg in m.addr_controllers:
+                    tmp._blank_state.solver.add(final_state.registers.load(reg) == st.registers.load(reg))
+                rb = tmp + rb
+                return rb
 
             return rb
         except RopException:

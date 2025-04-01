@@ -98,7 +98,7 @@ class RegMover(Builder):
                 if act.type not in ("mem", "reg"):
                     continue
                 if act.type == 'mem':
-                    if act.addr.ast.variables:
+                    if act.addr.ast.variables and any(not x.startswith('sym_addr') for x in act.addr.ast.variables):
                         l.exception("memory access outside stackframe\n%s\n", chain_str)
                         return False
                 if act.type == 'reg' and act.action == 'write':
@@ -219,7 +219,7 @@ class RegMover(Builder):
                     assert gs
                     # FIXME: we are using the _build_reg_setting_chain API to turn mixin lists to a RopBlock
                     # which is pretty wrong
-                    chain = self._build_reg_setting_chain(gs, None, {})
+                    chain = self._build_reg_setting_chain(gs, {})
                     rb = RopBlock.from_chain(chain)
                     rop_blocks.add(rb)
             except nx.exception.NetworkXNoPath:

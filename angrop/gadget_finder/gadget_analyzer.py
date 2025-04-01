@@ -647,7 +647,8 @@ class GadgetAnalyzer:
             return None
 
         # if the saved ip is too far away from the final sp, that's a bad gadget
-        sols = final_state.solver.eval_upto(final_state.regs.sp - saved_ip_addr, 2)
+        sols = final_state.solver.eval_to_ast(final_state.regs.sp - saved_ip_addr, 2)
+        sols = [x.concrete_value for x in sols]
         if len(sols) != 1: # the saved ip has a symbolic distance from the final sp, bad
             return None
         offset = sols[0]
@@ -683,7 +684,8 @@ class GadgetAnalyzer:
             if len(dependencies) == 0 and not sp_change.symbolic:
                 stack_changes = [init_state.solver.eval(sp_change)]
             elif list(dependencies)[0] == self.arch.stack_pointer:
-                stack_changes = init_state.solver.eval_upto(sp_change, 2)
+                stack_changes = init_state.solver.eval_to_ast(sp_change, 2)
+                stack_changes = [x.concrete_values for x in stack_changes]
             else:
                 raise RopException("SP does not depend on SP or BP")
 
@@ -732,7 +734,8 @@ class GadgetAnalyzer:
                     gadget.stack_change += self.project.arch.bytes
 
             assert init_sym_sp is not None
-            sols = final_state.solver.eval_upto(final_state.regs.sp - init_sym_sp, 2)
+            sols = final_state.solver.eval_to_ast(final_state.regs.sp - init_sym_sp, 2)
+            sols = [x.concrete_value for x in sols]
             if len(sols) != 1:
                 raise RopException("This gadget pivots more than once, which is currently not handled")
             gadget.stack_change_after_pivot = sols[0]
@@ -749,8 +752,11 @@ class GadgetAnalyzer:
 
         # handle the memory access address
         # case 1: the address is not symbolic
-        if not a.addr.ast.symbolic:
-            addr_constant = a.addr.ast.concrete_value
+        if not a.addr.ast.symbolic or all(x.startswith('sym_addr_') for x in a.addr.ast.variables):
+            if not a.addr.ast.symbolic:
+                addr_constant = a.addr.ast.concrete_value
+            else:
+                addr_constant = final_state.solver.eval(a.addr.ast)
             mem_access.addr_constant = addr_constant
             if not final_state.regs.sp.symbolic:
                 if not (init_state.regs.sp.concrete_value < addr_constant < final_state.regs.sp.concrete_value):

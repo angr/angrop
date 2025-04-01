@@ -537,8 +537,7 @@ def test_aarch64_mem_access():
     assert state.regs.x0.concrete_value == 0x41414141
     for action in state.history.actions:
         if action.type == action.MEM and action.action == action.WRITE:
-            assert action.addr.ast.concrete_value >= 0x1000
-            assert action.addr.ast.concrete_value < 0x2000
+            assert 0x400000 <= action.addr.ast.concrete_value < 0x401000
 
 def test_mipstake():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "mips", "mipstake"), auto_load_libs=True, arch="mips")
@@ -796,6 +795,14 @@ def test_normalize_oop_jmp_mem():
     )
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
     rop.find_gadgets_single_threaded(show_progress=False)
+
+def test_normalize_symbolic_access():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "ALLSTAR_alex_alex"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.analyze_gadget(0x0000000000594254) # : pop r9 ; add byte ptr [rax - 9], cl ; ret
+    rop.analyze_gadget(0x000000000040fb98) # : pop rax ; ret
+    rop.chain_builder.optimize()
+    rop.set_regs(r9=0x41414141)
 
 def run_all():
     functions = globals()
