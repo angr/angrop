@@ -845,15 +845,19 @@ class GadgetAnalyzer:
         # such as mov rax, [rbx]; inc rax; mov [rbx], rax,
         # this gadget will be ignored by us, which is not great
         data_dependencies = rop_utils.get_ast_dependency(sym_data)
-        if len(data_dependencies) != 1:
-            return None
-        data_controllers = rop_utils.get_ast_controllers(init_state, sym_data, data_dependencies)
-        if len(data_controllers) != 1:
-            return None
+        data_controllers = set()
+        data_stack_controllers = set()
+        if len(data_dependencies):
+            data_controllers = rop_utils.get_ast_controllers(init_state, sym_data, data_dependencies)
+            if len(data_controllers) != 1:
+                return None
+        data_stack_controllers = {x for x in sym_data.variables if x.startswith('symbolic_stack')}
+
 
         mem_change = self._build_mem_access(read_action, gadget, init_state, final_state)
         mem_change.op = write_action.data.ast.op
         mem_change.data_dependencies = data_dependencies
+        mem_change.data_stack_controllers = data_stack_controllers
         mem_change.data_controllers = data_controllers
         mem_change.data_size = write_action.data.ast.size()
         mem_change.addr_size = write_action.addr.ast.size()

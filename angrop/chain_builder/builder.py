@@ -686,9 +686,9 @@ class Builder:
 
             # at this point, we know for sure all gadget symbolic accesses should be normalized
             # because they can't be jmp_mem gadgets
-            sim_accesses = [x for x in gadget.mem_reads + gadget.mem_writes + gadget.mem_changes if x.is_symbolic_access()]
-            assert len(sim_accesses) <= 1
-            if sim_accesses:
+            if gadget.has_symbolic_access():
+                sim_accesses = [x for x in gadget.mem_reads + gadget.mem_writes + gadget.mem_changes if x.is_symbolic_access()]
+                assert len(sim_accesses) == 1, hex(gadget.addr)
                 m = sim_accesses[0]
                 pre_preserve = pre_preserve.union(m.addr_controllers)
 

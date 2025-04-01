@@ -365,6 +365,15 @@ def test_arm_jmp_mem():
     g = rop.analyze_gadget(0x456951)
     assert g is None
 
+def test_num_mem_access():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "cgc", "sc1_0b32aa01_01"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+
+    g = rop.analyze_gadget(0x8048500)
+    assert g.has_symbolic_access() is True
+    assert g.num_sym_mem_access == 2
+    assert len(g.mem_changes) == 2
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

@@ -52,11 +52,6 @@ class RopMemAccess:
         return len(set(self.addr_controllers) & set(self.data_controllers)) == 0 and \
                 len(set(self.addr_stack_controllers) & set(self.data_stack_controllers)) == 0
 
-    def __hash__(self):
-        to_hash = sorted(self.addr_dependencies) + sorted(self.data_dependencies) + [self.addr_constant] + \
-            [self.data_constant] + [self.addr_size] + [self.data_size]
-        return hash(tuple(to_hash))
-
     def __eq__(self, other):
         if type(other) != RopMemAccess:
             return False
@@ -160,7 +155,7 @@ class RopGadget:
         by definition, jmp_mem gadgets have one symbolic memory access, which is its PC
         we take into account that
         """
-        accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)
+        accesses = self.mem_reads + self.mem_writes + self.mem_changes
         res = len([x for x in accesses if x.is_symbolic_access()])
         if self.transit_type == 'jmp_mem' and self.pc_target.symbolic:
             assert res > 0

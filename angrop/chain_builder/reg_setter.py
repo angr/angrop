@@ -504,10 +504,10 @@ class RegSetter(Builder):
         """
         make sure the new chain does not do bad memory accesses
         """
-        accesses = set()
+        accesses = []
         for g in chain:
-            accesses.update(set(g.mem_reads + g.mem_writes + g.mem_changes))
-        accesses = set(m for m in accesses if m.is_symbolic_access())
+            accesses += g.mem_reads + g.mem_writes + g.mem_changes
+        accesses = [m for m in accesses if m.is_symbolic_access()]
         for mem_access in accesses:
             if mem_access.addr_controllers and not mem_access.addr_controllers.intersection(regs):
                 return False
