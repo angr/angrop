@@ -51,8 +51,11 @@ def get_ast_controllers(state, ast, reg_deps) -> set:
         if not state.registers.load(reg).symbolic:
             continue
         constraints.append(state.registers.load(reg) == test_val)
-    if len(state.solver.eval_to_ast(ast, 2, extra_constraints=constraints)) > 1:
-        return controllers
+    try:
+        if len(state.solver.eval_to_ast(ast, 2, extra_constraints=constraints)) > 1:
+            return controllers
+    except angr.errors.SimUnsatError:
+        return set()
 
     for reg in reg_deps:
         extra_constraints = []

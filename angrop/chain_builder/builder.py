@@ -753,13 +753,16 @@ class Builder:
                 for reg in m.addr_controllers:
                     data = claripy.BVS('sym_addr', self.project.arch.bits)
                     request[reg] = data
-                tmp = self.chain_builder._reg_setter.run(**request)
-                tmp = RopBlock.from_chain(tmp)
-                _, final_state = tmp.sim_exec()
-                st = rb._blank_state
-                for reg in m.addr_controllers:
-                    tmp._blank_state.solver.add(final_state.registers.load(reg) == st.registers.load(reg))
-                rb = tmp + rb
+                if request:
+                    tmp = self.chain_builder._reg_setter.run(**request)
+                    tmp = RopBlock.from_chain(tmp)
+                    _, final_state = tmp.sim_exec()
+                    st = rb._blank_state
+                    for reg in m.addr_controllers:
+                        tmp._blank_state.solver.add(final_state.registers.load(reg) == st.registers.load(reg))
+                    rb = tmp + rb
+                else: # TODO:we currently don't support symbolizing address popped from stack
+                    return None
                 return rb
 
             return rb
