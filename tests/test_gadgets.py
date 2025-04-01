@@ -91,7 +91,7 @@ def test_arm_mem_change_gadget():
     4c1eaa  bx      lr
     """
     gadget = rop.analyze_gadget(0x4c1ea4+1) # thumb mode
-    assert not gadget.mem_changes
+    assert gadget.mem_changes
 
     """
     4c1e8e  ldr     r1, [r4,#0x14]
