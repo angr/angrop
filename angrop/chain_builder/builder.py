@@ -258,9 +258,14 @@ class Builder:
                         raise RopException("rebalance unsat")
                     rhs = claripy.Extract(rhs.length-lhs.args[0]-1, 0, rhs)
                     lhs = lhs.args[1]
+                case "SignExt":
+                    rhs_leading = claripy.Extract(rhs.length-1, rhs.length-lhs.args[0], rhs)
+                    if not rhs_leading.symbolic and rhs_leading.concrete_value not in (0, (1<<rhs_leading.length)-1):
+                        raise RopException("rebalance unsat")
+                    rhs = claripy.Extract(rhs.length-lhs.args[0]-1, 0, rhs)
+                    lhs = lhs.args[1]
                 case "Extract":
                     assert lhs.length == rhs.length
-                    full_size = lhs.args[2].length
                     ext_bits = self.project.arch.bits -1 - lhs.args[0]
                     padding_bits = lhs.args[1]
                     if padding_bits:
@@ -576,9 +581,11 @@ class Builder:
                 pass
         return None
 
-    def _normalize_jmp_mem(self, gadget, preserve_regs=None):
-        if preserve_regs is None:
-            preserve_regs = set()
+    def _normalize_jmp_mem(self, gadget, pre_preserve=None, post_preserve=None):
+        if pre_preserve is None:
+            pre_preserve = set()
+        if post_preserve is None:
+            post_preserve = set()
 
         mem_writer = self.chain_builder._mem_writer
 
@@ -596,7 +603,7 @@ class Builder:
             for shifter in shifter_list:
                 if shifter.pc_offset < abs(gadget.stack_change):
                     continue
-                if not shifter.changed_regs.intersection(preserve_regs):
+                if not shifter.changed_regs.intersection(post_preserve):
                     break
             else:
                 return None
@@ -612,7 +619,7 @@ class Builder:
             else:
                 ptr = gadget.pc_target.concrete_value
             ptr_val = rop_utils.cast_rop_value(ptr, self.project)
-            chain = mem_writer.write_to_mem(ptr_val, data, fill_byte=b'\x00', preserve_regs=preserve_regs)
+            chain = mem_writer.write_to_mem(ptr_val, data, fill_byte=b'\x00', preserve_regs=pre_preserve)
             rb = RopBlock.from_chain(chain)
             state = rb._blank_state
 
@@ -706,7 +713,7 @@ class Builder:
                     return None
                 gadgets = tmp + gadgets
             elif gadget.transit_type == 'jmp_mem':
-                rb = self._normalize_jmp_mem(gadget, preserve_regs=pre_preserve)
+                rb = self._normalize_jmp_mem(gadget, pre_preserve=pre_preserve, post_preserve=post_preserve)
                 return rb
             elif gadget.transit_type == 'pop_pc':
                 pass
