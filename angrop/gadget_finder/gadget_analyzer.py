@@ -8,7 +8,7 @@ import pyvex
 import claripy
 
 from .. import rop_utils
-from ..arch import get_arch, X86
+from ..arch import get_arch, X86, RISCV64
 from ..rop_gadget import RopGadget, RopMemAccess, RopRegMove, PivotGadget, SyscallGadget
 from ..rop_block import RopBlock
 from ..errors import RopException, RegNotFoundException, RopTimeoutException
@@ -204,7 +204,7 @@ class GadgetAnalyzer:
             l.debug("... checking if block makes sense")
             block = self.project.factory.block(addr)
 
-            if not block.capstone.insns:
+            if not block.capstone.insns and not isinstance(self.arch, RISCV64):
                 return False
 
             if not self.arch.block_make_sense(block):
@@ -234,7 +234,6 @@ class GadgetAnalyzer:
             if "Ity_F16" in block.vex.tyenv.types or "Ity_F32" in block.vex.tyenv.types \
                     or "Ity_F64" in block.vex.tyenv.types or "Ity_F128" in block.vex.tyenv.types:
                 return False
-
         except angr.errors.SimEngineError:
             l.debug("... some simengine error")
             return False

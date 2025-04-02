@@ -4,6 +4,9 @@ from io import BytesIO
 
 import angr
 import angrop  # pylint: disable=unused-import
+import archinfo
+
+from angr_platforms import risc_v
 
 l = logging.getLogger(__name__)
 
@@ -294,6 +297,12 @@ def test_syscall_when_ret_only():
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=True)
     rop.find_gadgets_single_threaded()
     assert rop._all_gadgets
+
+def test_riscv():
+    proj = angr.Project('../../binaries/tests/riscv/server_eapp.eapp_riscv', load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False)
+    g = rop.analyze_gadget(0xA86C)
+    assert g is not None
 
 def run_all():
     functions = globals()

@@ -125,6 +125,14 @@ class MIPS(ROPArch):
         self.fast_mode_max_block_size = self.alignment * 6
         self.execve_num = 0xfab
 
+class RISCV64(ROPArch):
+    def __init__(self, project, kernel_mode=False):
+        super().__init__(project, kernel_mode=kernel_mode)
+        self.ret_insts = {b"\x82\x80"}
+        self.max_block_size = self.alignment * 10
+        self.fast_mode_max_block_size = self.alignment * 6
+        self.execve_num = 0xdd
+
 def get_arch(project, kernel_mode=False):
     name = project.arch.name
     mode = kernel_mode
@@ -136,6 +144,8 @@ def get_arch(project, kernel_mode=False):
         return ARM(project, kernel_mode=mode)
     elif name == 'AARCH64':
         return AARCH64(project, kernel_mode=mode)
+    elif name == 'RISCV64':
+        return RISCV64(project, kernel_mode=mode)
     elif name.startswith('MIPS'):
         return MIPS(project, kernel_mode=mode)
     else:
