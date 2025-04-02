@@ -24,8 +24,9 @@ class RopChain:
         self._pie = self._p.loader.main_object.pic
         self._builder = builder
 
-        self._gadgets = []
-        self._values = []
+        self._gadgets = [] # gadgets in the order of execution
+        self._values = [] # values on the stack
+
         # use self.payload_len in presentation layer, use self._payload in internal stuff
         # because next_pc is an internal mechanism, we don't expose it to users
         self.payload_len = 0

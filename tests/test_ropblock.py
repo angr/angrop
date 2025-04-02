@@ -43,6 +43,26 @@ def test_reg_mover():
     except RopException:
         pass
 
+def test_expand_ropblock():
+    proj = angr.load_shellcode(
+        """
+        pop rdi; ret
+        mov eax, edi; ret
+        pop rbx; ret
+        add rsp, 8; ret
+        mov rdx, rax; mov esi, 1; call rbx
+        pop rsi; ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.set_regs(rsi=0x42424242, rdx=0x43434343)
+    assert chain is not None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

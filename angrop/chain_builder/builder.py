@@ -424,7 +424,6 @@ class Builder:
                          badbytes=self.badbytes)
 
         # iterate through the stack values that need to be in the chain
-        plain_gadgets = []
         for offset in range(-bytes_per_pop, total_sc, bytes_per_pop):
             sym_word = test_symbolic_state.stack_read(offset, bytes_per_pop)
             assert len(sym_word.variables) <= 1
@@ -441,15 +440,22 @@ class Builder:
                     value = RopValue(val.addr, self.project)
                     value.rebase_analysis(chain=chain)
                     chain.add_value(value)
-                    plain_gadgets.append(val)
                 elif isinstance(val, RopBlock):
                     chain.add_value(val._values[0])
-                    plain_gadgets += val._gadgets
                 else:
                     chain.add_value(val)
             else:
                 chain.add_value(sym_word)
 
+        # expand mixins to plain gadgets
+        plain_gadgets = []
+        for g in gadgets:
+            if isinstance(g, RopGadget):
+                plain_gadgets.append(g)
+            elif isinstance(g, RopBlock):
+                plain_gadgets += g._gadgets
+            else:
+                raise RuntimeError("???")
         chain.set_gadgets(plain_gadgets)
 
         return chain
