@@ -299,7 +299,7 @@ def test_syscall_when_ret_only():
     assert rop._all_gadgets
 
 def test_riscv():
-    proj = angr.Project('../../binaries/tests/riscv/server_eapp.eapp_riscv', load_options={'main_opts':{'base_addr': 0}})
+    proj = angr.Project(os.path.join(tests_dir, "riscv", "server_eapp.eapp_riscv"), load_options={'main_opts':{'base_addr': 0}})
     rop = proj.analyses.ROP(fast_mode=False)
     g = rop.analyze_gadget(0xA86C)
     assert g is not None

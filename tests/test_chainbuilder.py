@@ -804,6 +804,22 @@ def test_normalize_symbolic_access():
     rop.chain_builder.optimize()
     rop.set_regs(r9=0x41414141)
 
+def test_riscv():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "server_eapp.eapp_riscv"), load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False)
+    cache_path = os.path.join(CACHE_DIR, "riscv_server_eapp")
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path, optimize=False)
+    else:
+        rop.find_gadgets(optimize=False)
+        rop.save_gadgets(cache_path)
+
+    rop.optimize()
+    chain = rop.set_regs(a0=0x41414141, a1=0x42424242)
+    state = chain.exec()
+    assert state.regs.a0.concrete_value == 0x41414141
+    assert state.regs.a1.concrete_value == 0x42424242
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
