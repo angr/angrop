@@ -344,7 +344,7 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
         raise RopException("Does not get to a single unconstrained successor") from e
 
 def at_syscall(state):
-    return state.project.factory.block(state.addr, num_inst=1).vex.jumpkind.startswith("Ijk_Sys")
+    return state.project.factory.block(state.addr, num_inst=1).vex.jumpkind.startswith("Ijk_Sys") or is_kernel_addr(state.project, state.addr)
 
 def step_to_syscall(state):
     """
@@ -355,7 +355,12 @@ def step_to_syscall(state):
 
     simgr = state.project.factory.simgr(state)
     while True:
-        simgr.step(num_inst=1)
+        # FIXME: step(num_inst=1) does not with MIPS in angr
+        # we currently work around it
+        if state.project.arch.name.startswith("MIPS"):
+            simgr.step()
+        else:
+            simgr.step(num_inst=1)
         if not simgr.active:
             raise RuntimeError("unable to reach syscall instruction")
         state = simgr.active[0]
