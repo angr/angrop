@@ -820,6 +820,50 @@ def test_riscv():
     assert state.regs.a0.concrete_value == 0x41414141
     assert state.regs.a1.concrete_value == 0x42424242
 
+def test_rebalance_and_or():
+    proj = angr.load_shellcode(
+        """
+        pop rax
+        and rax, 0x41414141
+        ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.set_regs(rax=1)
+    assert chain is not None
+
+    try:
+        rop.set_regs(rax=3)
+        assert 1 == 0
+    except Exception:
+        pass
+
+    proj = angr.load_shellcode(
+        """
+        pop rax
+        or rax, 1
+        ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.set_regs(rax=1)
+    assert chain is not None
+
+    try:
+        rop.set_regs(rax=0)
+        assert 1 == 0
+    except Exception:
+        pass
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

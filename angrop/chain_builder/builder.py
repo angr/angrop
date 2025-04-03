@@ -249,6 +249,21 @@ class Builder:
                         rhs += other
                     else:
                         rhs = other - rhs
+                case "__and__" | "__or__":
+                    arg0 = lhs.args[0]
+                    arg1 = lhs.args[1]
+                    flag = self._ast_contains_stack_data(arg0)
+                    op = lhs.op
+                    if flag:
+                        lhs = arg0
+                        other = arg1
+                    else:
+                        lhs = arg1
+                        other = arg0
+                    if op == "__and__":
+                        rhs = rhs & other
+                    else:
+                        rhs = rhs
                 case "Reverse":
                     lhs = lhs.args[0]
                     rhs = claripy.Reverse(rhs)
