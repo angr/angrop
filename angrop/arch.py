@@ -131,6 +131,7 @@ class MIPS(ROPArch):
         self.max_block_size = self.alignment * 8
         self.fast_mode_max_block_size = self.alignment * 6
         self.execve_num = 0xfab
+        self.syscall_insts = {b"\x0c\x00\x00\x00"} # syscall
 
 class RISCV64(ROPArch):
     def __init__(self, project, kernel_mode=False):

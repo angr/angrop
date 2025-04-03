@@ -422,7 +422,13 @@ class GadgetAnalyzer:
             # gadgets that do syscall and pivoting are too complicated
             if self._does_pivot(final_state):
                 return None
-            prologue_state = rop_utils.step_to_syscall(init_state)
+
+            # FIXME: this try-except here is specifically for MIPS because angr
+            # does not handle breakpoints in MIPS well
+            try:
+                prologue_state = rop_utils.step_to_syscall(init_state)
+            except RuntimeError:
+                return None
             g = RopGadget(addr=addr)
             if init_state.addr != prologue_state.addr:
                 self._effect_analysis(g, init_state, prologue_state, None, do_cond_branch)
