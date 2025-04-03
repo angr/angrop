@@ -374,6 +374,23 @@ def test_num_mem_access():
     assert g.num_sym_mem_access == 2
     assert len(g.mem_changes) == 2
 
+def test_pac():
+    """
+    add sp, sp, #0xc0
+    autiasp
+    ret
+    """,
+    proj = angr.load_shellcode(
+        b'\xffC\x01\x91\xbf#\x03\xd5\xc0\x03_\xd6',
+        "aarch64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    assert len(rop._all_gadgets) == 1
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

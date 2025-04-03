@@ -117,6 +117,13 @@ class AARCH64(ROPArch):
         self.fast_mode_max_block_size = self.alignment * 6
         self.execve_num = 0xdd
 
+    def block_make_sense(self, block):
+        for x in block.capstone.insns:
+            # won't be able to ROP with PAC
+            if x.mnemonic == 'autiasp':
+                return False
+        return True
+
 class MIPS(ROPArch):
     def __init__(self, project, kernel_mode=False):
         super().__init__(project, kernel_mode=kernel_mode)
