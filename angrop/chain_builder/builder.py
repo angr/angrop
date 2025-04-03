@@ -412,7 +412,7 @@ class Builder:
             if action.type == action.MEM and action.addr.symbolic:
                 if len(state.solver.eval_to_ast(action.addr, 2)) == 1:
                     continue
-                state.solver.add(action.addr.ast == self._get_ptr_to_writable(action.size.ast//arch_bytes))
+                state.solver.add(action.addr.ast == self._get_ptr_to_writable(action.size.ast//8))
 
         # now import the constraints from the state that has reached the end of the ropchain
         test_symbolic_state.solver.add(*state.solver.constraints)

@@ -102,8 +102,8 @@ class SysCaller(FuncCaller):
         raise RopException("Fail to invoke execve!")
 
     def execve(self, path=None, path_addr=None):
-        if "unix" not in self.project.loader.main_object.os.lower():
-            raise RopException("unknown unix platform")
+        if self.project.simos.name != 'Linux':
+            raise RopException(f"{self.project.simos.name} is not supported!")
         if not self.syscall_gadgets:
             raise RopException("target does not contain syscall gadget!")
 
