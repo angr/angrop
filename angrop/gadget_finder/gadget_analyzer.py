@@ -20,7 +20,7 @@ class GadgetAnalyzer:
     """
     find and analyze gadgets from binary code
     """
-    def __init__(self, project, fast_mode, kernel_mode=False, arch=None, stack_gsize=80, cond_br=False):
+    def __init__(self, project, fast_mode, kernel_mode=False, arch=None, stack_gsize=80, cond_br=False, max_bb_cnt=2):
         """
         stack_gsize: number of controllable gadgets on the stack
         """
@@ -29,6 +29,7 @@ class GadgetAnalyzer:
         self.arch = get_arch(project, kernel_mode=kernel_mode) if arch is None else arch
         self._fast_mode = fast_mode
         self._allow_conditional_branches = cond_br
+        self._max_bb_cnt = max_bb_cnt
 
         # initial state that others are based off, all analysis should copy the state first and work on
         # the copied state
@@ -94,7 +95,7 @@ class GadgetAnalyzer:
                     return simgr.DROP
                 return None
 
-            simgr.run(n=2, filter_func=filter_func)
+            simgr.run(n=self._max_bb_cnt, filter_func=filter_func)
             simgr.move(from_stash='active', to_stash='syscall',
                        filter_func=lambda s: rop_utils.is_in_kernel(self.project, s))
 
@@ -119,13 +120,13 @@ class GadgetAnalyzer:
 
         return final_states, bad_states
 
-    @rop_utils.timeout(3)
+    @rop_utils.timeout(5)
     def _analyze_gadget(self, addr, allow_conditional_branches):
         l.info("Analyzing 0x%x", addr)
 
         # Step 1: first statically check if the block can reach stopping states
         #         static analysis is much faster
-        if not self._can_reach_stopping_states(addr, allow_conditional_branches):
+        if not self._can_reach_stopping_states(addr, allow_conditional_branches, max_steps=self._max_bb_cnt):
             return []
 
         # Step 2: get all potential successor states
@@ -274,7 +275,7 @@ class GadgetAnalyzer:
 
         b = self.project.factory.block(addr)
 
-        if max_steps == 2: # this is the very first basic block
+        if max_steps == self._max_bb_cnt: # this is the very first basic block
             # it doesn't make sense to have a gadget that starts with a conditional jump
             # this type of gadgets should be represented by two gadgets after the jump
             if b._instructions == 1 and len(b.vex.constant_jump_targets) > 1:

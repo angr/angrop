@@ -199,7 +199,7 @@ def make_initial_state(project, stack_gsize):
 
     remove_set = angr.options.resilience | angr.options.simplification | {angr.options.AVOID_MULTIVALUED_READS, angr.options.SUPPORT_FLOATING_POINT}
     add_set = {angr.options.CONSERVATIVE_READ_STRATEGY, angr.options.AVOID_MULTIVALUED_WRITES,
-               angr.options.NO_SYMBOLIC_JUMP_RESOLUTION, angr.options.CGC_NO_SYMBOLIC_RECEIVE_LENGTH,
+               angr.options.CGC_NO_SYMBOLIC_RECEIVE_LENGTH,
                angr.options.NO_SYMBOLIC_SYSCALL_RESOLUTION, angr.options.TRACK_ACTION_HISTORY,
                angr.options.ADD_AUTO_REFS, angr.options.SPECIAL_MEMORY_FILL,
                angr.options.NO_CROSS_INSN_OPT, # for instruction-precise sim_action tracking

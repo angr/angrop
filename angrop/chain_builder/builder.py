@@ -23,6 +23,7 @@ class Builder:
         self.chain_builder = chain_builder
         self.project = chain_builder.project
         self.arch = chain_builder.arch
+        # used for effect analysis
         self._gadget_analyzer = GadgetAnalyzer(self.project,
                                                True,
                                                kernel_mode=False,

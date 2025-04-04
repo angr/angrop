@@ -53,7 +53,8 @@ class GadgetFinder:
     a class to find ROP gadgets
     """
     def __init__(self, project, fast_mode=None, only_check_near_rets=True, max_block_size=None,
-                 max_sym_mem_access=None, is_thumb=False, kernel_mode=False, stack_gsize=80, cond_br=False):
+                 max_sym_mem_access=None, is_thumb=False, kernel_mode=False, stack_gsize=80,
+                 cond_br=False, max_bb_cnt=2):
         # configurations
         self.project = project
         self.fast_mode = fast_mode
@@ -62,6 +63,7 @@ class GadgetFinder:
         self.kernel_mode = kernel_mode
         self.stack_gsize = stack_gsize
         self.cond_br = cond_br
+        self.max_bb_cnt = max_bb_cnt
 
         if only_check_near_rets and not isinstance(self.arch, (X86, AMD64, AARCH64)):
             l.warning("only_check_near_rets only makes sense for i386/amd64/aarch64, setting it to False")
@@ -130,7 +132,7 @@ class GadgetFinder:
 
         self._gadget_analyzer = gadget_analyzer.GadgetAnalyzer(self.project, self.fast_mode, arch=self.arch,
                                                                kernel_mode=self.kernel_mode, stack_gsize=self.stack_gsize,
-                                                               cond_br=self.cond_br)
+                                                               cond_br=self.cond_br, max_bb_cnt=self.max_bb_cnt)
 
     def analyze_gadget(self, addr, allow_conditional_branches=None):
         g = self.gadget_analyzer.analyze_gadget(addr, allow_conditional_branches=allow_conditional_branches)

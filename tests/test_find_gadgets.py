@@ -304,6 +304,13 @@ def test_riscv():
     g = rop.analyze_gadget(0xA86C)
     assert g is not None
 
+    proj = angr.Project(os.path.join(tests_dir, "riscv", "abgate-libabGateQt.so"),
+                        load_options={'main_opts':{'base_addr': 0}},
+                        )
+    rop = proj.analyses.ROP(fast_mode=False, cond_br=True, max_bb_cnt=5)
+    g = rop.analyze_addr(0x77da)
+    assert g
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
