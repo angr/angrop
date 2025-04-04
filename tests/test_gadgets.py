@@ -391,6 +391,15 @@ def test_pac():
 
     assert len(rop._all_gadgets) == 1
 
+def test_riscv():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "abgate-libabGateQt.so"),
+                        load_options={'main_opts':{'base_addr': 0}},
+                        )
+    rop = proj.analyses.ROP(fast_mode=False, cond_br=True, max_bb_cnt=5)
+    gs = rop.analyze_addr(0x5f7a)
+    g = gs[0]
+    assert 's0' in g.popped_regs
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
