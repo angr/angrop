@@ -331,11 +331,18 @@ class GadgetFinder:
         :return: all the addresses to check
         """
         # align block size
+        seen_addrs = set()
         alignment = self.arch.alignment
         offset = 1 if isinstance(self.arch, ARM) and self.arch.is_thumb else 0
-        if self.only_check_near_rets:
+
+        # step 1: check syscall locations
+        if not self.arch.kernel_mode and self._syscall_locations:
             for addr in self._syscall_locations:
+                seen_addrs.add(addr+offset)
                 yield addr+offset
+
+        # step 2: check gadgets near rets
+        if self._ret_locations:
             block_size = (self.arch.max_block_size & ((1 << self.project.arch.bits) - alignment)) + alignment
             slices = [(addr-block_size, addr) for addr in self._ret_locations]
             current_addr = 0
@@ -343,19 +350,19 @@ class GadgetFinder:
                 current_addr = max(current_addr, st)
                 end_addr = st + block_size + alignment
                 for i in range(current_addr, end_addr, alignment):
-                    if i in self._syscall_locations:
+                    if i+offset in seen_addrs:
                         continue
                     if self._addr_in_executable_memory(i):
                         yield i+offset
                 current_addr = max(current_addr, end_addr)
-        else:
-            for addr in self._syscall_locations:
-                yield addr+offset
+
+        # step 3: check every possible addresses
+        if not self.only_check_near_rets:
             for segment in self._get_executable_ranges():
                 l.debug("Analyzing segment with address range: 0x%x, 0x%x", segment.min_addr, segment.max_addr)
                 start = alignment * ((segment.min_addr + alignment - 1) // alignment)
                 for addr in range(start, start+segment.memsize, alignment):
-                    if addr in self._syscall_locations:
+                    if addr+offset in seen_addrs:
                         continue
                     yield addr+offset
 
