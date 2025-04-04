@@ -120,7 +120,7 @@ class GadgetAnalyzer:
 
         return final_states, bad_states
 
-    @rop_utils.timeout(8)
+    @rop_utils.timeout(3)
     def _analyze_gadget(self, addr, allow_conditional_branches):
         l.info("Analyzing 0x%x", addr)
 
