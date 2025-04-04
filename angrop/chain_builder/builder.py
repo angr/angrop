@@ -440,6 +440,9 @@ class Builder:
                          badbytes=self.badbytes)
 
         # iterate through the stack values that need to be in the chain
+        if not chain._blank_state.satisfiable():
+            raise RopException("the chain is not feasible!")
+
         for offset in range(-bytes_per_pop, total_sc, bytes_per_pop):
             sym_word = test_symbolic_state.stack_read(offset, bytes_per_pop)
             assert len(sym_word.variables) <= 1

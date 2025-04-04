@@ -68,6 +68,7 @@ class RegSetter(Builder):
         self.hard_chain_cache = {}
 
     def optimize(self):
+        res = False
         # now we have a functional RegSetter, check whether we can do better
 
         # first, see whether we can use reg_mover to set hard-registers
@@ -120,6 +121,7 @@ class RegSetter(Builder):
                         pass
 
         self._insert_to_reg_dict(rop_blocks)
+        res |= bool(rop_blocks)
 
         # second, see whether we can use non-self-contained gadgets to set hard registers
         # TODO: we may want to optimize this algorithm since sometimes it will generate functional
@@ -176,6 +178,8 @@ class RegSetter(Builder):
                         new_blocks.add(rb)
 
         self._insert_to_reg_dict(new_blocks)
+        res |= bool(new_blocks)
+        return res
 
     def normalize_for_move(self, gadget, new_move):
         """

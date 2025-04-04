@@ -30,6 +30,7 @@ class RegMover(Builder):
         self._build_move_graph()
 
     def optimize(self):
+        res = False
         for gadget in self._reg_moving_gadgets:
             if gadget.self_contained:
                 continue
@@ -54,6 +55,7 @@ class RegMover(Builder):
             rb = self.normalize_gadget(gadget, pre_preserve=preserve_regs)
             if rb is None:
                 continue
+            res = True
             for move in rb.reg_moves:
                 edge = (move.from_reg, move.to_reg)
                 if self._graph.has_edge(*edge):
@@ -64,6 +66,7 @@ class RegMover(Builder):
                         edge_data['bits'] = move.bits
                 else:
                     self._graph.add_edge(*edge, block={rb}, bits=move.bits)
+        return res
 
     def _build_move_graph(self):
         self._graph = nx.DiGraph()
