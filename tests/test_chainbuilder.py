@@ -864,6 +864,23 @@ def test_rebalance_and_or():
     except Exception:
         pass
 
+def test_nested_optimization():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "abgate-libabGateQt.so"),
+                        load_options={'main_opts':{'base_addr': 0}},
+                        )
+    rop = proj.analyses.ROP(fast_mode=False, cond_br=True, max_bb_cnt=5)
+
+    g1 = rop.analyze_addr(0x5f7a)[0]
+    g2 = rop.analyze_addr(0x77b0)[0]
+    g3 = rop.analyze_addr(0x77da)[0]
+    g4 = rop.analyze_addr(0x775e)[0]
+
+    rop.chain_builder.optimize()
+
+    chain = rop.func_call(0xdeadbeef, [0x40404040, 0x41414141, 0x42424242], needs_return=False)
+
+    assert chain is not None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
