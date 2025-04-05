@@ -55,7 +55,8 @@ class RegMover(Builder):
             rb = self.normalize_gadget(gadget, pre_preserve=preserve_regs)
             if rb is None:
                 continue
-            res = True
+            if rb.reg_moves:
+                res = True
             for move in rb.reg_moves:
                 edge = (move.from_reg, move.to_reg)
                 if self._graph.has_edge(*edge):
