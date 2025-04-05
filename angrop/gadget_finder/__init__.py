@@ -1,9 +1,8 @@
 import re
 import time
 import logging
-import itertools
 from functools import partial
-from multiprocessing import Pool
+import multiprocessing as mp
 
 import tqdm
 
@@ -153,7 +152,7 @@ class GadgetFinder:
                                  desc="ROP", maxinterval=0.5, dynamic_ncols=True)
 
         func = partial(run_worker, allow_cond_branch=False)
-        with Pool(processes=processes, initializer=_set_global_gadget_analyzer, initargs=initargs) as pool:
+        with mp.Pool(processes=processes, initializer=_set_global_gadget_analyzer, initargs=initargs) as pool:
             it = pool.imap_unordered(func, iterable, chunksize=1)
             for gs in it:
                 if gs:
@@ -176,7 +175,7 @@ class GadgetFinder:
         self._cache = {}
 
         initargs = (self.gadget_analyzer,)
-        with Pool(
+        with mp.Pool(
             processes=processes,
             initializer=_set_global_gadget_analyzer,
             initargs=initargs,
@@ -185,8 +184,14 @@ class GadgetFinder:
             maxtasksperchild=64,
         ) as pool:
             start = time.time()
-            it = pool.imap_unordered(run_worker, self._addresses_to_check_with_caching(show_progress), chunksize=5)
-            for new_gadgets in it:
+            it = pool.imap_unordered(run_worker, self._addresses_to_check_with_caching(show_progress))
+            while True:
+                try:
+                    new_gadgets = it.next(10)
+                except StopIteration:
+                    break
+                except mp.context.TimeoutError:
+                    break
                 gadgets += new_gadgets
                 if timeout and time.time() - start > timeout:
                     break
