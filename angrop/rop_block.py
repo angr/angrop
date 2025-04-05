@@ -57,7 +57,7 @@ class RopBlock(RopChain):
         by definition, jmp_mem gadgets have one symbolic memory access, which is its PC
         we take into account that
         """
-        accesses = set(self.mem_reads + self.mem_writes + self.mem_changes)
+        accesses = self.mem_reads + self.mem_writes + self.mem_changes
         res = len([x for x in accesses if x.is_symbolic_access()])
         return res
 
