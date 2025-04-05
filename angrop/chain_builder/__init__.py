@@ -173,9 +173,7 @@ class ChainBuilder:
 
     def optimize(self):
         # optimize reg_mover and reg_setter
-        res = self._reg_mover.optimize()
-        res |= self._reg_setter.optimize()
-        while res:
-            res = self._reg_mover.optimize()
-            res |= self._reg_setter.optimize()
-
+        again = True
+        while again:
+            again = self._reg_mover.optimize()
+            again |= self._reg_setter.optimize()
