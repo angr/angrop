@@ -985,7 +985,9 @@ class GadgetAnalyzer:
             for m in d[addr]:
                 all_mem_actions.remove(m)
 
-        if len(all_mem_actions) + len(gadget.mem_changes) > self.arch.max_sym_mem_access:
+        sym_accesses = [ m for m in all_mem_actions if m.addr.ast.symbolic ]
+        sym_accesses += [m for m in gadget.mem_changes if m.is_symbolic_access()]
+        if len(sym_accesses) > self.arch.max_sym_mem_access:
             return False
 
         # step 3: add all left memory actions to either read/write memory accesses stashes

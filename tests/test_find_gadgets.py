@@ -311,6 +311,22 @@ def test_riscv():
     g = rop.analyze_addr(0x77da)
     assert g
 
+def test_jmp_mem_num_mem_access():
+    proj = angr.load_shellcode(
+        """
+        mov edx, ebp;
+        mov rsi, r14;
+        mov edi, r15d;
+        call qword ptr [r12 + rbx*8]
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
+    g = rop.analyze_gadget(0x400000)
+    assert g is not None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
