@@ -75,12 +75,13 @@ class RopValue:
         if concreted < self._project.loader.min_addr or concreted >= self._project.loader.max_addr:
             self._rebase = False
             return
+        # FIXME: currently, we only rebase pointers in the main_object
         for obj in self._project.loader.all_elf_objects:
             if obj.pic and obj.min_addr <= concreted < obj.max_addr:
+                if obj != self._project.loader.main_object:
+                    continue
                 self._value -= obj.min_addr
                 self._rebase = True
-                if obj != self._project.loader.main_object:
-                    raise NotImplementedError("Currently, angrop does not support rebase library address!")
                 return
         self._rebase = False
         return
