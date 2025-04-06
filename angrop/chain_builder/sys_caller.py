@@ -56,7 +56,14 @@ class SysCaller(FuncCaller):
         for reg in preserve_regs:
             if reg in registers:
                 del registers[reg]
-        state = chain.sim_exec_til_syscall()
+        try:
+            state = chain.sim_exec_til_syscall()
+        except RuntimeError:
+            chain_str = chain.dstr()
+            l.exception("Somehow angrop thinks\n%s\ncan be used for syscall chain generation-1.\nregisters: %s",
+                        chain_str, registers)
+            return False
+
         if state is None:
             return False
 
@@ -64,7 +71,7 @@ class SysCaller(FuncCaller):
             bv = getattr(state.regs, reg)
             if (val.symbolic != bv.symbolic) or state.solver.eval(bv != val.data):
                 chain_str = chain.dstr()
-                l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-2.\nregisters: %s",
+                l.exception("Somehow angrop thinks\n%s\ncan be used for syscall chain generation-2.\nregisters: %s",
                             chain_str, registers)
                 return False
 
