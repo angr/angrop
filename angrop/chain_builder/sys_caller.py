@@ -86,16 +86,7 @@ class SysCaller(FuncCaller):
             ptr = nullptr
 
         try:
-            return self.do_syscall(execve_syscall, [path_addr, ptr, ptr],
-                                 use_partial_controllers=False, needs_return=False)
-        except RopException:
-            pass
-
-        # Try to use partial controllers
-        l.warning("Trying to use partial controllers for syscall")
-        try:
-            return self.do_syscall(execve_syscall, [path_addr, 0, 0],
-                                     use_partial_controllers=True, needs_return=False)
+            return self.do_syscall(execve_syscall, [path_addr, ptr, ptr], needs_return=False)
         except RopException:
             pass
 
