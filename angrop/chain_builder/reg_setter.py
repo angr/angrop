@@ -238,8 +238,7 @@ class RegSetter(Builder):
         pc_var = set(state.regs.pc.variables).pop()
         return pc_var.startswith("next_pc")
 
-    @staticmethod
-    def _expand_ropblocks(mixins):
+    def _expand_ropblocks(self, mixins):
         """
         expand simple ropblocks to gadgets so that we don't encounter solver conflicts
         when using the same ropblock multiple times
@@ -250,6 +249,15 @@ class RegSetter(Builder):
                 gadgets.append(mixin)
             elif isinstance(mixin, RopBlock):
                 if mixin._blank_state.solver.constraints:
+                    try:
+                        rb = self._build_reg_setting_chain(mixin._gadgets, {})
+                        rb = RopBlock.from_chain(rb)
+                        if mixin.popped_regs.issubset(rb.popped_regs):
+                            rb.pop_equal_set = mixin.pop_equal_set.copy()
+                            gadgets += mixin._gadgets
+                            continue
+                    except RopException:
+                        pass
                     gadgets.append(mixin)
                 else:
                     gadgets += mixin._gadgets

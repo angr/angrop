@@ -920,6 +920,24 @@ def test_normalize_oop_jmp_reg():
     chain = rop.set_regs(rax=0x3b, rdi=0x41414141, rdx=0)
     assert chain is not None
 
+def test_double_ropblock():
+    proj = angr.load_shellcode(
+        """
+        pop rax; mov byte ptr [rbx], 1; ret
+        mov rdi, rax; ret
+        pop rbx; ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    for g in rop._all_gadgets:
+        g.pp()
+    chain = rop.set_regs(rax=0x3b, rdi=0x41414141)
+    assert chain is not None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
