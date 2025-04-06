@@ -6,6 +6,7 @@ import angr
 
 from .builder import Builder
 from .. import rop_utils
+from ..rop_block import RopBlock
 from ..errors import RopException
 
 l = logging.getLogger(__name__)
@@ -211,12 +212,6 @@ class MemChanger(Builder):
             reg_vals[reg] = test_state.solver.eval(test_state.registers.load(reg))
 
         chain = self._set_regs(**reg_vals)
-        chain.add_gadget(gadget)
-
-        bytes_per_pop = self.project.arch.bytes
-        for offset in range(0, gadget.stack_change, bytes_per_pop):
-            if offset == gadget.pc_offset:
-                chain.add_value(claripy.BVS("next_pc", self.project.arch.bits))
-            else:
-                chain.add_value(self._get_fill_val())
+        chain = RopBlock.from_chain(chain)
+        chain = self._build_reg_setting_chain([chain, gadget], {})
         return chain

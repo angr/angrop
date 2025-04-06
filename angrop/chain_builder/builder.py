@@ -764,8 +764,8 @@ class Builder:
                     if shifter.changed_regs.intersection(post_preserve):
                         continue
                     try:
-                        tmp = RopBlock.from_gadget(shifter, self)
-                        rb += tmp
+                        chain = self._build_reg_setting_chain([rb, shifter], {})
+                        rb = RopBlock.from_chain(chain)
                         break
                     except RopException:
                         pass

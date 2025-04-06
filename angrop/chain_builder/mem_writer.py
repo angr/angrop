@@ -269,30 +269,7 @@ class MemWriter(Builder):
 
         chain = self._set_regs(**reg_vals, preserve_regs=preserve_regs)
         chain = RopBlock.from_chain(chain)
-        _, final_state = chain.sim_exec()
-        chain.add_gadget(gadget)
-
-        arch_bytes = self.project.arch.bytes
-        pc_offset = None
-        if gadget.transit_type == 'pop_pc':
-            pc_offset = gadget.pc_offset
-        else:
-            raise ValueError(f"Unknown gadget transit_type: {gadget.transit_type}")
-
-        state = final_state
-        for idx in range(gadget.stack_change // arch_bytes):
-            if idx == pc_offset//arch_bytes:
-                next_pc_val = rop_utils.cast_rop_value(
-                    chain._blank_state.solver.BVS("next_pc", self.project.arch.bits),
-                    self.project,
-                )
-                chain.add_value(next_pc_val)
-                continue
-
-            tmp = claripy.BVS(f"symbolic_stack_{idx}", self.project.arch.bits)
-            state.memory.store(state.regs.sp+idx*arch_bytes, tmp)
-            val = state.memory.load(state.regs.sp+idx*arch_bytes, self.project.arch.bytes, endness=self.project.arch.memory_endness)
-            chain.add_value(val)
+        chain = self._build_reg_setting_chain([chain, gadget], {})
 
         # verify the write actually works
         state = chain.exec()
