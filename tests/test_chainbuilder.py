@@ -16,7 +16,7 @@ def test_symbolic_data():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -107,7 +107,7 @@ def test_x86_64_syscall():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -150,7 +150,7 @@ def test_i386_mem_write():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -167,7 +167,7 @@ def test_ropvalue():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -215,7 +215,7 @@ def test_set_regs():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -231,7 +231,7 @@ def test_add_to_mem():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -251,7 +251,7 @@ def test_add_to_mem():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True, cond_br=False)
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -263,7 +263,7 @@ def test_add_to_mem():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -276,7 +276,7 @@ def test_pivot():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -297,7 +297,7 @@ def test_shifter():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -323,7 +323,7 @@ def test_shifter():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -338,7 +338,7 @@ def test_shifter():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -354,7 +354,7 @@ def test_shifter():
     rop = proj.analyses.ROP(fast_mode=True, only_check_near_rets=False)
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -371,7 +371,7 @@ def test_retsled():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -398,7 +398,7 @@ def test_retsled():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
