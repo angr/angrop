@@ -52,6 +52,10 @@ class RopMemAccess:
         return len(set(self.addr_controllers) & set(self.data_controllers)) == 0 and \
                 len(set(self.addr_stack_controllers) & set(self.data_stack_controllers)) == 0
 
+    @property
+    def stack_offset(self):
+        return self.addr_constant - 0x7ffffffffff0000
+
     def __eq__(self, other):
         if type(other) != RopMemAccess:
             return False
@@ -148,6 +152,14 @@ class RopGadget:
         whether the gadget contains out of patch access
         """
         return any(m.out_of_patch  for m in self.mem_reads + self.mem_writes + self.mem_changes)
+
+    @property
+    def max_stack_offset(self):
+        res = self.stack_change - self.project.arch.bytes
+        for m in self.mem_reads + self.mem_writes + self.mem_changes:
+            if m.out_of_patch and m.stack_offset > res:
+                res = m.stack_offset
+        return res
 
     @property
     def num_sym_mem_access(self):

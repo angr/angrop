@@ -758,8 +758,9 @@ class Builder:
                 keys = sorted(shift_gadgets.keys())
                 shifter_list = [shift_gadgets[x] for x in keys if x >= sc]
                 shifter_list = itertools.chain.from_iterable(shifter_list)
+                max_stack_offset = gadget.max_stack_offset
                 for shifter in shifter_list:
-                    if shifter.pc_offset < abs(gadget.stack_change):
+                    if shifter.pc_offset < abs(gadget.stack_change) + max_stack_offset + self.project.arch.bytes:
                         continue
                     if shifter.changed_regs.intersection(post_preserve):
                         continue

@@ -881,6 +881,45 @@ def test_nested_optimization():
 
     assert chain is not None
 
+def test_normalize_jmp_reg():
+    proj = angr.load_shellcode(
+        """
+        pop rax; ret
+        mov rax, rdi; pop rbx; ret
+        mov eax, ebx; pop rbx; ret
+        pop rbx; ret
+        add rsp, 8; ret
+        mov edx, eax; mov esi, 1; call rbx
+        pop rdi; ret
+        mov dword ptr [rdx], edi; ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    rop.write_to_mem(0x41414141, b'BBBB')
+
+def test_normalize_oop_jmp_reg():
+    proj = angr.load_shellcode(
+        """
+        pop rdi; ret
+        mov rax, rdi; ret
+        pop rbx; ret
+        add rsp, 8; ret
+        add rsp, 0x18; ret
+        mov rdx, rax; mov rdi, qword ptr [rsp + 8]; call rbx
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.set_regs(rax=0x3b, rdi=0x41414141, rdx=0)
+    assert chain is not None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
