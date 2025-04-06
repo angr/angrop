@@ -938,6 +938,21 @@ def test_double_ropblock():
     chain = rop.set_regs(rax=0x3b, rdi=0x41414141)
     assert chain is not None
 
+def test_maximum_write_gadget():
+    proj = angr.load_shellcode(
+        """
+        pop rax; ret
+        pop rdi; ret
+        mov qword ptr [rax], rdi; add rsp, 0x3d8; ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, stack_gsize=200)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    rop.write_to_mem(0x41414141, b'BBBB')
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

@@ -95,7 +95,7 @@ class MemWriter(Builder):
                 if stack_change < best_stack_change:
                     best_gadget = g
                     best_stack_change = stack_change
-                if stack_change == best_stack_change and self._better_than(g, best_gadget):
+                if stack_change == best_stack_change and (best_gadget is None or self._better_than(g, best_gadget)):
                     best_gadget = g
 
             if to_remove:
