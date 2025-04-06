@@ -447,7 +447,7 @@ class RegSetter(Builder):
                 # greedy algorithm: only add edges that transit to an at least equally good node
                 src_cnt = len([x for x in src_node if x is True])
                 dst_cnt = len([x for x in dst_node if x is True])
-                if dst_cnt > src_cnt:
+                if dst_cnt >= src_cnt:
                     add_edge(src_node, dst_node, g)
 
         # bad, we can't set all registers, no need to try

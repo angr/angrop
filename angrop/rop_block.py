@@ -110,7 +110,12 @@ class RopBlock(RopChain):
 
         d = defaultdict(list)
         for reg in self._builder.arch.reg_set:
-            d[final_state.registers.load(reg)].append(reg)
+            ast = final_state.registers.load(reg)
+            if ast.op in ('ZeroExt', 'SignExt'):
+                tmp = ast.args[1]
+                if tmp.op == 'Extract':
+                    ast = tmp.args[2]
+            d[ast].append(reg)
         for k in d:
             if len(k.variables) != 1:
                 continue
