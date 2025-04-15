@@ -953,6 +953,29 @@ def test_maximum_write_gadget():
     rop.find_gadgets_single_threaded(show_progress=False)
     rop.write_to_mem(0x41414141, b'BBBB')
 
+def test_normalize_jmp_mem_with_pop():
+    proj = angr.load_shellcode(
+        """
+        pop rax; pop rbx; ret
+        pop rdi; ret
+        pop r12; ret
+        pop r13; ret
+        pop rsi; ret
+        mov qword ptr [rax], rdi; ret
+        mov rdx, r13; mov rsi, r14; mov edi, r15d; call qword ptr [r12 + rbx*8]
+        syscall
+        """,
+        "amd64",
+        simos='linux',
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, stack_gsize=200)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    rop.execve()
+    #rop.move_regs(rdx='r13')
+    #rop.write_to_mem(0x41414141, b'BBBB')
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

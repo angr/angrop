@@ -575,9 +575,9 @@ class Builder:
         gadgets = chain._gadgets
         return gadgets
 
-    def _normalize_jmp_reg(self, gadget, preserve_regs=None):
-        if preserve_regs is None:
-            preserve_regs = set()
+    def _normalize_jmp_reg(self, gadget, pre_preserve=None):
+        if pre_preserve is None:
+            pre_preserve = set()
         reg_setter = self.chain_builder._reg_setter
         if gadget.pc_reg not in reg_setter._reg_setting_dict:
             return None
@@ -586,7 +586,7 @@ class Builder:
         for pc_setter in reg_setter._reg_setting_dict[gadget.pc_reg]:
             if pc_setter.has_symbolic_access():
                 continue
-            if pc_setter.changed_regs.intersection(preserve_regs):
+            if pc_setter.changed_regs.intersection(pre_preserve):
                 continue
             total_sc = gadget.stack_change + pc_setter.stack_change
             gadgets = reg_setter._mixins_to_gadgets([pc_setter, gadget])
@@ -613,6 +613,13 @@ class Builder:
             post_preserve = set()
 
         mem_writer = self.chain_builder._mem_writer
+
+        # make sure we can set the pc_target ast in the first place
+        needed_regs = set(x[5:].split('-', 1)[0] for x in gadget.pc_target.variables if x.startswith('sreg_'))
+        reg_setter = self.chain_builder._reg_setter
+        for reg in needed_regs:
+            if reg not in reg_setter._reg_setting_dict:
+                return None
 
         try:
             # step1: find a shifter that clean up the jmp_mem call
@@ -733,7 +740,7 @@ class Builder:
 
             # normalize transit_types
             if gadget.transit_type == 'jmp_reg':
-                tmp = self._normalize_jmp_reg(gadget, preserve_regs=pre_preserve)
+                tmp = self._normalize_jmp_reg(gadget, pre_preserve=pre_preserve)
                 if tmp is None:
                     return None
                 gadgets = tmp + gadgets
