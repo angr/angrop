@@ -295,7 +295,7 @@ def test_syscall_when_ret_only():
         auto_load_libs=False,
     )
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=True)
-    rop.find_gadgets_single_threaded()
+    rop.find_gadgets_single_threaded(show_progress=False)
     assert rop._all_gadgets
 
 def test_riscv():
