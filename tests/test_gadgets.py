@@ -400,6 +400,14 @@ def test_riscv():
     g = gs[0]
     assert 's0' in g.popped_regs
 
+def test_out_of_patch():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    # mov rax, qword ptr [rip + 0x2c0939]; mov eax, dword ptr [rax + 0x38]; ret
+    g = rop.analyze_gadget(0x4fd520)
+    assert g.oop is False
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

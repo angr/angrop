@@ -765,7 +765,10 @@ class GadgetAnalyzer:
                 addr_constant = final_state.solver.eval(a.addr.ast)
             mem_access.addr_constant = addr_constant
             if not final_state.regs.sp.symbolic:
-                if not (init_state.regs.sp.concrete_value < addr_constant < final_state.regs.sp.concrete_value):
+                # check whether this is a pointer to a known mapping, these are not considered out-of-patch
+                if self.project.loader.find_object_containing(addr_constant):
+                    pass
+                elif not (init_state.regs.sp.concrete_value <= addr_constant < final_state.regs.sp.concrete_value):
                     mem_access.out_of_patch = True
         # case 2: the symbolic address comes from registers
         elif all(x.startswith("sreg_") for x in a.addr.ast.variables):
