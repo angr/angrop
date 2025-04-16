@@ -206,7 +206,7 @@ class RopChain:
 
     def sim_exec_til_syscall(self):
         project = self._p
-        state = project.factory.blank_state()
+        state = self._blank_state.copy()
         for idx, val in enumerate(self._values):
             offset = idx*project.arch.bytes
             state.memory.store(state.regs.sp+offset, val.data, project.arch.bytes, endness=project.arch.memory_endness)

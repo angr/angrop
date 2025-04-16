@@ -972,9 +972,8 @@ def test_normalize_jmp_mem_with_pop():
     )
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, stack_gsize=200)
     rop.find_gadgets_single_threaded(show_progress=False)
-    rop.execve()
-    #rop.move_regs(rdx='r13')
-    #rop.write_to_mem(0x41414141, b'BBBB')
+    chain = rop.execve()
+    assert chain is not None
 
 def run_all():
     functions = globals()
