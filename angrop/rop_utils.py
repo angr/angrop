@@ -102,6 +102,9 @@ def unconstrained_check(state, ast, extra_constraints=None):
     :return: True if the ast is probably completely unconstrained
     """
     size = ast.size()
+    # we are fine with partial control on 64bit system
+    if size == 64:
+        size = 32
     test_val_0 = 0x0
     test_val_1 = (1 << size) - 1
     test_val_2 = int("1010"*16, 2) % (1 << size)
