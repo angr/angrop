@@ -162,6 +162,8 @@ class MemWriter(Builder):
             raise RopException("data is not a byte string, aborting")
         if ord(fill_byte) in self.badbytes:
             raise RopException("fill_byte is a bad byte!")
+        if isinstance(addr, RopValue) and addr.symbolic:
+            raise RopException("cannot write to a symbolic address")
 
         # split the string into smaller elements so that we can
         # handle bad bytes
@@ -243,6 +245,7 @@ class MemWriter(Builder):
         # get the actual register values
         all_deps = list(mem_write.addr_dependencies) + list(mem_write.data_dependencies)
         reg_vals = {}
+        new_addr_val = None
         name = addr_bvs._encoded_name.decode()
         for reg in set(all_deps):
             if reg in preserve_regs:
@@ -263,6 +266,7 @@ class MemWriter(Builder):
                     if addr_val._rebase:
                         var.rebase_ptr()
                         var._rebase = True
+                    new_addr_val = var
                     break
             reg_vals[reg] = var
 
@@ -270,6 +274,10 @@ class MemWriter(Builder):
         chain = self._set_regs(**reg_vals, preserve_regs=preserve_regs)
         chain = RopBlock.from_chain(chain)
         chain = self._build_reg_setting_chain([chain, gadget], {})
+        for idx, val in enumerate(chain._values):
+            if not val.symbolic and not new_addr_val.symbolic and val.concreted == new_addr_val.concreted:
+                chain._values[idx] = new_addr_val
+                break
 
         # verify the write actually works
         state = chain.exec()
