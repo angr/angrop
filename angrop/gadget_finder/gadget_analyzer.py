@@ -480,7 +480,7 @@ class GadgetAnalyzer:
             ast = final_state.registers.load(reg)
             if ast is exit_target:
                 gadget.changed_regs.add(reg)
-            elif self._check_if_stack_controls_ast(ast, init_state, stack_change):
+            elif self._check_if_stack_controls_ast(ast, final_state, stack_change):
                 if ast.op == 'Concat':
                     raise RopException("cannot handle Concat")
                 gadget.popped_regs.add(reg)
@@ -564,7 +564,7 @@ class GadgetAnalyzer:
             return 'syscall'
 
         # the ip is controlled by stack (ret)
-        if self._check_if_stack_controls_ast(ip, init_state):
+        if self._check_if_stack_controls_ast(ip, final_state):
             return "stack"
 
         # the ip is not controlled by regs/mem
@@ -608,7 +608,7 @@ class GadgetAnalyzer:
 
         return True
 
-    def _check_if_stack_controls_ast(self, ast, initial_state, gadget_stack_change=None):
+    def _check_if_stack_controls_ast(self, ast, final_state, gadget_stack_change=None):
         if gadget_stack_change is not None and gadget_stack_change <= 0:
             return False
 
@@ -621,6 +621,11 @@ class GadgetAnalyzer:
         # prefilter
         if len(ast.variables) != 1 or not list(ast.variables)[0].startswith("symbolic_stack"):
             return False
+
+        # check whether the ast is constrained
+        if ast.variables.intersection(final_state.solver._solver.variables):
+            return rop_utils.unconstrained_check(final_state, ast)
+
         return True
 
     def _check_if_stack_pivot(self, init_state, final_state):
