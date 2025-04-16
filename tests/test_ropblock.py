@@ -63,6 +63,27 @@ def test_expand_ropblock():
     chain = rop.set_regs(rsi=0x42424242, rdx=0x43434343)
     assert chain is not None
 
+def test_block_effect():
+    proj = angr.load_shellcode(
+        """
+        pop rax
+        pop rbx
+        ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.set_regs(rax=0x41414141)
+    rb = RopBlock.from_chain(chain)
+    data = rb._values[2].ast
+    rb._blank_state.solver.add(data == 0x42424242)
+    rb._analyze_effect()
+    assert not rb.popped_regs
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
