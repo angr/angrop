@@ -43,7 +43,7 @@ class Builder:
         make a symbolic state with all general purpose register + base pointer symbolized
         and emulate a `pop pc` situation
         """
-        state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set, stack_gsize)
+        state = rop_utils.make_symbolic_state(self.project, self.arch.reg_list, stack_gsize)
         state.stack_pop()
         state.regs.ip = pc
         return state
@@ -314,7 +314,7 @@ class Builder:
         # emulate a 'pop pc' of the first gadget
         test_symbolic_state = rop_utils.make_symbolic_state(
             self.project,
-            self.arch.reg_set,
+            self.arch.reg_list,
             total_sc//arch_bytes+1, # compensate for the first gadget
         )
         test_symbolic_state.ip = test_symbolic_state.stack_pop()

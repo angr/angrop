@@ -38,7 +38,7 @@ class GadgetAnalyzer:
             extra_reg_set = self.arch.segment_regs
         else:
             extra_reg_set = None
-        self._state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set, stack_gsize,
+        self._state = rop_utils.make_symbolic_state(self.project, self.arch.reg_list, stack_gsize,
                                                     extra_reg_set=extra_reg_set)
         self._concrete_sp = self._state.solver.eval(self._state.regs.sp)
 
@@ -451,7 +451,7 @@ class GadgetAnalyzer:
             state = self._windup_to_presyscall_state(final_state, init_state)
         else:
             state = final_state
-        for reg in self.arch.reg_set:
+        for reg in self.arch.reg_list:
             val = state.registers.load(reg)
             if val.symbolic:
                 continue
@@ -1062,7 +1062,7 @@ class GadgetAnalyzer:
             if a.type == "reg" and a.action == "write":
                 try:
                     reg_name = rop_utils.get_reg_name(self.project.arch, a.offset)
-                    if reg_name in self.arch.reg_set:
+                    if reg_name in self.arch.reg_list:
                         all_reg_writes.add(reg_name)
                     elif reg_name != self.arch.stack_pointer:
                         l.info("reg write from register not in reg_set: %s", reg_name)

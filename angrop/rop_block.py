@@ -109,7 +109,7 @@ class RopBlock(RopChain):
         rb.isn_count = sum(project.factory.block(addr).instructions for addr in rb.bbl_addrs)
 
         d = defaultdict(list)
-        for reg in self._builder.arch.reg_set:
+        for reg in self._builder.arch.reg_list:
             ast = final_state.registers.load(reg)
             if ast.op in ('ZeroExt', 'SignExt'):
                 tmp = ast.args[1]
@@ -171,7 +171,7 @@ class RopBlock(RopChain):
         bytes_per_pop = project.arch.bytes
         state = rop_utils.make_symbolic_state(
                                 builder.project,
-                                builder.arch.reg_set,
+                                builder.arch.reg_list,
                                 gadget.stack_change//bytes_per_pop)
         next_pc_val = rop_utils.cast_rop_value(
             state.solver.BVS("next_pc", project.arch.bits),

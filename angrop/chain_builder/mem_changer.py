@@ -118,7 +118,7 @@ class MemChanger(Builder):
             raise RopException("Fail to find any gadget that can perform memory adding...")
 
         # get the data from trying to set all the registers
-        registers = dict((reg, 0x41) for reg in self.chain_builder.arch.reg_set)
+        registers = dict((reg, 0x41) for reg in self.chain_builder.arch.reg_list)
         l.debug("getting reg data for mem adds")
         _, _, reg_data = self.chain_builder._reg_setter.find_candidate_chains_graph_search(max_stack_change=0x50,
                                                                                            **registers)

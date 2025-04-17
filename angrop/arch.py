@@ -8,7 +8,7 @@ class ROPArch:
         self.kernel_mode = kernel_mode
         self.max_sym_mem_access = 4
         self.alignment = project.arch.instruction_alignment
-        self.reg_set = self._get_reg_set()
+        self.reg_list = self._get_reg_list()
         self.max_block_size = None
         self.fast_mode_max_block_size = None
 
@@ -19,20 +19,22 @@ class ROPArch:
         self.ret_insts = None
         self.execve_num = None
 
-    def _get_reg_set(self):
+    def _get_reg_list(self):
         """
         get the set of names of general-purpose registers + bp
         because bp is usually considered as general-purpose these days
         """
         arch = self.project.arch
-        _sp_reg = arch.register_names[arch.sp_offset]
-        _ip_reg = arch.register_names[arch.ip_offset]
-        _bp_reg = arch.register_names[arch.bp_offset]
+        sp_reg = arch.register_names[arch.sp_offset]
+        ip_reg = arch.register_names[arch.ip_offset]
+        bp_reg = arch.register_names[arch.bp_offset]
 
         # get list of general-purpose registers
         default_regs = arch.default_symbolic_registers
         # prune the register list of the instruction pointer and the stack pointer
-        return {r for r in default_regs if r not in (_sp_reg, _ip_reg)} | {_bp_reg}
+        reg_list = [r for r in default_regs if r not in (sp_reg, ip_reg, bp_reg)]
+        reg_list.append(bp_reg)
+        return reg_list
 
     def block_make_sense(self, block):
         return True

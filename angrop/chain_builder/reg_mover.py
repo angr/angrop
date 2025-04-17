@@ -78,7 +78,7 @@ class RegMover(Builder):
         self._graph = nx.DiGraph()
         graph = self._graph
         # each node is a register
-        graph.add_nodes_from(self.arch.reg_set)
+        graph.add_nodes_from(self.arch.reg_list)
         # an edge means there is a move from the src register to the dst register
         objects = defaultdict(set)
         max_bits_dict = defaultdict(int)
@@ -167,7 +167,7 @@ class RegMover(Builder):
 
         # sanity check
         preserve_regs = set(preserve_regs) if preserve_regs else set()
-        unknown_regs = set(registers.keys()).union(preserve_regs) - self.arch.reg_set
+        unknown_regs = set(registers.keys()).union(preserve_regs) - set(self.arch.reg_list)
         if unknown_regs:
             raise RopException("unknown registers: %s" % unknown_regs)
 

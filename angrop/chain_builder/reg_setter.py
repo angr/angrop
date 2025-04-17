@@ -62,7 +62,7 @@ class RegSetter(Builder):
             reg_pops.update(gadget.popped_regs)
         self._reg_weights = {
             reg: 5 if reg_pops[reg] == 0 else 2 if reg_pops[reg] == 1 else 1
-            for reg in self.arch.reg_set
+            for reg in self.arch.reg_list
         }
 
         self.hard_chain_cache = {}
@@ -78,10 +78,11 @@ class RegSetter(Builder):
         mover_graph = self.chain_builder._reg_mover._graph
         rop_blocks = []
         shortest = {x:y[0].stack_change for x,y in self._reg_setting_dict.items() if y}
-        for src, dst in itertools.product(self._reg_setting_dict, self.arch.reg_set):
+        for src, dst in itertools.product(self._reg_setting_dict.keys(), self.arch.reg_list):
             if src == dst:
                 continue
-            if not self._reg_setting_dict[dst]: # this is a hard register
+            # this is a hard register and we can set the source
+            if not self._reg_setting_dict[dst] and self._reg_setting_dict[src]:
                 paths = nx.all_simple_paths(mover_graph, src, dst, cutoff=3)
                 all_chains = []
                 for path in paths:
@@ -289,7 +290,7 @@ class RegSetter(Builder):
 
         # sanity check
         preserve_regs = set(preserve_regs) if preserve_regs else set()
-        unknown_regs = set(registers.keys()).union(preserve_regs) - self.arch.reg_set
+        unknown_regs = set(registers.keys()).union(preserve_regs) - set(self.arch.reg_list)
         if unknown_regs:
             raise RopException("unknown registers: %s" % unknown_regs)
 
@@ -740,7 +741,7 @@ class RegSetter(Builder):
             return False
 
         # set the register
-        state = rop_utils.make_symbolic_state(self.project, self.arch.reg_set)
+        state = rop_utils.make_symbolic_state(self.project, self.arch.reg_list)
         state.registers.store(reg, 0)
         state.regs.ip = gadget.addr
         # store A's past the end of the stack
