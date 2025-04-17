@@ -156,8 +156,9 @@ class RegSetter(Builder):
                         continue
                     if rb.popped_regs.intersection(new_pops):
                         new_blocks.add(rb)
-                        if reg not in shortest or rb.stack_change < shortest[reg].stack_change:
-                            shortest[reg] = rb
+                        for reg in new_pops:
+                            if reg not in shortest or rb.stack_change < shortest[reg].stack_change:
+                                shortest[reg] = rb
                     else:
                         l.warning("normalizing \n%s does not yield any wanted new reg setting capability: %s", rb.dstr(), new_pops)
                         continue
