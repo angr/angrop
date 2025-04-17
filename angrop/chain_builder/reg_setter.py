@@ -132,7 +132,6 @@ class RegSetter(Builder):
         for gadget in self._reg_setting_gadgets:
             if gadget.self_contained and not gadget.has_symbolic_access():
                 continue
-
             # check whether it introduces new capabilities
             rb = None
             new_pops = {x for x in gadget.popped_regs if not self._reg_setting_dict[x]}
@@ -145,6 +144,9 @@ class RegSetter(Builder):
                             continue
                         if new_move.to_reg in rb.popped_regs:
                             new_blocks.add(rb)
+                            reg = new_move.to_reg
+                            if reg not in shortest or rb.stack_change < shortest[reg].stack_change:
+                                shortest[reg] = rb
                         else:
                             l.warning("normalizing \n%s does not yield any wanted new reg setting capability: %s", rb.dstr(), new_move.to_reg)
                 else:
@@ -153,9 +155,16 @@ class RegSetter(Builder):
                         continue
                     if rb.popped_regs.intersection(new_pops):
                         new_blocks.add(rb)
+                        if reg not in shortest or rb.stack_change < shortest[reg].stack_change:
+                            shortest[reg] = rb
                     else:
                         l.warning("normalizing \n%s does not yield any wanted new reg setting capability: %s", rb.dstr(), new_pops)
                         continue
+
+            # this means we tried to normalize the gadget but failed,
+            # so don't try to do it again
+            if any(reg not in shortest for reg in gadget.popped_regs):
+                continue
 
             # check whether it shortens any chains
             better = False
@@ -164,9 +173,18 @@ class RegSetter(Builder):
                 # usually it takes two (pop; ret), so account for it by - arch_ bytes
                 if reg not in shortest or gadget.stack_change < shortest[reg].stack_change - arch_bytes:
                     # normalizing jmp_mem gadgets use a ton of gadgets, no need to even try
-                    if gadget.transit_type != 'jmp_mem':
+                    if gadget.transit_type == 'jmp_mem':
+                        continue
+                    elif gadget.transit_type == 'pop_pc':
                         better = True
                         break
+                    elif gadget.transit_type == 'jmp_reg':
+                        if gadget.pc_reg not in shortest:
+                            continue
+                        tmp = shortest[gadget.pc_reg]
+                        if gadget.stack_change + tmp.stack_change < shortest[reg].stack_change:
+                            better = True
+                            break
             if better:
                 if rb is None:
                     rb = self.normalize_gadget(gadget)

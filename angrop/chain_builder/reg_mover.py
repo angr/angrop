@@ -55,6 +55,9 @@ class RegMover(Builder):
             rb = self.normalize_gadget(gadget, pre_preserve=preserve_regs)
             if rb is None:
                 continue
+            # we already normalized it, just use it as much as we can
+            if rb.popped_regs:
+                self.chain_builder._reg_setter._insert_to_reg_dict([rb])
             if not any(m in rb.reg_moves for m in new_moves):
                 l.warning("normalizing \n%s does not yield any wanted new reg moving capability: %s", rb.dstr(), new_moves)
                 continue
