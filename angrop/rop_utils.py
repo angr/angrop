@@ -94,13 +94,7 @@ def get_ast_const_offset(state, ast, reg_deps) -> int:
     return state.solver.eval(ast)
 
 
-def unconstrained_check(state, ast, extra_constraints=None):
-    """
-    Attempts to check if an ast is completely unconstrained
-    :param state: the state to use
-    :param ast: the ast to check
-    :return: True if the ast is probably completely unconstrained
-    """
+def loose_constrained_check(state, ast, extra_constraints=None):
     size = ast.size()
     # we are fine with partial control on 64bit system
     if size == 64:
@@ -114,18 +108,29 @@ def unconstrained_check(state, ast, extra_constraints=None):
         % (1 << size)
     extra = extra_constraints if extra_constraints is not None else []
 
+    cnt = 0
     if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_0]):
-        return False
+        cnt += 1
     if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_1]):
-        return False
+        cnt += 1
     if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_2]):
-        return False
+        cnt += 1
     if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_3]):
-        return False
+        cnt += 1
     if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_4]):
+        cnt += 1
+    return cnt <= 1
+
+def unconstrained_check(state, ast, extra_constraints=None):
+    """
+    Attempts to check if an ast is completely unconstrained
+    :param state: the state to use
+    :param ast: the ast to check
+    :return: True if the ast is probably completely unconstrained
+    """
+    if ast.variables.intersection(state.solver._solver.variables):
         return False
     return True
-
 
 def fast_unconstrained_check(state, ast):
     """

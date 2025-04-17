@@ -612,9 +612,6 @@ class GadgetAnalyzer:
         if gadget_stack_change is not None and gadget_stack_change <= 0:
             return False
 
-        # if we had the lemma cache this might be already there!
-        test_val = 0x4242424242424242 % (1 << self.project.arch.bits)
-
         # TODO add test where we recognize a value past the end of the stack frame isn't controlled
         # this is an annoying problem but this code should handle it
 
@@ -622,9 +619,9 @@ class GadgetAnalyzer:
         if len(ast.variables) != 1 or not list(ast.variables)[0].startswith("symbolic_stack"):
             return False
 
-        # check whether the ast is constrained
+        # check whether it is loosely constrained if it is constrained
         if ast.variables.intersection(final_state.solver._solver.variables):
-            return rop_utils.unconstrained_check(final_state, ast)
+            return rop_utils.loose_constrained_check(final_state, ast)
 
         return True
 
