@@ -378,36 +378,40 @@ def step_to_syscall(state):
             return state
     return None
 
+def handler(signum, frame):# pylint:disable=unused-argument
+    # Exception during __del__ will be ignore
+    # so if we happen to hit a __del__, retry the alarm
+    # reference: https://docs.python.org/3/reference/datamodel.html#object.__del__
+    while frame.f_back:
+        filename = frame.f_code.co_filename
+        if frame.f_code.co_name == '__del__':
+            signal.setitimer(signal.ITIMER_REAL, 0.1, 0)
+            return
+        if filename.startswith(sys.base_prefix) and filename.endswith("/weakref.py"):
+            print("Delaying for 0.1s because of weakref.py")
+            signal.setitimer(signal.ITIMER_REAL, 0.1, 0)
+            return
+        frame = frame.f_back
+    raise RopTimeoutException("[angrop] Timeout!")
+
 def timeout(seconds_before_timeout):
     def decorate(f):
-        def handler(signum, frame):# pylint:disable=unused-argument
-            # Exception during __del__ will be ignore
-            # so if we happen to hit a __del__, retry the alarm
-            # reference: https://docs.python.org/3/reference/datamodel.html#object.__del__
-            while frame.f_back:
-                filename = frame.f_code.co_filename
-                if frame.f_code.co_name == '__del__':
-                    signal.setitimer(signal.ITIMER_REAL, 0.1, 0)
-                    return
-                if filename.startswith(sys.base_prefix) and filename.endswith("/weakref.py"):
-                    print("Delaying for 0.1s because of weakref.py")
-                    signal.setitimer(signal.ITIMER_REAL, 0.1, 0)
-                    return
-                frame = frame.f_back
-            raise RopTimeoutException("[angrop] Timeout!")
         def new_f(*args, **kwargs):
-            old = signal.signal(signal.SIGALRM, handler)
-            old_time_left = signal.alarm(seconds_before_timeout)
-            if 0 < old_time_left < seconds_before_timeout: # never lengthen existing timer
-                signal.alarm(old_time_left)
+            old = signal.getsignal(signal.SIGALRM)
+            if old == handler:
+                old = signal.signal(signal.SIGALRM, handler)
+                old_time_left = signal.alarm(seconds_before_timeout)
+                if 0 < old_time_left < seconds_before_timeout: # never lengthen existing timer
+                    signal.alarm(old_time_left)
             start_time = time.time()
             try:
                 result = f(*args, **kwargs)
             finally:
-                if old_time_left > 0: # deduct f's run time from the saved timer
-                    old_time_left -= int(time.time() - start_time)
-                signal.signal(signal.SIGALRM, old)
-                signal.alarm(old_time_left)
+                if old == handler:
+                    if old_time_left > 0: # deduct f's run time from the saved timer
+                        old_time_left -= int(time.time() - start_time)
+                    signal.signal(signal.SIGALRM, old)
+                    signal.alarm(old_time_left)
             return result
         return new_f
     return decorate

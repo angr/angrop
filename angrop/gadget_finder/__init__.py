@@ -1,5 +1,6 @@
 import re
 import time
+import signal
 import logging
 from functools import partial
 import multiprocessing as mp
@@ -8,8 +9,6 @@ import tqdm
 
 from angr.errors import SimEngineError, SimMemoryError
 from angr.misc.loggers import CuteFormatter
-from angr.analyses.bindiff import differing_constants
-from angr.analyses.bindiff import UnmatchedStatementsException
 
 from . import gadget_analyzer
 from ..arch import get_arch
@@ -20,6 +19,7 @@ l = logging.getLogger(__name__)
 
 logging.getLogger('pyvex.lifting').setLevel("ERROR")
 
+ANALYZE_GADGET_TIMEOUT = 3
 
 _global_gadget_analyzer: gadget_analyzer.GadgetAnalyzer = None # type: ignore
 
@@ -46,6 +46,36 @@ def run_worker(addr, allow_cond_branch=None):
     if isinstance(res, list):
         return res
     return [res]
+
+def handler(signum):
+    print("triggered!!!!")
+    print("exit!!!")
+    exit()
+
+def worker_func(analyzer, task_queue, result_queue, cond_br=None):
+    signal.signal(signal.SIGALRM, handler)
+    signal.alarm(ANALYZE_GADGET_TIMEOUT)
+    cnt = 0
+    while not task_queue.empty() and cnt < 200:
+        addr = task_queue.get()
+        cnt += 1
+
+        signal.alarm(ANALYZE_GADGET_TIMEOUT)
+        if cond_br is None:
+            res = analyzer.analyze_gadget(addr)
+        else:
+            res = analyzer.analyze_gadget(addr, allow_conditional_branches=cond_br)
+        signal.alarm(0)
+        if res is None:
+            res = []
+        if not isinstance(res, list):
+            res = [res]
+
+        h = None
+        bl = analyzer.project.factory.block(addr)
+        if analyzer._is_simple_gadget(addr, bl):
+            h = analyzer.block_hash(bl)
+        result_queue.put((res, h))
 
 class GadgetFinder:
     """
@@ -174,27 +204,47 @@ class GadgetFinder:
         gadgets = []
         self._cache = {}
 
-        initargs = (self.gadget_analyzer,)
-        with mp.Pool(
-            processes=processes,
-            initializer=_set_global_gadget_analyzer,
-            initargs=initargs,
-            # There is some kind of memory leak issue involving z3,
-            # so we periodically restart the worker processes.
-            maxtasksperchild=64,
-        ) as pool:
-            start = time.time()
-            it = pool.imap_unordered(run_worker, self._addresses_to_check_with_caching(show_progress))
-            while True:
-                try:
-                    new_gadgets = it.next(10)
-                except StopIteration:
-                    break
-                except mp.context.TimeoutError:
-                    break
+        task_queue = mp.Queue()
+        result_queue = mp.Queue()
+
+        procs = []
+        for _ in range(processes):
+            proc = mp.Process(target=worker_func, args=(self.gadget_analyzer, task_queue, result_queue))
+            procs.append(proc)
+
+        num_addrs = self._num_addresses_to_check()
+        iterable = self._addresses_to_check()
+        if show_progress:
+            t = tqdm.tqdm(smoothing=0, total=num_addrs,
+                                 desc="ROP", maxinterval=0.5, dynamic_ncols=True)
+
+        for addr in iterable:
+            task_queue.put(addr)
+
+        for proc in procs:
+            proc.start()
+
+        while not task_queue.empty() or not result_queue.empty():
+            # check worker status
+            for idx, p in enumerate(procs):
+                if p.is_alive():
+                    continue
+                procs[idx] = mp.Process(target=worker_func, args=(self.gadget_analyzer, task_queue, result_queue))
+                procs[idx].start()
+
+            # process results
+            cnt = 0
+            while not result_queue.empty() and cnt < 200:
+                new_gadgets, h = result_queue.get()
+                t.update(1)
+                cnt += 1
                 gadgets += new_gadgets
-                if timeout and time.time() - start > timeout:
-                    break
+
+        for proc in procs:
+            proc.terminate()
+            proc.join(timeout=0.2)
+            if proc.is_alive():
+                proc.kill()
 
         for g in gadgets:
             g.project = self.project
@@ -220,47 +270,6 @@ class GadgetFinder:
             g.project = self.project
 
         return sorted(gadgets, key=lambda x: x.addr), self.get_duplicates()
-
-    def _block_has_ip_relative(self, addr, bl):
-        """
-        Checks if a block has any ip relative instructions
-        """
-        # if thumb mode, the block needs to parsed very carefully
-        if addr & 1 == 1 and self.project.arch.bits == 32 and self.project.arch.name.startswith('ARM'):
-            # thumb mode has this conditional instruction thingy, which is terrible for vex statement
-            # comparison. We inject a ton of fake statements into the program to ensure vex that this gadget
-            # is not a conditional instruction
-            MMAP_ADDR = 0x1000
-            test_addr = MMAP_ADDR + 0x200+1
-            if self.project.loader.memory.min_addr > MMAP_ADDR:
-                # a ton of `pop {pc}`
-                self.project.loader.memory.add_backer(MMAP_ADDR, b'\x00\xbd'*0x100+b'\x00'*0x200)
-
-            # create the block without using the cache
-            engine = self.project.factory.default_engine
-            bk = engine._use_cache
-            engine._use_cache = False
-            self.project.loader.memory.store(test_addr-1, bl.bytes + b'\x00'*(0x200-len(bl.bytes)))
-            bl2 = self.project.factory.block(test_addr)
-            engine._use_cache = bk
-        else:
-            test_addr = 0x41414140 + addr % 0x10
-            bl2 = self.project.factory.block(test_addr, insn_bytes=bl.bytes)
-
-        # now diff the blocks to see whether anything constants changes
-        try:
-            diff_constants = differing_constants(bl, bl2)
-        except UnmatchedStatementsException:
-            return True
-        # check if it changes if we move it
-        bl_end = addr + bl.size
-        bl2_end = test_addr + bl2.size
-        filtered_diffs = []
-        for d in diff_constants:
-            if d.value_a < addr or d.value_a >= bl_end or \
-                    d.value_b < test_addr or d.value_b >= bl2_end:
-                filtered_diffs.append(d)
-        return len(filtered_diffs) > 0
 
     def _addresses_to_check_with_caching(self, show_progress=True):
         num_addrs = self._num_addresses_to_check()
@@ -379,12 +388,15 @@ class GadgetFinder:
             #  adding ranges instead of incrementing, instead of calling _addressses_to_check) although this is still a
             # significant improvement.
             return sum(1 for _ in self._addresses_to_check())
-        else:
-            num = 0
-            alignment = self.arch.alignment
-            for segment in self._get_executable_ranges():
-                num += segment.memsize // alignment
-            return num + len(self._syscall_locations)
+
+        cnt = 0
+        if self._syscall_locations:
+            cnt += len(self._syscall_locations)
+
+        alignment = self.arch.alignment
+        for segment in self._get_executable_ranges():
+            cnt += segment.memsize // alignment
+        return cnt
 
     def _get_ret_locations(self):
         """
@@ -458,16 +470,3 @@ class GadgetFinder:
             # find all occurrences of the ret_instructions
             addrs += [segment.min_addr + m.start() for m in re.finditer(fmt, read_bytes)]
         return sorted(addrs)
-
-    def _is_simple_gadget(self, addr, block):
-        """
-        is the gadget a simple gadget like
-        pop rax; ret
-        """
-        if block.vex.jumpkind not in {'Ijk_Boring', 'Ijk_Call', 'Ijk_Ret', 'Ijk_Sys_syscall'}:
-            return False
-        if block.vex.constant_jump_targets:
-            return False
-        if self._block_has_ip_relative(addr, block):
-            return False
-        return True

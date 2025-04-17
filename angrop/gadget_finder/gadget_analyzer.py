@@ -6,6 +6,8 @@ from collections import defaultdict
 import angr
 import pyvex
 import claripy
+from angr.analyses.bindiff import differing_constants
+from angr.analyses.bindiff import UnmatchedStatementsException
 
 from .. import rop_utils
 from ..arch import get_arch, X86, RISCV64
@@ -1067,5 +1069,69 @@ class GadgetAnalyzer:
                     l.debug(e)
         return all_reg_writes
 
+    def _block_has_ip_relative(self, addr, bl):
+        """
+        Checks if a block has any ip relative instructions
+        """
+        # if thumb mode, the block needs to parsed very carefully
+        if addr & 1 == 1 and self.project.arch.bits == 32 and self.project.arch.name.startswith('ARM'):
+            # thumb mode has this conditional instruction thingy, which is terrible for vex statement
+            # comparison. We inject a ton of fake statements into the program to ensure vex that this gadget
+            # is not a conditional instruction
+            MMAP_ADDR = 0x1000
+            test_addr = MMAP_ADDR + 0x200+1
+            if self.project.loader.memory.min_addr > MMAP_ADDR:
+                # a ton of `pop {pc}`
+                self.project.loader.memory.add_backer(MMAP_ADDR, b'\x00\xbd'*0x100+b'\x00'*0x200)
 
-# TODO ip setters, ie call rax
+            # create the block without using the cache
+            engine = self.project.factory.default_engine
+            bk = engine._use_cache
+            engine._use_cache = False
+            self.project.loader.memory.store(test_addr-1, bl.bytes + b'\x00'*(0x200-len(bl.bytes)))
+            bl2 = self.project.factory.block(test_addr)
+            engine._use_cache = bk
+        else:
+            test_addr = 0x41414140 + addr % 0x10
+            bl2 = self.project.factory.block(test_addr, insn_bytes=bl.bytes)
+
+        # now diff the blocks to see whether anything constants changes
+        try:
+            diff_constants = differing_constants(bl, bl2)
+        except UnmatchedStatementsException:
+            return True
+        # check if it changes if we move it
+        bl_end = addr + bl.size
+        bl2_end = test_addr + bl2.size
+        filtered_diffs = []
+        for d in diff_constants:
+            if d.value_a < addr or d.value_a >= bl_end or \
+                    d.value_b < test_addr or d.value_b >= bl2_end:
+                filtered_diffs.append(d)
+        return len(filtered_diffs) > 0
+
+    def _is_simple_gadget(self, addr, block):
+        """
+        is the gadget a simple gadget like
+        pop rax; ret
+        """
+        if block.vex.jumpkind not in {'Ijk_Boring', 'Ijk_Call', 'Ijk_Ret', 'Ijk_Sys_syscall'}:
+            return False
+        if block.vex.constant_jump_targets:
+            return False
+        if self._block_has_ip_relative(addr, block):
+            return False
+        return True
+
+    def block_hash(self, block):
+        """
+        a hash to uniquely identify a simple block
+        """
+        if block.vex.jumpkind == 'Ijk_Sys_syscall':
+            next_addr = block.addr + block.size
+            obj = self.project.loader.find_object_containing(next_addr)
+            if not obj:
+                return block.bytes
+            next_block = self.project.factory.block(next_addr)
+            return block.bytes + next_block.bytes
+        return block.bytes
