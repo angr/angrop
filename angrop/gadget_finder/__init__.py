@@ -286,7 +286,7 @@ class GadgetFinder:
                     continue
             except (SimEngineError, SimMemoryError):
                 continue
-            if self._is_simple_gadget(a, bl):
+            if self._gadget_analyzer._is_simple_gadget(a, bl):
                 h = self.block_hash(bl)
                 if h not in self._cache:
                     self._cache[h] = {a}
