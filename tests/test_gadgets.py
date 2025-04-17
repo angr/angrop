@@ -408,6 +408,19 @@ def test_out_of_patch():
     g = rop.analyze_gadget(0x4fd520)
     assert g.oop is False
 
+def test_controller():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64/datadep_test"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+    g = rop.analyze_gadget(0x400614)
+
+    assert 'rax' in g.reg_controllers
+    s = g.reg_controllers['rax']
+    assert len(s) == 1 and 'rax' in s
+
+    assert 'rbx' in g.reg_controllers
+    s = g.reg_controllers['rbx']
+    assert len(s) == 2 and 'rbx' in s and 'rsi' in s
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
