@@ -28,9 +28,8 @@ def _disable_loggers():
             logging.root.removeHandler(handler)
             return
 
-def handler(signum):
-    print("triggered!!!!")
-    print("exit!!!")
+def handler(signum, frame):
+    print("[angrop] worker_func times out, exit the worker process!")
     exit()
 
 def worker_func(analyzer, task_queue, result_queue, cache, lock, cond_br=None):
