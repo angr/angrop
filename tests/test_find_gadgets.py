@@ -334,10 +334,10 @@ def run_all():
         print(f)
         if hasattr(all_functions[f], '__call__'):
             all_functions[f]()
-    print("local_multiprocess_find_gadgets")
-    local_multiprocess_find_gadgets()
     print("local_multiprocess_analyze_gadget_list")
     local_multiprocess_analyze_gadget_list()
+    print("local_multiprocess_find_gadgets")
+    local_multiprocess_find_gadgets()
 
 if __name__ == "__main__":
     logging.getLogger("angrop.rop").setLevel(logging.DEBUG)

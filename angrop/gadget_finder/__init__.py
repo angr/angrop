@@ -21,8 +21,6 @@ logging.getLogger('pyvex.lifting').setLevel("ERROR")
 
 ANALYZE_GADGET_TIMEOUT = 3
 
-_global_gadget_analyzer: gadget_analyzer.GadgetAnalyzer = None # type: ignore
-
 # disable loggers in each worker
 def _disable_loggers():
     for handler in logging.root.handlers:
@@ -30,31 +28,14 @@ def _disable_loggers():
             logging.root.removeHandler(handler)
             return
 
-# global initializer for multiprocessing
-def _set_global_gadget_analyzer(rop_gadget_analyzer):
-    global _global_gadget_analyzer # pylint: disable=global-statement
-    _global_gadget_analyzer = rop_gadget_analyzer
-    _disable_loggers()
-
-def run_worker(addr, allow_cond_branch=None):
-    if allow_cond_branch is None:
-        res = _global_gadget_analyzer.analyze_gadget(addr)
-    else:
-        res = _global_gadget_analyzer.analyze_gadget(addr, allow_conditional_branches=allow_cond_branch)
-    if res is None:
-        return []
-    if isinstance(res, list):
-        return res
-    return [res]
-
 def handler(signum):
     print("triggered!!!!")
     print("exit!!!")
     exit()
 
 def worker_func(analyzer, task_queue, result_queue, cond_br=None):
+    _disable_loggers()
     signal.signal(signal.SIGALRM, handler)
-    signal.alarm(ANALYZE_GADGET_TIMEOUT)
     cnt = 0
     while not task_queue.empty() and cnt < 200:
         addr = task_queue.get()
