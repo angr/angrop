@@ -168,6 +168,7 @@ class GadgetFinder:
     def _analyze_gadgets_multiprocess(self, processes, tasks, show_progress, timeout, cond_br):
         gadgets = []
         self._cache = {}
+        start = time.time()
 
         # prepare queues
         task_queue = mp.Queue()
@@ -207,17 +208,23 @@ class GadgetFinder:
                 procs[idx].start()
 
             gadgets += self._collect_results(t, result_queue)
+            if timeout is not None and time.time() - start > timeout:
+                break
 
         # now wait for all the tasks to finish
         for proc in procs:
+            # harvest whatever is still in there
+            gadgets += self._collect_results(t, result_queue)
             if proc.is_alive():
-                proc.join(timeout=0.5)
+                if timeout is None:
+                    proc.join(timeout=0.5)
                 proc.terminate()
                 if proc.is_alive():
                     proc.kill()
 
-        # harvest whatever is still in there
-        gadgets += self._collect_results(t, result_queue)
+        # drain the task queue, or it will hang after the process exits
+        while task_queue.qsize():
+            task_queue.get()
 
         for g in gadgets:
             g.project = self.project
