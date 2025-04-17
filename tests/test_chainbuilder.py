@@ -5,6 +5,7 @@ import claripy
 import angr
 import angrop # pylint: disable=unused-import
 from angrop.rop_value import RopValue
+from angrop.rop_block import RopBlock
 from angrop.errors import RopException
 
 BIN_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "binaries")
@@ -974,6 +975,37 @@ def test_normalize_jmp_mem_with_pop():
     rop.find_gadgets_single_threaded(show_progress=False)
     chain = rop.execve()
     assert chain is not None
+
+def test_sim_exec_memory_write():
+    proj = angr.load_shellcode(
+        """
+        pop rax;
+        ret;
+        pop rbx;
+        mov qword ptr [rax+0x10], 0x41414141
+        ret
+        """,
+        "amd64",
+        simos='linux',
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.set_regs(rbx=1)
+    state = chain.exec()
+    addr = None
+    for act in state.history.actions:
+        if act.type != 'mem':
+            continue
+        if not act.data.ast.symbolic and act.data.ast.concrete_value == 0x41414141:
+            assert not act.addr.ast.symbolic
+            addr = act.addr.ast.concrete_value
+
+    rb = RopBlock.from_chain(chain)
+    _, state = rb.sim_exec()
+    assert state.solver.eval(state.memory.load(addr, 4)) == 0x41414141
 
 def run_all():
     functions = globals()

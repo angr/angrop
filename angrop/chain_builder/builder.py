@@ -413,7 +413,17 @@ class Builder:
             if action.type == action.MEM and action.addr.symbolic:
                 if len(state.solver.eval_to_ast(action.addr, 2)) == 1:
                     continue
-                state.solver.add(action.addr.ast == self._get_ptr_to_writable(action.size.ast//8))
+                if len(action.addr.ast.variables) == 1 and set(action.addr.ast.variables).pop().startswith("symbolic_stack"):
+                    ptr_bv = claripy.BVV(self._get_ptr_to_writable(action.size.ast//8), action.addr.ast.size())
+                    ropvalue = rop_utils.cast_rop_value(ptr_bv, self.project)
+                    lhs, rhs = self._rebalance_ast(action.addr.ast, ptr_bv)
+                    if self.project.arch.memory_endness == 'Iend_LE':
+                        rhs = claripy.Reverse(rhs)
+                    if ropvalue.rebase:
+                        ropvalue._value = rhs - ropvalue._code_base
+                    else:
+                        ropvalue._value = rhs
+                    map_stack_var(lhs, ropvalue)
 
         # now import the constraints from the state that has reached the end of the ropchain
         test_symbolic_state.solver.add(*state.solver.constraints)
