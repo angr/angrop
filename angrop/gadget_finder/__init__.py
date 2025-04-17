@@ -33,13 +33,35 @@ def handler(signum):
     print("exit!!!")
     exit()
 
-def worker_func(analyzer, task_queue, result_queue, cond_br=None):
+def worker_func(analyzer, task_queue, result_queue, cache, lock, cond_br=None):
     _disable_loggers()
     signal.signal(signal.SIGALRM, handler)
     cnt = 0
     while not task_queue.empty() and cnt < 200:
         addr = task_queue.get()
         cnt += 1
+
+        try:
+            h = None
+            bl = analyzer.project.factory.block(addr)
+            if bl.size > analyzer.arch.max_block_size:
+                result_queue.put(([], h))
+                continue
+        except (SimEngineError, SimMemoryError):
+            result_queue.put(([], h))
+            continue
+
+        if analyzer._is_simple_gadget(addr, bl):
+            with lock:
+                h = analyzer.block_hash(bl)
+                if h not in cache:
+                    cache[h] = {addr}
+                else:
+                    # we only return the first unique gadget
+                    # so skip duplicates
+                    cache[h].add(addr)
+                    result_queue.put(([], h))
+                    continue
 
         signal.alarm(ANALYZE_GADGET_TIMEOUT)
         if cond_br is None:
@@ -52,10 +74,6 @@ def worker_func(analyzer, task_queue, result_queue, cond_br=None):
         if not isinstance(res, list):
             res = [res]
 
-        h = None
-        bl = analyzer.project.factory.block(addr)
-        if analyzer._is_simple_gadget(addr, bl):
-            h = analyzer.block_hash(bl)
         result_queue.put((res, h))
 
 class GadgetFinder:
@@ -181,46 +199,52 @@ class GadgetFinder:
             func = worker_func
 
         # launch the subprocesses
-        procs = []
-        for _ in range(processes):
-            proc = mp.Process(target=func, args=(self.gadget_analyzer, task_queue, result_queue))
-            procs.append(proc)
+        with mp.Manager() as manager:
+            cache = manager.dict()
+            lock = manager.Lock()
+            procs = []
+            for _ in range(processes):
+                proc = mp.Process(target=func, args=(self.gadget_analyzer, task_queue, result_queue, cache, lock))
+                procs.append(proc)
 
-        # put in all the tasks
-        for addr in tasks:
-            task_queue.put(addr)
+            # put in all the tasks
+            for addr in tasks:
+                task_queue.put(addr)
 
-        t = None
-        if show_progress:
-            t = tqdm.tqdm(smoothing=0, total=task_queue.qsize(), desc="ROP", maxinterval=0.5, dynamic_ncols=True)
+            t = None
+            if show_progress:
+                t = tqdm.tqdm(smoothing=0, total=task_queue.qsize(), desc="ROP", maxinterval=0.5, dynamic_ncols=True)
 
-        # launch all subprocesses
-        for proc in procs:
-            proc.start()
+            # launch all subprocesses
+            for proc in procs:
+                proc.start()
 
-        # now do the main loop
-        while not task_queue.empty() or not result_queue.empty():
-            # check worker status
-            for idx, p in enumerate(procs):
-                if p.is_alive():
-                    continue
-                procs[idx] = mp.Process(target=func, args=(self.gadget_analyzer, task_queue, result_queue))
-                procs[idx].start()
+            # now do the main loop
+            while not task_queue.empty() or not result_queue.empty():
+                # check worker status
+                for idx, p in enumerate(procs):
+                    if p.is_alive():
+                        continue
+                    procs[idx] = mp.Process(target=func, args=(self.gadget_analyzer, task_queue, result_queue, cache, lock))
+                    procs[idx].start()
 
-            gadgets += self._collect_results(t, result_queue)
-            if timeout is not None and time.time() - start > timeout:
-                break
+                gadgets += self._collect_results(t, result_queue)
+                if timeout is not None and time.time() - start > timeout:
+                    break
 
-        # now wait for all the tasks to finish
-        for proc in procs:
-            # harvest whatever is still in there
-            gadgets += self._collect_results(t, result_queue)
-            if proc.is_alive():
-                if timeout is None:
-                    proc.join(timeout=0.5)
-                proc.terminate()
+            # now wait for all the tasks to finish
+            for proc in procs:
+                # harvest whatever is still in there
+                gadgets += self._collect_results(t, result_queue)
                 if proc.is_alive():
-                    proc.kill()
+                    if timeout is None:
+                        proc.join(timeout=0.5)
+                    proc.terminate()
+                    if proc.is_alive():
+                        proc.kill()
+
+            # save the cache
+            self._cache = dict(cache)
 
         # drain the task queue, or it will hang after the process exits
         while task_queue.qsize():
