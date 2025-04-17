@@ -173,26 +173,78 @@ class GadgetFinder:
             g.project = self.project
         return g
 
-    def analyze_gadget_list(self, addr_list, processes=4, show_progress=True):
+    def _collect_results(self, t, result_queue):
         gadgets = []
+        cnt = 0
+        while not result_queue.empty() and cnt < 200:
+            new_gadgets, h = result_queue.get()
+            if t:
+                t.update(1)
+            cnt += 1
+            gadgets += new_gadgets
+        return gadgets
 
-        initargs = (self.gadget_analyzer,)
-        iterable = addr_list
+    def _analyze_gadgets_multiprocess(self, processes, tasks, show_progress, timeout, cond_br):
+        gadgets = []
+        self._cache = {}
+
+        # prepare queues
+        task_queue = mp.Queue()
+        result_queue = mp.Queue()
+
+        # select the target function
+        if cond_br is not None:
+            func = partial(worker_func, cond_br=cond_br)
+        else:
+            func = worker_func
+
+        # launch the subprocesses
+        procs = []
+        for _ in range(processes):
+            proc = mp.Process(target=func, args=(self.gadget_analyzer, task_queue, result_queue))
+            procs.append(proc)
+
+        # put in all the tasks
+        for addr in tasks:
+            task_queue.put(addr)
+
+        t = None
         if show_progress:
-            iterable = tqdm.tqdm(iterable=iterable, smoothing=0, total=len(addr_list),
-                                 desc="ROP", maxinterval=0.5, dynamic_ncols=True)
+            t = tqdm.tqdm(smoothing=0, total=task_queue.qsize(), desc="ROP", maxinterval=0.5, dynamic_ncols=True)
 
-        func = partial(run_worker, allow_cond_branch=False)
-        with mp.Pool(processes=processes, initializer=_set_global_gadget_analyzer, initargs=initargs) as pool:
-            it = pool.imap_unordered(func, iterable, chunksize=1)
-            for gs in it:
-                if gs:
-                    gadgets += gs
+        # launch all subprocesses
+        for proc in procs:
+            proc.start()
+
+        # now do the main loop
+        while not task_queue.empty() or not result_queue.empty():
+            # check worker status
+            for idx, p in enumerate(procs):
+                if p.is_alive():
+                    continue
+                procs[idx] = mp.Process(target=func, args=(self.gadget_analyzer, task_queue, result_queue))
+                procs[idx].start()
+
+            gadgets += self._collect_results(t, result_queue)
+
+        # now wait for all the tasks to finish
+        for proc in procs:
+            if proc.is_alive():
+                proc.join(timeout=0.5)
+                proc.terminate()
+                if proc.is_alive():
+                    proc.kill()
+
+        # harvest whatever is still in there
+        gadgets += self._collect_results(t, result_queue)
 
         for g in gadgets:
             g.project = self.project
 
         return sorted(gadgets, key=lambda x: x.addr)
+
+    def analyze_gadget_list(self, addr_list, processes=4, show_progress=True):
+        return self._analyze_gadgets_multiprocess(processes, addr_list, show_progress, None, False)
 
     def get_duplicates(self):
         """
@@ -202,55 +254,8 @@ class GadgetFinder:
         return {k:v for k,v in cache.items() if len(v) >= 2}
 
     def find_gadgets(self, processes=4, show_progress=True, timeout=None):
-        gadgets = []
-        self._cache = {}
-
-        task_queue = mp.Queue()
-        result_queue = mp.Queue()
-
-        procs = []
-        for _ in range(processes):
-            proc = mp.Process(target=worker_func, args=(self.gadget_analyzer, task_queue, result_queue))
-            procs.append(proc)
-
-        num_addrs = self._num_addresses_to_check()
         iterable = self._addresses_to_check()
-        if show_progress:
-            t = tqdm.tqdm(smoothing=0, total=num_addrs,
-                                 desc="ROP", maxinterval=0.5, dynamic_ncols=True)
-
-        for addr in iterable:
-            task_queue.put(addr)
-
-        for proc in procs:
-            proc.start()
-
-        while not task_queue.empty() or not result_queue.empty():
-            # check worker status
-            for idx, p in enumerate(procs):
-                if p.is_alive():
-                    continue
-                procs[idx] = mp.Process(target=worker_func, args=(self.gadget_analyzer, task_queue, result_queue))
-                procs[idx].start()
-
-            # process results
-            cnt = 0
-            while not result_queue.empty() and cnt < 200:
-                new_gadgets, h = result_queue.get()
-                t.update(1)
-                cnt += 1
-                gadgets += new_gadgets
-
-        for proc in procs:
-            proc.terminate()
-            proc.join(timeout=0.2)
-            if proc.is_alive():
-                proc.kill()
-
-        for g in gadgets:
-            g.project = self.project
-
-        return sorted(gadgets, key=lambda x: x.addr), self.get_duplicates()
+        return self._analyze_gadgets_multiprocess(processes, iterable, show_progress, timeout, None), self.get_duplicates()
 
     def find_gadgets_single_threaded(self, show_progress=True):
         gadgets = []
