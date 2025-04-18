@@ -4,6 +4,7 @@ import time
 import signal
 import logging
 from functools import partial
+from itertools import batched
 import multiprocessing as mp
 
 import tqdm
@@ -36,43 +37,42 @@ def handler(signum, frame):
 def worker_func(analyzer, task_queue, result_queue, cache, lock, cond_br=None):
     _disable_loggers()
     signal.signal(signal.SIGALRM, handler)
-    cnt = 0
-    while not task_queue.empty() and cnt < 200:
-        addr = task_queue.get()
-        cnt += 1
+    while not task_queue.empty():
+        addrs = task_queue.get()
 
-        try:
-            h = None
-            bl = analyzer.project.factory.block(addr)
-            if bl.size > analyzer.arch.max_block_size:
+        for addr in addrs:
+            try:
+                h = None
+                bl = analyzer.project.factory.block(addr)
+                if bl.size > analyzer.arch.max_block_size:
+                    result_queue.put(([], h))
+                    continue
+            except (SimEngineError, SimMemoryError):
                 result_queue.put(([], h))
                 continue
-        except (SimEngineError, SimMemoryError):
-            result_queue.put(([], h))
-            continue
 
-        h = analyzer.block_hash(bl)
-        if h in cache:
-            with lock:
-                cache[h].add(addr)
-            result_queue.put(([], h))
-            continue
-        elif analyzer._is_simple_gadget(addr, bl):
-            with lock:
-                cache[h] = {addr}
+            h = analyzer.block_hash(bl)
+            if h in cache:
+                with lock:
+                    cache[h].add(addr)
+                result_queue.put(([], h))
+                continue
+            elif analyzer._is_simple_gadget(addr, bl):
+                with lock:
+                    cache[h] = {addr}
 
-        signal.alarm(ANALYZE_GADGET_TIMEOUT)
-        if cond_br is None:
-            res = analyzer.analyze_gadget(addr)
-        else:
-            res = analyzer.analyze_gadget(addr, allow_conditional_branches=cond_br)
-        signal.alarm(0)
-        if res is None:
-            res = []
-        if not isinstance(res, list):
-            res = [res]
+            signal.alarm(ANALYZE_GADGET_TIMEOUT)
+            if cond_br is None:
+                res = analyzer.analyze_gadget(addr)
+            else:
+                res = analyzer.analyze_gadget(addr, allow_conditional_branches=cond_br)
+            signal.alarm(0)
+            if res is None:
+                res = []
+            if not isinstance(res, list):
+                res = [res]
 
-        result_queue.put((res, h))
+            result_queue.put((res, h))
 
 class GadgetFinder:
     """
@@ -206,12 +206,12 @@ class GadgetFinder:
                 procs.append(proc)
 
             # put in all the tasks
-            for addr in tasks:
-                task_queue.put(addr)
+            for addrs in batched(tasks, 20):
+                task_queue.put(addrs)
 
             t = None
             if show_progress:
-                t = tqdm.tqdm(smoothing=0, total=task_queue.qsize(), desc="ROP", maxinterval=0.5, dynamic_ncols=True)
+                t = tqdm.tqdm(smoothing=0, total=self._num_addresses_to_check(), desc="ROP", maxinterval=0.5, dynamic_ncols=True)
 
             # launch all subprocesses
             for proc in procs:
