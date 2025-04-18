@@ -9,6 +9,7 @@ class ROPArch:
         self.max_sym_mem_access = 4
         self.alignment = project.arch.instruction_alignment
         self.reg_list = self._get_reg_list()
+        self.reg_set = set(self.reg_list) # backward compatibility, will be removed
         self.max_block_size = None
         self.fast_mode_max_block_size = None
 

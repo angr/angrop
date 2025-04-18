@@ -51,17 +51,15 @@ def worker_func(analyzer, task_queue, result_queue, cache, lock, cond_br=None):
             result_queue.put(([], h))
             continue
 
-        if analyzer._is_simple_gadget(addr, bl):
+        h = analyzer.block_hash(bl)
+        if h in cache:
             with lock:
-                h = analyzer.block_hash(bl)
-                if h not in cache:
-                    cache[h] = {addr}
-                else:
-                    # we only return the first unique gadget
-                    # so skip duplicates
-                    cache[h].add(addr)
-                    result_queue.put(([], h))
-                    continue
+                cache[h].add(addr)
+            result_queue.put(([], h))
+            continue
+        elif analyzer._is_simple_gadget(addr, bl):
+            with lock:
+                cache[h] = {addr}
 
         signal.alarm(ANALYZE_GADGET_TIMEOUT)
         if cond_br is None:
