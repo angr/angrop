@@ -1,3 +1,4 @@
+import os
 import re
 import time
 import signal
@@ -29,8 +30,8 @@ def _disable_loggers():
             return
 
 def handler(signum, frame):
-    print("[angrop] worker_func times out, exit the worker process!")
-    exit()
+    l.warning("[angrop] worker_func times out, exit the worker process!")
+    os._exit(0)
 
 def worker_func(analyzer, task_queue, result_queue, cache, lock, cond_br=None):
     _disable_loggers()
