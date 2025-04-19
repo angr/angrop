@@ -1,6 +1,7 @@
 import math
 import ctypes
 import logging
+import itertools
 from collections import defaultdict
 
 import angr
@@ -229,6 +230,39 @@ class GadgetAnalyzer:
                     if isinstance(expr.addr, pyvex.expr.Const):
                         if self.project.loader.find_segment_containing(expr.addr.con.value) is None:
                             return False
+
+            # make sure there are not too many symbolic accesses
+            # note that we can't actually distinguish between memory accesses on stack
+            # and other memory accesses, we just assume all non-word access are symbolic memory accesses
+            # consider at most one access each instruction
+
+            # split statements by instructions
+            accesses = set()
+            word_ty = f'Ity_I{self.project.arch.bits}'
+            insts = []
+            inst = []
+            for stmt in block.vex.statements:
+                if isinstance(stmt, pyvex.stmt.IMark):
+                    insts.append(inst)
+                    inst = []
+                else:
+                    inst.append(stmt)
+            if inst:
+                insts.append(inst)
+            # count memory accesses
+            for inst in insts:
+                exprs = itertools.chain(*[x.expressions for x in inst])
+                for expr in exprs:
+                    if expr.tag not in ('Iex_Load', 'Ist_Store'):
+                        continue
+                    if isinstance(expr.addr, pyvex.expr.Const):
+                        continue
+                    if expr.ty == word_ty:
+                        continue
+                    accesses.add(str(expr.addr))
+                    break
+            if len(accesses) > self.arch.max_sym_mem_access:
+                return False
 
             if not block.capstone.insns and not isinstance(self.arch, RISCV64):
                 return False
