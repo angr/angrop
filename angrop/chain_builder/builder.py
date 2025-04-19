@@ -669,7 +669,11 @@ class Builder:
 
             # step3: identify the registers that we can't fully control yet in pc_target, then set them using RegSetter
             _, final_state = rb.sim_exec()
-            reg_solves, stack_solves = self._solve_ast_constraint(gadget.pc_target, ptr)
+            print(gadget.pc_target, ptr)
+            try:
+                reg_solves, stack_solves = self._solve_ast_constraint(gadget.pc_target, ptr)
+            except claripy.errors.UnsatError:
+                return None
             to_set_regs = {x:y for x,y in reg_solves.items() if x not in rb.popped_regs}
             preserve_regs = set(reg_solves.keys()) - set(to_set_regs.keys())
             if any(x for x in to_set_regs if x not in self.chain_builder._reg_setter._reg_setting_dict):

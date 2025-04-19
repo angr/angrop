@@ -52,7 +52,7 @@ def worker_func1(addr):
             return None, None
         if len(bl.capstone2.insns) == 1 and bl.vex.jumpkind in ('Ijk_Boring', 'Ijk_Call'):
             return None, None
-        if not analyzer._allow_conditional_branches and len(bl.vex.constant_jump_targets) > 1:
+        if not analyzer._allow_conditional_branches and len(bl._vex_nostmt.constant_jump_targets) > 1:
             return None, None
         if not analyzer._block_make_sense(addr):
             return None, None
