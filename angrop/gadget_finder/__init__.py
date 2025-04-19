@@ -44,8 +44,17 @@ def worker_func1(addr):
     h = None
     analyzer = _global_gadget_analyzer
     try:
-        bl = analyzer.project.factory.block(addr)
+        bl = analyzer.project.factory.block(addr, skip_stmts=True)
         if bl.size > analyzer.arch.max_block_size:
+            return None, None
+        jumpkind = bl._vex_nostmt.jumpkind
+        if jumpkind in ('Ijk_SigTRAP', 'Ijk_NoDecode', 'Ijk_Privileged', 'Ijk_Yield'):
+            return None, None
+        if len(bl.capstone2.insns) == 1 and bl.vex.jumpkind in ('Ijk_Boring', 'Ijk_Call'):
+            return None, None
+        if not analyzer._allow_conditional_branches and len(bl.vex.constant_jump_targets) > 1:
+            return None, None
+        if not analyzer._block_make_sense(addr):
             return None, None
     except (SimEngineError, SimMemoryError):
         return None, None
@@ -167,15 +176,6 @@ class GadgetFinder:
             g.project = self.project
         return g
 
-    def _collect_results2(self, t, result_queue):
-        gadgets = []
-        while not result_queue.empty():
-            new_gadgets = result_queue.get()
-            if t:
-                t.update(1)
-            gadgets += new_gadgets
-        return gadgets
-
     def _build_cache(self, processes, tasks, task_len, show_progress):
         """
         use multiprocessing to build the cache
@@ -236,7 +236,9 @@ class GadgetFinder:
                 pool.apply_async(func, args=(addr,), callback=on_success)
             pool.close()
 
-            while time.time() - sync_data[0] < ANALYZE_GADGET_TIMEOUT and sync_data[1] < len(todos) and time.time() - start < timeout:
+            while time.time() - sync_data[0] < ANALYZE_GADGET_TIMEOUT and sync_data[1] < len(todos):
+                if timeout and time.time() - start > timeout:
+                    break
                 time.sleep(0.1)
 
             pool.terminate()

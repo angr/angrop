@@ -52,6 +52,13 @@ class X86(ROPArch):
 
     def _x86_block_make_sense(self, block):
         capstr = str(block.capstone).lower()
+
+        for inst in block.capstone.insns:
+            if inst.mnemonic == 'ret' and inst.op_str:
+                n = int(inst.op_str, 16)
+                if n % self.project.arch.bytes != 0 or n >= 0x100:
+                    return False
+
         # currently, angrop does not handle "repz ret" correctly, we filter it
         if any(x in capstr for x in ('cli', 'rex', 'repz ret', 'retf', 'hlt', 'wait', 'loop', 'lock')):
             return False

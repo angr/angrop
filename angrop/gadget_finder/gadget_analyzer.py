@@ -207,19 +207,34 @@ class GadgetAnalyzer:
             l.debug("... checking if block makes sense")
             block = self.project.factory.block(addr)
 
+            if block.size > self.arch.max_block_size:
+                l.debug("... too long")
+                return False
+
+            if block.vex.jumpkind in ('Ijk_SigTRAP', 'Ijk_NoDecode', 'Ijk_Privileged', 'Ijk_Yield'):
+                l.debug("... not decodable")
+                return False
+
+            for target in block.vex.constant_jump_targets:
+                if self.project.loader.find_segment_containing(target) is None:
+                    return False
+
+            if self._fast_mode:
+                if block.vex.jumpkind != "Ijk_Ret" and not block.vex.jumpkind.startswith("Ijk_Sys"):
+                    return False
+
+            # make sure all constant memory accesses are in-bound
+            for expr in block.vex.expressions:
+                if expr.tag in ('Iex_Load', 'Ist_Store'):
+                    if isinstance(expr.addr, pyvex.expr.Const):
+                        if self.project.loader.find_segment_containing(expr.addr.con.value) is None:
+                            return False
+
             if not block.capstone.insns and not isinstance(self.arch, RISCV64):
                 return False
 
             if not self.arch.block_make_sense(block):
                 return False
-
-            if block.vex.jumpkind == 'Ijk_NoDecode':
-                l.debug("... not decodable")
-                return False
-
-            if self._fast_mode:
-                if block.vex.jumpkind != "Ijk_Ret" and not block.vex.jumpkind.startswith("Ijk_Sys"):
-                    return False
 
             if any(isinstance(s, pyvex.IRStmt.Dirty) for s in block.vex.statements):
                 l.debug("... has dirties that we probably can't handle")
@@ -229,13 +244,8 @@ class GadgetAnalyzer:
                 if op.startswith("Iop_Div"):
                     return False
 
-            if block.size > self.arch.max_block_size:
-                l.debug("... too long")
-                return False
-
-            # we don't like floating point stuff
-            if "Ity_F16" in block.vex.tyenv.types or "Ity_F32" in block.vex.tyenv.types \
-                    or "Ity_F64" in block.vex.tyenv.types or "Ity_F128" in block.vex.tyenv.types:
+            # we don't like floating point and SIMD stuff
+            if any(t in block.vex.tyenv.types for t in ('Ity_F16', 'Ity_F32', 'Ity_F64', 'Ity_F128', 'Ity_V128')):
                 return False
         except angr.errors.SimEngineError:
             l.debug("... some simengine error")
