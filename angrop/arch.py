@@ -59,6 +59,11 @@ class X86(ROPArch):
                 if n % self.project.arch.bytes != 0 or n >= 0x100:
                     return False
 
+            if inst.mnemonic == 'int' and inst.op_str:
+                n = int(inst.op_str, 16)
+                if n != 0x80:
+                    return False
+
         # currently, angrop does not handle "repz ret" correctly, we filter it
         if any(x in capstr for x in ('cli', 'rex', 'repz ret', 'retf', 'hlt', 'wait', 'loop', 'lock')):
             return False
