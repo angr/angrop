@@ -3,9 +3,8 @@ import re
 import time
 import signal
 import logging
-from functools import partial
-from itertools import batched
 import multiprocessing as mp
+from functools import partial
 
 import tqdm
 
@@ -22,6 +21,7 @@ l = logging.getLogger(__name__)
 logging.getLogger('pyvex.lifting').setLevel("ERROR")
 
 ANALYZE_GADGET_TIMEOUT = 3
+_global_gadget_analyzer = None
 
 # disable loggers in each worker
 def _disable_loggers():
@@ -30,49 +30,46 @@ def _disable_loggers():
             logging.root.removeHandler(handler)
             return
 
+# global initializer for multiprocessing
+def _set_global_gadget_analyzer(rop_gadget_analyzer):
+    global _global_gadget_analyzer # pylint: disable=global-statement
+    _global_gadget_analyzer = rop_gadget_analyzer
+    _disable_loggers()
+
 def handler(signum, frame):
-    l.warning("[angrop] worker_func times out, exit the worker process!")
+    l.warning("[angrop] worker_func2 times out, exit the worker process!")
     os._exit(0)
 
-def worker_func(analyzer, task_queue, result_queue, cache, lock, cond_br=None):
-    _disable_loggers()
+def worker_func1(addr):
+    h = None
+    analyzer = _global_gadget_analyzer
+    try:
+        bl = analyzer.project.factory.block(addr)
+        if bl.size > analyzer.arch.max_block_size:
+            return None, None
+    except (SimEngineError, SimMemoryError):
+        return None, None
+    if analyzer._is_simple_gadget(addr, bl):
+        h = analyzer.block_hash(bl)
+        return (h, addr)
+    return None, addr
+
+def worker_func2(addr, cond_br=None):
+    analyzer = _global_gadget_analyzer
     signal.signal(signal.SIGALRM, handler)
-    while not task_queue.empty():
-        addrs = task_queue.get()
 
-        for addr in addrs:
-            try:
-                h = None
-                bl = analyzer.project.factory.block(addr)
-                if bl.size > analyzer.arch.max_block_size:
-                    result_queue.put(([], h))
-                    continue
-            except (SimEngineError, SimMemoryError):
-                result_queue.put(([], h))
-                continue
+    signal.alarm(ANALYZE_GADGET_TIMEOUT)
+    if cond_br is None:
+        res = analyzer.analyze_gadget(addr)
+    else:
+        res = analyzer.analyze_gadget(addr, allow_conditional_branches=cond_br)
+    signal.alarm(0)
+    if res is None:
+        return []
+    if isinstance(res, list):
+        return res
 
-            h = analyzer.block_hash(bl)
-            if h in cache:
-                with lock:
-                    cache[h].add(addr)
-                result_queue.put(([], h))
-                continue
-            elif analyzer._is_simple_gadget(addr, bl):
-                with lock:
-                    cache[h] = {addr}
-
-            signal.alarm(ANALYZE_GADGET_TIMEOUT)
-            if cond_br is None:
-                res = analyzer.analyze_gadget(addr)
-            else:
-                res = analyzer.analyze_gadget(addr, allow_conditional_branches=cond_br)
-            signal.alarm(0)
-            if res is None:
-                res = []
-            if not isinstance(res, list):
-                res = [res]
-
-            result_queue.put((res, h))
+    return [res]
 
 class GadgetFinder:
     """
@@ -170,83 +167,79 @@ class GadgetFinder:
             g.project = self.project
         return g
 
-    def _collect_results(self, t, result_queue):
+    def _collect_results2(self, t, result_queue):
         gadgets = []
-        cnt = 0
-        while not result_queue.empty() and cnt < 200:
-            new_gadgets, h = result_queue.get()
+        while not result_queue.empty():
+            new_gadgets = result_queue.get()
             if t:
                 t.update(1)
-            cnt += 1
             gadgets += new_gadgets
         return gadgets
 
-    def _analyze_gadgets_multiprocess(self, processes, tasks, show_progress, timeout, cond_br):
+    def _build_cache(self, processes, tasks, task_len, show_progress):
+        """
+        use multiprocessing to build the cache
+        """
+
+        todos = []
+        initargs = (self.gadget_analyzer,)
+        t = None
+        if show_progress:
+            t = tqdm.tqdm(smoothing=0, total=task_len, desc="ROP", maxinterval=0.5, dynamic_ncols=True)
+        with mp.Pool(processes=processes, initializer=_set_global_gadget_analyzer, initargs=initargs) as pool:
+            for h, addr in pool.imap_unordered(worker_func1, tasks, chunksize=100):
+                if t:
+                    t.update(1)
+                if addr is None:
+                    continue
+                if h:
+                    if h in self._cache:
+                        self._cache[h].add(addr)
+                    else:
+                        self._cache[h] = {addr}
+                        todos.append(addr)
+                else:
+                    todos.append(addr)
+        return todos
+
+    def _analyze_gadgets_multiprocess(self, processes, tasks, task_len, show_progress, timeout, cond_br):
         gadgets = []
         self._cache = {}
         start = time.time()
 
-        # prepare queues
-        task_queue = mp.Queue()
-        result_queue = mp.Queue()
+        todos = self._build_cache(processes, tasks, task_len, show_progress)
 
         # select the target function
         if cond_br is not None:
-            func = partial(worker_func, cond_br=cond_br)
+            func = partial(worker_func2, cond_br=cond_br)
         else:
-            func = worker_func
+            func = worker_func2
 
-        # launch the subprocesses
-        with mp.Manager() as manager:
-            cache = manager.dict()
-            lock = manager.Lock()
-            procs = []
-            for _ in range(processes):
-                proc = mp.Process(target=func, args=(self.gadget_analyzer, task_queue, result_queue, cache, lock))
-                procs.append(proc)
+        # the progress bar
+        t = None
+        if show_progress:
+            t = tqdm.tqdm(smoothing=0, total=len(todos), desc="ROP", maxinterval=0.5, dynamic_ncols=True)
 
-            # put in all the tasks
-            for addrs in batched(tasks, 20):
-                task_queue.put(addrs)
+        # prep for the main loop
+        sync_data = [time.time(), 0]
+        def on_success(gs):
+            gadgets.extend(gs)
+            if t:
+                t.update(1)
+            sync_data[0] = time.time()
+            sync_data[1] += 1
 
-            t = None
-            if show_progress:
-                t = tqdm.tqdm(smoothing=0, total=self._num_addresses_to_check(), desc="ROP", maxinterval=0.5, dynamic_ncols=True)
+        # the main loop
+        initargs = (self.gadget_analyzer,)
+        with mp.Pool(processes=processes, initializer=_set_global_gadget_analyzer, initargs=initargs) as pool:
+            for addr in todos:
+                pool.apply_async(func, args=(addr,), callback=on_success)
+            pool.close()
 
-            # launch all subprocesses
-            for proc in procs:
-                proc.start()
+            while time.time() - sync_data[0] < ANALYZE_GADGET_TIMEOUT and sync_data[1] < len(todos) and time.time() - start < timeout:
+                time.sleep(0.1)
 
-            # now do the main loop
-            while not task_queue.empty() or not result_queue.empty():
-                # check worker status
-                for idx, p in enumerate(procs):
-                    if p.is_alive():
-                        continue
-                    procs[idx] = mp.Process(target=func, args=(self.gadget_analyzer, task_queue, result_queue, cache, lock))
-                    procs[idx].start()
-
-                gadgets += self._collect_results(t, result_queue)
-                if timeout is not None and time.time() - start > timeout:
-                    break
-
-            # now wait for all the tasks to finish
-            for proc in procs:
-                # harvest whatever is still in there
-                gadgets += self._collect_results(t, result_queue)
-                if proc.is_alive():
-                    if timeout is None:
-                        proc.join(timeout=0.5)
-                    proc.terminate()
-                    if proc.is_alive():
-                        proc.kill()
-
-            # save the cache
-            self._cache = dict(cache)
-
-        # drain the task queue, or it will hang after the process exits
-        while task_queue.qsize():
-            task_queue.get()
+            pool.terminate()
 
         for g in gadgets:
             g.project = self.project
@@ -264,8 +257,10 @@ class GadgetFinder:
         return {k:v for k,v in cache.items() if len(v) >= 2}
 
     def find_gadgets(self, processes=4, show_progress=True, timeout=None):
-        iterable = self._addresses_to_check()
-        return self._analyze_gadgets_multiprocess(processes, iterable, show_progress, timeout, None), self.get_duplicates()
+        assert self.gadget_analyzer is not None
+        tasks = self._addresses_to_check()
+        task_len = self._num_addresses_to_check()
+        return self._analyze_gadgets_multiprocess(processes, tasks, task_len, show_progress, timeout, None), self.get_duplicates()
 
     def find_gadgets_single_threaded(self, show_progress=True):
         gadgets = []
