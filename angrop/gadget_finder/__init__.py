@@ -249,7 +249,7 @@ class GadgetFinder:
         return sorted(gadgets, key=lambda x: x.addr)
 
     def analyze_gadget_list(self, addr_list, processes=4, show_progress=True):
-        return self._analyze_gadgets_multiprocess(processes, addr_list, show_progress, None, False)
+        return self._analyze_gadgets_multiprocess(processes, addr_list, len(addr_list), show_progress, None, False)
 
     def get_duplicates(self):
         """
