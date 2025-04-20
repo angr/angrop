@@ -43,25 +43,7 @@ def handler(signum, frame):
 def worker_func1(addr):
     h = None
     analyzer = _global_gadget_analyzer
-    try:
-        bl = analyzer.project.factory.block(addr, skip_stmts=True)
-        if bl.size > analyzer.arch.max_block_size:
-            return None, None
-        jumpkind = bl._vex_nostmt.jumpkind
-        if jumpkind in ('Ijk_SigTRAP', 'Ijk_NoDecode', 'Ijk_Privileged', 'Ijk_Yield'):
-            return None, None
-        if len(bl.capstone2.insns) == 1 and bl.vex.jumpkind in ('Ijk_Boring', 'Ijk_Call'):
-            return None, None
-        if not analyzer._allow_conditional_branches and len(bl._vex_nostmt.constant_jump_targets) > 1:
-            return None, None
-        if not analyzer._block_make_sense(addr):
-            return None, None
-    except (SimEngineError, SimMemoryError):
-        return None, None
-    if analyzer._is_simple_gadget(addr, bl):
-        h = analyzer.block_hash(bl)
-        return (h, addr)
-    return None, addr
+    return analyzer._static_analyze_first_block(addr)
 
 def worker_func2(addr, cond_br=None):
     analyzer = _global_gadget_analyzer
@@ -293,14 +275,10 @@ class GadgetFinder:
                                  desc="ROP", maxinterval=0.5, dynamic_ncols=True)
 
         for a in iterable:
-            try:
-                bl = self.project.factory.block(a)
-                if bl.size > self.arch.max_block_size:
-                    continue
-            except (SimEngineError, SimMemoryError):
+            h, addr = self.gadget_analyzer._static_analyze_first_block(a)
+            if addr is None:
                 continue
-            if self._gadget_analyzer._is_simple_gadget(a, bl):
-                h = self.block_hash(bl)
+            if h:
                 if h not in self._cache:
                     self._cache[h] = {a}
                 else:

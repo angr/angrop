@@ -9,6 +9,7 @@ import pyvex
 import claripy
 from angr.analyses.bindiff import differing_constants
 from angr.analyses.bindiff import UnmatchedStatementsException
+from angr.errors import SimEngineError, SimMemoryError
 
 from .. import rop_utils
 from ..arch import get_arch, X86, RISCV64
@@ -1179,3 +1180,26 @@ class GadgetAnalyzer:
             next_block = self.project.factory.block(next_addr)
             return block.bytes + next_block.bytes
         return block.bytes
+
+    def _static_analyze_first_block(self, addr):
+        try:
+            bl = self.project.factory.block(addr, skip_stmts=True)
+            if bl.size > self.arch.max_block_size:
+                return None, None
+            jumpkind = bl._vex_nostmt.jumpkind
+            if jumpkind in ('Ijk_SigTRAP', 'Ijk_NoDecode', 'Ijk_Privileged', 'Ijk_Yield'):
+                return None, None
+            if not self._allow_conditional_branches and len(bl._vex_nostmt.constant_jump_targets) > 1:
+                return None, None
+            if self._fast_mode and jumpkind not in ("Ijk_Ret", 'Ijk_Sys_syscall', "Ijk_Boring"):
+                return None, None
+            if bl._vex_nostmt.instructions == 1 and jumpkind in ('Ijk_Boring', 'Ijk_Call'):
+                return None, None
+            if not self._block_make_sense(addr):
+                return None, None
+        except (SimEngineError, SimMemoryError):
+            return None, None
+        if self._is_simple_gadget(addr, bl):
+            h = self.block_hash(bl)
+            return (h, addr)
+        return None, addr
