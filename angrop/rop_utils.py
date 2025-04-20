@@ -46,27 +46,44 @@ def get_ast_controllers(state, ast, reg_deps) -> set:
     if not ast.symbolic:
         return controllers
 
-    # make sure it can't be symbolic if all the registers are constrained
-    constraints = []
-    for reg in reg_deps:
-        if not state.registers.load(reg).symbolic:
-            continue
-        constraints.append(state.registers.load(reg) == test_val)
-    try:
-        if len(state.solver.eval_to_ast(ast, 2, extra_constraints=constraints)) > 1:
+    # make sure only variables are registers
+    var_names = {}
+    for var in ast.variables:
+        if not var.startswith("sreg_"):
             return controllers
-    except angr.errors.SimUnsatError:
-        return set()
+        reg = (var[5:].split("-")[0])
+        var_names[reg] = var
+
+    # strip operations that dont affect control
+    strip_ast = ast
+    while 1:
+        if strip_ast.op == "Extract":
+            strip_ast = strip_ast.args[2]
+        elif strip_ast.op == "Reverse":
+            strip_ast = strip_ast.args[0]
+        elif strip_ast.op == "__add__" and len(strip_ast.args) == 2 and not strip_ast.args[1].symbolic:
+            strip_ast = strip_ast.args[0]
+        else:
+            break
+
+    # fast path just a BVS of a register
+    if len(strip_ast.variables) == 1 and strip_ast.op == "BVS":
+        assert len(reg_deps) == 1
+        # return that one register as the controller
+        return list(reg_deps)
 
     for reg in reg_deps:
-        extra_constraints = []
+        test_ast = ast
         for r in [a for a in reg_deps if a != reg]:
             # for bp and registers that might be set
             if not state.registers.load(r).symbolic:
-                continue
-            extra_constraints.append(state.registers.load(r) == test_val)
+                 continue
+            reg_sym_val = state.registers.load(r)
+            claripy.algorithm.replace(expr=test_ast,
+                                      old=reg_sym_val,
+                                      new=claripy.BVV(test_val, reg_sym_val.size()))
 
-        if unconstrained_check(state, ast, extra_constraints=extra_constraints):
+        if fast_unconstrained_check(state, test_ast):
             controllers.add(reg)
 
     return controllers
@@ -139,22 +156,67 @@ def fast_unconstrained_check(state, ast):
     :param ast: the ast to check
     :return: True if the ast is probably unconstrained
     """
-    good_ops = {"Extract", "BVS", "__add__", "__sub__", "Reverse"}
-    if len(ast.variables) != 1:
-        return unconstrained_check(state, ast)
+    good_ops = {"Extract", "BVS", "__add__", "__sub__", "__xor__", "Reverse", "BVV"}
+
+    if not ast.symbolic:
+        return False
 
     passes_prefilter = True
+
     for a in ast.children_asts():
         if a.op not in good_ops:
             passes_prefilter = False
+        # check for x __add__ x which is constrained
+        seen_vars = set()
+        for child in a.args:
+            if isinstance(child, (int, str)) or child is None:
+                continue
+            if len(child.variables & seen_vars):
+                passes_prefilter = False
+            seen_vars |= child.variables
+
     if ast.op not in good_ops:
         passes_prefilter = False
 
     if passes_prefilter:
         return True
 
-    return unconstrained_check(state, ast)
+    def must_be_constrained(ast):
+        if ast.op == "__and__":
+            for arg in ast.args:
+                if not arg.symbolic and arg.concrete_value != (1<<ast.size())-1:
+                    return True
+        if ast.op == "__or__":
+            for arg in ast.args:
+                if not arg.symbolic and arg.concrete_value != 0:
+                    return True
 
+        if ast.op == "__rshift__" or ast.op == "__lshift__":
+            for arg in ast.args:
+                if not arg.symbolic and arg.concrete_value != 0:
+                    return True
+
+        if ast.op in ["__add__", "__sub__", "__xor__"]:
+            # recursively check symbolic part when there are 2 args and one is constant
+            if len(ast.args) == 2 and (not ast.args[0].symbolic or not ast.args[1].symbolic):
+                symbolic = ast.args[1]
+                if ast.args[0].symbolic:
+                    symbolic = ast.args[0]
+                if must_be_constrained(symbolic):
+                    return True
+
+        return False
+
+    if must_be_constrained(ast):
+        return False
+
+    # check that we don't have any obvious constrained parts
+    for i in range(ast.length//8):
+        b = ast.get_byte(i)
+        if not b.symbolic or must_be_constrained(b):
+            return False
+
+    return unconstrained_check(state, ast)
 
 def get_reg_name(arch, reg_offset):
     """
@@ -172,19 +234,6 @@ def get_reg_name(arch, reg_offset):
         else:
             reg_offset -= 1
     raise RegNotFoundException("register %s not found" % str(original_offset))
-
-
-# todo this doesn't work if there is a timeout
-def _asts_must_be_equal(state, ast1, ast2):
-    """
-    :param state: the state to use for solving
-    :param ast1: first ast
-    :param ast2: second ast
-    :return: True if the ast's must be equal
-    """
-    if state.solver.satisfiable(extra_constraints=(ast1 != ast2,)):
-        return False
-    return True
 
 
 def fast_uninitialized_filler(_, addr, size, state):
