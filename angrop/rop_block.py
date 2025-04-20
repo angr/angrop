@@ -101,7 +101,7 @@ class RopBlock(RopChain):
         ga._check_reg_movers(init_state, final_state, rb)
 
         # mem effect
-        ga._analyze_concrete_regs(init_state, final_state, rb)
+        ga._analyze_concrete_regs(final_state, rb)
         ga._analyze_mem_access(final_state, init_state, rb)
 
         rb.bbl_addrs = list(final_state.history.bbl_addrs)

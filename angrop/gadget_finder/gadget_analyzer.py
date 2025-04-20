@@ -421,7 +421,7 @@ class GadgetAnalyzer:
         l.debug("... checking for reg moves")
         self._check_reg_change_dependencies(init_state, final_state, gadget)
         self._check_reg_movers(init_state, final_state, gadget)
-        self._analyze_concrete_regs(init_state, final_state, gadget)
+        self._analyze_concrete_regs(final_state, gadget)
 
         # memory access analysis
         l.debug("... analyzing mem accesses")
@@ -490,19 +490,15 @@ class GadgetAnalyzer:
         gadget = self._effect_analysis(gadget, init_state, final_state, ctrl_type, do_cond_branch)
         return gadget
 
-    def _analyze_concrete_regs(self, init_state, final_state, gadget):
+    def _analyze_concrete_regs(self, final_state, gadget):
         """
         collect registers that are concretized after symbolically executing the block (for example, xor rax, rax)
         """
-        if type(gadget) == SyscallGadget:
-            state = self._windup_to_presyscall_state(final_state, init_state)
-        else:
-            state = final_state
         for reg in self.arch.reg_list:
-            val = state.registers.load(reg)
+            val = final_state.registers.load(reg)
             if val.symbolic:
                 continue
-            gadget.concrete_regs[reg] = state.solver.eval(val)
+            gadget.concrete_regs[reg] = final_state.solver.eval(val)
 
     def _check_reg_changes(self, final_state, init_state, gadget):
         """
