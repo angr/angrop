@@ -669,7 +669,6 @@ class Builder:
 
             # step3: identify the registers that we can't fully control yet in pc_target, then set them using RegSetter
             _, final_state = rb.sim_exec()
-            print(gadget.pc_target, ptr)
             try:
                 reg_solves, stack_solves = self._solve_ast_constraint(gadget.pc_target, ptr)
             except claripy.errors.UnsatError:

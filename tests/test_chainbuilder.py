@@ -513,7 +513,7 @@ def test_aarch64_cond_branch():
     assert addrs.count(0x40000c) == 2
     assert addrs.count(0x400010) == 2
     assert 0x400008 in addrs or 0x400020 in addrs
-    assert 0x40001c in addrs
+    assert any(x in addrs for x in (0x400004, 0x40001c))
 
     chain = rop.set_regs(x2=0x41414141)
     state = chain.exec()

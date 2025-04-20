@@ -1160,7 +1160,9 @@ class GadgetAnalyzer:
         is the gadget a simple gadget like
         pop rax; ret
         """
-        if block.vex.jumpkind not in {'Ijk_Boring', 'Ijk_Call', 'Ijk_Ret', 'Ijk_Sys_syscall'}:
+        if block.vex.jumpkind not in {'Ijk_Boring', 'Ijk_Call', 'Ijk_Ret'}:
+            return False
+        if block.vex.jumpkind.startswith('Ijk_Sys_'):
             return False
         if block.vex.constant_jump_targets:
             return False
@@ -1172,7 +1174,7 @@ class GadgetAnalyzer:
         """
         a hash to uniquely identify a simple block
         """
-        if block.vex.jumpkind == 'Ijk_Sys_syscall':
+        if block.vex.jumpkind.startswith('Ijk_Sys_'):
             next_addr = block.addr + block.size
             obj = self.project.loader.find_object_containing(next_addr)
             if not obj:
@@ -1191,7 +1193,7 @@ class GadgetAnalyzer:
                 return None, None
             if not self._allow_conditional_branches and len(bl._vex_nostmt.constant_jump_targets) > 1:
                 return None, None
-            if self._fast_mode and jumpkind not in ("Ijk_Ret", 'Ijk_Sys_syscall', "Ijk_Boring"):
+            if self._fast_mode and jumpkind not in ("Ijk_Ret", "Ijk_Boring") and not jumpkind.startswith('Ijk_Sys_'):
                 return None, None
             if bl._vex_nostmt.instructions == 1 and jumpkind in ('Ijk_Boring', 'Ijk_Call'):
                 return None, None
@@ -1201,5 +1203,5 @@ class GadgetAnalyzer:
             return None, None
         if self._is_simple_gadget(addr, bl):
             h = self.block_hash(bl)
-            return (h, addr)
+            return h, addr
         return None, addr

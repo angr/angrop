@@ -292,7 +292,7 @@ class GadgetFinder:
         """
         a hash to uniquely identify a simple block
         """
-        if block.vex.jumpkind == 'Ijk_Sys_syscall':
+        if block.vex.jumpkind.startswith('Ijk_Sys_'):
             next_addr = block.addr + block.size
             obj = self.project.loader.find_object_containing(next_addr)
             if not obj:
