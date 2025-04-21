@@ -125,7 +125,7 @@ class RegSetter(Builder):
         return pc_var.startswith("next_pc")
 
     #### Graph Optimization ####
-    def normalize_for_move(self, gadget, new_move):
+    def _normalize_for_move(self, gadget, new_move):
         """
         two methods:
         1. normalize it and hope the from_reg to be set during normalization
@@ -147,11 +147,7 @@ class RegSetter(Builder):
 
         return rb
 
-    def optimize(self):
-        res = False
-        # now we have a functional RegSetter, check whether we can do better
-
-        # first, see whether we can use reg_mover to set hard-registers
+    def _optimize_with_reg_moves(self):
         # basically, we are looking for situations like this:
         # 1) we can set register A to arbitrary value (in self._reg_setting_dict) AND
         # 2) we can move register A to another register, preferably an unseen one
@@ -200,13 +196,9 @@ class RegSetter(Builder):
                             break
                     except RopException:
                         pass
+        return rop_blocks
 
-        self._insert_to_reg_dict(rop_blocks)
-        res |= bool(rop_blocks)
-
-        # second, see whether we can use non-self-contained gadgets to set hard registers
-        # TODO: we may want to optimize this algorithm since sometimes it will generate functional
-        #       equivalent chains multiple times
+    def _optimize_with_gadgets(self):
         new_blocks = set()
         shortest = {x:y[0] for x,y in self._reg_setting_dict.items() if y}
         arch_bytes = self.project.arch.bytes
@@ -220,7 +212,7 @@ class RegSetter(Builder):
             if new_pops or new_moves:
                 if new_moves:
                     for new_move in new_moves:
-                        rb = self.normalize_for_move(gadget, new_move)
+                        rb = self._normalize_for_move(gadget, new_move)
                         if rb is None:
                             continue
                         if new_move.to_reg in rb.popped_regs:
@@ -276,9 +268,22 @@ class RegSetter(Builder):
                     if reg not in shortest or rb.stack_change < shortest[reg].stack_change:
                         shortest[reg] = rb
                         new_blocks.add(rb)
+        return new_blocks
 
+    def optimize(self):
+        # now we have a functional RegSetter, check whether we can do better
+        res = False
+
+        # first, see whether we can use reg_mover to set registers
+        rop_blocks = self._optimize_with_reg_moves()
+        self._insert_to_reg_dict(rop_blocks)
+        res |= bool(rop_blocks)
+
+        # second, see whether we can use non-self-contained gadgets to set registers
+        new_blocks = self._optimize_with_gadgets()
         self._insert_to_reg_dict(new_blocks)
         res |= bool(new_blocks)
+
         return res
 
     #### The Graph Search Algorithm ####

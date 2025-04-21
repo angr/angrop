@@ -633,6 +633,12 @@ class Builder:
             if reg not in reg_setter._reg_setting_dict:
                 return None
 
+        # if the target is not symbolic, make sure the target location is writable
+        if not gadget.pc_target.symbolic:
+            seg = self.project.loader.find_segment_containing(gadget.pc_target.concrete_value)
+            if not seg or not seg.is_writable:
+                return None
+
         try:
             # step1: find a shifter that clean up the jmp_mem call
             sc = abs(gadget.stack_change) + self.project.arch.bytes

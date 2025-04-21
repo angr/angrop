@@ -84,6 +84,19 @@ def test_block_effect():
     rb._analyze_effect()
     assert not rb.popped_regs
 
+def test_normalized_block_effect():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.analyze_gadget(0x536408) #: mov r8, r14; mov rsi, r15; call qword ptr [r12 + 0xf0]
+    rop.analyze_gadget(0x41f668) #: pop r12; ret
+    rop.analyze_gadget(0x0000000000401b96) # pop rdx; ret
+    rop.analyze_gadget(0x0000000000422b5a) # pop rdi; ret
+    rop.analyze_gadget(0x000000000043cdc9) # mov qword ptr [rdi + 8], rdx; ret
+    rop.chain_builder.optimize()
+
+    chain = rop.move_regs(r8='r14', rsi='r15')
+    assert chain is not None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

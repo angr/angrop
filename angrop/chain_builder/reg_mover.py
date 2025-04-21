@@ -51,27 +51,34 @@ class RegMover(Builder):
 
             if not new_moves:
                 continue
-            preserve_regs = {m.from_reg for m in new_moves}
-            rb = self.normalize_gadget(gadget, pre_preserve=preserve_regs)
-            if rb is None:
-                continue
-            # we already normalized it, just use it as much as we can
-            if rb.popped_regs:
-                self.chain_builder._reg_setter._insert_to_reg_dict([rb])
-            if not any(m in rb.reg_moves for m in new_moves):
-                l.warning("normalizing \n%s does not yield any wanted new reg moving capability: %s", rb.dstr(), new_moves)
-                continue
-            res = True
-            for move in rb.reg_moves:
-                edge = (move.from_reg, move.to_reg)
-                if self._graph.has_edge(*edge):
-                    edge_data = self._graph.get_edge_data(*edge)
-                    edge_blocks = edge_data['block']
-                    edge_blocks.add(rb)
-                    if move.bits > edge_data['bits']:
-                        edge_data['bits'] = move.bits
-                else:
-                    self._graph.add_edge(*edge, block={rb}, bits=move.bits)
+            while new_moves:
+                new_move = new_moves.pop()
+                pre_preserve = {new_move.from_reg}
+                post_preserve = {new_move.to_reg}
+                rb = self.normalize_gadget(gadget, pre_preserve=pre_preserve, post_preserve=post_preserve)
+                if rb is None:
+                    continue
+                # if we happen to normalized another move, don't do it again
+                for m in rb.reg_moves:
+                    if m in new_moves:
+                        new_moves.remove(m)
+                # we already normalized it, just use it as much as we can
+                if rb.popped_regs:
+                    self.chain_builder._reg_setter._insert_to_reg_dict([rb])
+                if not any(m == new_move for m in rb.reg_moves):
+                    l.warning("normalizing \n%s does not yield any wanted new reg moving capability: %s", rb.dstr(), new_moves)
+                    continue
+                res = True
+                for move in rb.reg_moves:
+                    edge = (move.from_reg, move.to_reg)
+                    if self._graph.has_edge(*edge):
+                        edge_data = self._graph.get_edge_data(*edge)
+                        edge_blocks = edge_data['block']
+                        edge_blocks.add(rb)
+                        if move.bits > edge_data['bits']:
+                            edge_data['bits'] = move.bits
+                    else:
+                        self._graph.add_edge(*edge, block={rb}, bits=move.bits)
         return res
 
     def _build_move_graph(self):
