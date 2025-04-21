@@ -542,13 +542,13 @@ class GadgetAnalyzer:
             # skip popped regs
             if reg in gadget.popped_regs:
                 continue
-            # check its dependencies
+            # check its dependencies and controllers
             dependencies = self._get_reg_dependencies(symbolic_p, reg)
             if len(dependencies) != 0:
                 gadget.reg_dependencies[reg] = set(dependencies)
-            controllers = self._get_reg_controllers(symbolic_state, symbolic_p, reg, dependencies)
-            if len(controllers) != 0:
-                gadget.reg_controllers[reg] = set(controllers)
+                controllers = self._get_reg_controllers(symbolic_state, symbolic_p, reg, dependencies)
+                if controllers:
+                    gadget.reg_controllers[reg] = set(controllers)
 
     @staticmethod
     def _is_add_int(final_val, init_val):

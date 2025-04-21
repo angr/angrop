@@ -56,13 +56,15 @@ def get_ast_controllers(state, ast, reg_deps) -> set:
 
     # strip operations that dont affect control
     strip_ast = ast
-    while 1:
+    while True:
         if strip_ast.op == "Extract":
             strip_ast = strip_ast.args[2]
         elif strip_ast.op == "Reverse":
             strip_ast = strip_ast.args[0]
         elif strip_ast.op == "__add__" and len(strip_ast.args) == 2 and not strip_ast.args[1].symbolic:
             strip_ast = strip_ast.args[0]
+        elif strip_ast.op in ('ZeroExt', 'SignExt'):
+            strip_ast = strip_ast.args[1]
         else:
             break
 
@@ -82,6 +84,9 @@ def get_ast_controllers(state, ast, reg_deps) -> set:
             claripy.algorithm.replace(expr=test_ast,
                                       old=reg_sym_val,
                                       new=claripy.BVV(test_val, reg_sym_val.size()))
+        # we consider 32-bit control on 64-bit system valid
+        if state.project.arch.bits == 64 and test_ast.op in ('ZeroExt', 'SignExt') and test_ast.args[0] == 32:
+            test_ast = test_ast.args[1]
 
         if fast_unconstrained_check(state, test_ast):
             controllers.add(reg)
@@ -204,7 +209,6 @@ def fast_unconstrained_check(state, ast):
                     symbolic = ast.args[0]
                 if must_be_constrained(symbolic):
                     return True
-
         return False
 
     if must_be_constrained(ast):

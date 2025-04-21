@@ -934,8 +934,6 @@ def test_double_ropblock():
     )
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
     rop.find_gadgets_single_threaded(show_progress=False)
-    for g in rop._all_gadgets:
-        g.pp()
     chain = rop.set_regs(rax=0x3b, rdi=0x41414141)
     assert chain is not None
 
