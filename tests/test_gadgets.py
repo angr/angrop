@@ -279,7 +279,7 @@ def test_syscall_gadget():
     assert type(gadget) == SyscallGadget
     assert gadget.stack_change == 0
     assert not gadget.can_return
-    assert len(gadget.concrete_regs) == 1 and gadget.concrete_regs.pop('rax') == 0x3b
+    assert len(gadget.prologue.concrete_regs) == 1 and gadget.prologue.concrete_regs.pop('rax') == 0x3b
 
     gadget = rop.analyze_gadget(0x521cef)
     assert type(gadget) == RopGadget
@@ -293,13 +293,13 @@ def test_syscall_gadget():
     assert type(gadget) == SyscallGadget
     assert gadget.stack_change == 0
     assert not gadget.can_return
-    assert len(gadget.concrete_regs) == 1 and gadget.concrete_regs.pop('rax') == 0x3b
+    assert len(gadget.prologue.concrete_regs) == 1 and gadget.prologue.concrete_regs.pop('rax') == 0x3b
 
     gadget = rop.analyze_gadget(0x536715)
     assert type(gadget) == SyscallGadget
     assert gadget.stack_change == 0
     assert not gadget.can_return
-    assert len(gadget.concrete_regs) == 1 and gadget.concrete_regs.pop('rsi') == 0x81
+    assert len(gadget.prologue.concrete_regs) == 1 and gadget.prologue.concrete_regs.pop('rsi') == 0x81
 
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "cgc", "sc1_0b32aa01_01"), auto_load_libs=False)
     rop = proj.analyses.ROP()
