@@ -1,11 +1,8 @@
-import heapq
 import itertools
 import logging
 from collections import defaultdict, Counter
 from functools import cmp_to_key
-from typing import Iterable, Iterator
 
-import claripy
 import networkx as nx
 from angr.errors import SimUnsatError
 
@@ -16,7 +13,7 @@ from ..rop_block import RopBlock
 from ..rop_gadget import RopGadget
 from ..errors import RopException
 
-l = logging.getLogger("angrop.chain_builder.reg_setter")
+l = logging.getLogger(__name__)
 
 class RegSetter(Builder):
     """
@@ -25,23 +22,16 @@ class RegSetter(Builder):
     2. algo2: pop-only bfs search, fast, reliable, can generate chains to bypass bad-bytes
     3. algo3: riscy-rop inspired backward search, slow, can utilize gadgets containing conditional branches
     """
+
+    #### Inits ####
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
         # all the gadgets that can set registers
         self._reg_setting_gadgets: set[RopGadget]= None # type: ignore
         self.hard_chain_cache: dict[tuple, list] = None # type: ignore
         # Estimate of how difficult it is to set each register.
-        self._reg_weights: dict[str, int] = None # type: ignore
         # all self-contained and not symbolic access
         self._reg_setting_dict: dict[str, list] = None # type: ignore
-
-    def _insert_to_reg_dict(self, gs):
-        for rb in gs:
-            for reg in rb.popped_regs:
-                self._reg_setting_dict[reg].append(rb)
-        for reg in self._reg_setting_dict:
-            lst = self._reg_setting_dict[reg]
-            self._reg_setting_dict[reg] = sorted(lst, key=lambda x: x.stack_change)
 
     def bootstrap(self):
         self._reg_setting_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
@@ -60,12 +50,102 @@ class RegSetter(Builder):
         reg_pops = Counter()
         for gadget in self._reg_setting_gadgets:
             reg_pops.update(gadget.popped_regs)
-        self._reg_weights = {
-            reg: 5 if reg_pops[reg] == 0 else 2 if reg_pops[reg] == 1 else 1
-            for reg in self.arch.reg_list
-        }
 
         self.hard_chain_cache = {}
+
+    #### Utility Functions ####
+    def _insert_to_reg_dict(self, gs):
+        for rb in gs:
+            for reg in rb.popped_regs:
+                self._reg_setting_dict[reg].append(rb)
+        for reg in self._reg_setting_dict:
+            lst = self._reg_setting_dict[reg]
+            self._reg_setting_dict[reg] = sorted(lst, key=lambda x: x.stack_change)
+
+    def _expand_ropblocks(self, mixins):
+        """
+        expand simple ropblocks to gadgets so that we don't encounter solver conflicts
+        when using the same ropblock multiple times
+        """
+        gadgets = []
+        for mixin in mixins:
+            if isinstance(mixin, RopGadget):
+                gadgets.append(mixin)
+            elif isinstance(mixin, RopBlock):
+                if mixin._blank_state.solver.constraints:
+                    try:
+                        rb = self._build_reg_setting_chain(mixin._gadgets, {})
+                        rb = RopBlock.from_chain(rb)
+                        if mixin.popped_regs.issubset(rb.popped_regs):
+                            rb.pop_equal_set = mixin.pop_equal_set.copy()
+                            gadgets += mixin._gadgets
+                            continue
+                    except RopException:
+                        pass
+                    gadgets.append(mixin)
+                else:
+                    gadgets += mixin._gadgets
+            else:
+                raise ValueError(f"cannot turn {mixin} into RopBlock!")
+        return gadgets
+
+    def verify(self, chain, preserve_regs, registers):
+        """
+        given a potential chain, verify whether the chain can set the registers correctly by symbolically
+        execute the chain
+        """
+        chain_str = chain.dstr()
+        state = chain.exec()
+        for act in state.history.actions.hardcopy:
+            if act.type not in ("mem", "reg"):
+                continue
+            if act.type == 'mem':
+                if act.addr.ast.variables and any(not x.startswith('sym_addr') for x in act.addr.ast.variables):
+                    l.exception("memory access outside stackframe\n%s\n", chain_str)
+                    return False
+            if act.type == 'reg' and act.action == 'write':
+                # get the full name of the register
+                offset = act.offset
+                offset -= act.offset % self.project.arch.bytes
+                reg_name = self.project.arch.translate_register_name(offset)
+                if reg_name in preserve_regs:
+                    l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-1.\nregisters: %s\npreserve_regs: %s",
+                                chain_str, registers, preserve_regs)
+                    return False
+        for reg, val in registers.items():
+            bv = getattr(state.regs, reg)
+            if (val.symbolic != bv.symbolic) or state.solver.eval(bv != val.data):
+                l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-2.\nregisters: %s\npreserve_regs: %s",
+                            chain_str, registers, preserve_regs)
+                return False
+        # the next pc must be marked as the next_pc
+        if len(state.regs.pc.variables) != 1:
+            return False
+        pc_var = set(state.regs.pc.variables).pop()
+        return pc_var.startswith("next_pc")
+
+    #### Graph Optimization ####
+    def normalize_for_move(self, gadget, new_move):
+        """
+        two methods:
+        1. normalize it and hope the from_reg to be set during normalization
+        2. normalize it and make sure the from_reg won't be clobbered during normalization and then prepend it
+        """
+        rb = self.normalize_gadget(gadget, post_preserve={new_move.to_reg})
+        if rb is None: # if this does not exist, no need to try the more strict version
+            return None
+        if new_move.to_reg in rb.popped_regs:
+            return rb
+
+        rb = self.normalize_gadget(gadget, pre_preserve={new_move.from_reg}, post_preserve={new_move.to_reg})
+        if rb is None:
+            return None
+        reg_setter = self._reg_setting_dict[new_move.from_reg][0]
+        if isinstance(reg_setter, RopGadget):
+            reg_setter = RopBlock.from_gadget(reg_setter, self)
+        rb = reg_setter + rb
+
+        return rb
 
     def optimize(self):
         res = False
@@ -201,157 +281,7 @@ class RegSetter(Builder):
         res |= bool(new_blocks)
         return res
 
-    def normalize_for_move(self, gadget, new_move):
-        """
-        two methods:
-        1. normalize it and hope the from_reg to be set during normalization
-        2. normalize it and make sure the from_reg won't be clobbered during normalization and then prepend it
-        """
-        rb = self.normalize_gadget(gadget, post_preserve={new_move.to_reg})
-        if rb is None: # if this does not exist, no need to try the more strict version
-            return None
-        if new_move.to_reg in rb.popped_regs:
-            return rb
-
-        rb = self.normalize_gadget(gadget, pre_preserve={new_move.from_reg}, post_preserve={new_move.to_reg})
-        if rb is None:
-            return None
-        reg_setter = self._reg_setting_dict[new_move.from_reg][0]
-        if isinstance(reg_setter, RopGadget):
-            reg_setter = RopBlock.from_gadget(reg_setter, self)
-        rb = reg_setter + rb
-
-        return rb
-
-    def verify(self, chain, preserve_regs, registers):
-        """
-        given a potential chain, verify whether the chain can set the registers correctly by symbolically
-        execute the chain
-        """
-        chain_str = chain.dstr()
-        state = chain.exec()
-        for act in state.history.actions.hardcopy:
-            if act.type not in ("mem", "reg"):
-                continue
-            if act.type == 'mem':
-                if act.addr.ast.variables and any(not x.startswith('sym_addr') for x in act.addr.ast.variables):
-                    l.exception("memory access outside stackframe\n%s\n", chain_str)
-                    return False
-            if act.type == 'reg' and act.action == 'write':
-                # get the full name of the register
-                offset = act.offset
-                offset -= act.offset % self.project.arch.bytes
-                reg_name = self.project.arch.translate_register_name(offset)
-                if reg_name in preserve_regs:
-                    l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-1.\nregisters: %s\npreserve_regs: %s",
-                                chain_str, registers, preserve_regs)
-                    return False
-        for reg, val in registers.items():
-            bv = getattr(state.regs, reg)
-            if (val.symbolic != bv.symbolic) or state.solver.eval(bv != val.data):
-                l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-2.\nregisters: %s\npreserve_regs: %s",
-                            chain_str, registers, preserve_regs)
-                return False
-        # the next pc must be marked as the next_pc
-        if len(state.regs.pc.variables) != 1:
-            return False
-        pc_var = set(state.regs.pc.variables).pop()
-        return pc_var.startswith("next_pc")
-
-    def _expand_ropblocks(self, mixins):
-        """
-        expand simple ropblocks to gadgets so that we don't encounter solver conflicts
-        when using the same ropblock multiple times
-        """
-        gadgets = []
-        for mixin in mixins:
-            if isinstance(mixin, RopGadget):
-                gadgets.append(mixin)
-            elif isinstance(mixin, RopBlock):
-                if mixin._blank_state.solver.constraints:
-                    try:
-                        rb = self._build_reg_setting_chain(mixin._gadgets, {})
-                        rb = RopBlock.from_chain(rb)
-                        if mixin.popped_regs.issubset(rb.popped_regs):
-                            rb.pop_equal_set = mixin.pop_equal_set.copy()
-                            gadgets += mixin._gadgets
-                            continue
-                    except RopException:
-                        pass
-                    gadgets.append(mixin)
-                else:
-                    gadgets += mixin._gadgets
-            else:
-                raise ValueError(f"cannot turn {mixin} into RopBlock!")
-        return gadgets
-
-    def run(self, modifiable_memory_range=None, preserve_regs=None, max_length=10, **registers):
-        if len(registers) == 0:
-            return RopChain(self.project, self, badbytes=self.badbytes)
-
-        # sanity check
-        preserve_regs = set(preserve_regs) if preserve_regs else set()
-        unknown_regs = set(registers.keys()).union(preserve_regs) - set(self.arch.reg_list)
-        if unknown_regs:
-            raise RopException("unknown registers: %s" % unknown_regs)
-
-        # cast values to RopValue
-        for x in registers:
-            registers[x] = rop_utils.cast_rop_value(registers[x], self.project)
-
-        for gadgets in self.iterate_candidate_chains(modifiable_memory_range, preserve_regs, max_length, registers):
-            chain_str = "\n".join(g.dstr() for g in gadgets)
-            l.debug("building reg_setting chain with chain:\n%s", chain_str)
-            try:
-                gadgets = self._expand_ropblocks(gadgets)
-                chain = self._build_reg_setting_chain(gadgets, registers)
-                chain._concretize_chain_values(timeout=len(chain._values)*3)
-                if self.verify(chain, preserve_regs, registers):
-                    #self._chain_cache[reg_tuple].append(gadgets)
-                    return chain
-            except (RopException, SimUnsatError):
-                pass
-
-        raise RopException("Couldn't set registers :(")
-
-    def iterate_candidate_chains(self, modifiable_memory_range, preserve_regs, max_length, registers):
-        gadgets = self.find_candidate_chains_giga_graph_search(modifiable_memory_range, registers, preserve_regs)
-        yield from gadgets
-
-    #### Chain Building Algorithm 0: super graph search algorithm described in the angrop-paper ####
-    def _handle_hard_regs(self, gadgets, registers, preserve_regs):
-        # handle register set that contains bad byte (so it can't be popped)
-        # and cannot be directly set using concrete values
-        hard_regs = [reg for reg, val in registers.items() if self._word_contain_badbyte(val)]
-        if len(hard_regs) > 1:
-            l.error("too many registers contain bad bytes! bail out! %s", registers)
-            raise RopException("too many registers contain bad bytes")
-        if not hard_regs:
-            return
-        if registers[hard_regs[0]].symbolic:
-            return
-
-        # if hard_regs exists, try to use concrete values to craft the value
-        hard_chain = []
-        reg = hard_regs[0]
-        val = registers[reg].concreted
-        key = (reg, val)
-        if key in self.hard_chain_cache:
-            hard_chain = self.hard_chain_cache[key]
-        else:
-            hard_chains = self._find_concrete_chains(gadgets, {reg: val})
-            if hard_chains:
-                hard_chain = hard_chains[0]
-            else:
-                hard_chain = self._find_add_chain(gadgets, reg, val)
-            if hard_chain:
-                self.hard_chain_cache[key] = hard_chain # we cache the result even if it fails
-        if not hard_chain:
-            l.error("Fail to set register: %s to: %#x", reg, val)
-            raise RopException("Fail to set hard registers")
-        registers.pop(reg)
-        return hard_chain
-
+    #### The Graph Search Algorithm ####
     def _reduce_graph(self, graph, regs):
         """
         TODO: maybe make the reduction smarter instead of just 5 gadgets each edge
@@ -522,6 +452,39 @@ class RegSetter(Builder):
                     gadgets.add(g)
         return gadgets
 
+    def _handle_hard_regs(self, gadgets, registers, preserve_regs):
+        # handle register set that contains bad byte (so it can't be popped)
+        # and cannot be directly set using concrete values
+        hard_regs = [reg for reg, val in registers.items() if self._word_contain_badbyte(val)]
+        if len(hard_regs) > 1:
+            l.error("too many registers contain bad bytes! bail out! %s", registers)
+            raise RopException("too many registers contain bad bytes")
+        if not hard_regs:
+            return
+        if registers[hard_regs[0]].symbolic:
+            return
+
+        # if hard_regs exists, try to use concrete values to craft the value
+        hard_chain = []
+        reg = hard_regs[0]
+        val = registers[reg].concreted
+        key = (reg, val)
+        if key in self.hard_chain_cache:
+            hard_chain = self.hard_chain_cache[key]
+        else:
+            hard_chains = self._find_concrete_chains(gadgets, {reg: val})
+            if hard_chains:
+                hard_chain = hard_chains[0]
+            else:
+                hard_chain = self._find_add_chain(gadgets, reg, val)
+            if hard_chain:
+                self.hard_chain_cache[key] = hard_chain # we cache the result even if it fails
+        if not hard_chain:
+            l.error("Fail to set register: %s to: %#x", reg, val)
+            raise RopException("Fail to set hard registers")
+        registers.pop(reg)
+        return hard_chain
+
     @staticmethod
     def _find_concrete_chains(gadgets, registers):
         chains = []
@@ -617,3 +580,32 @@ class RegSetter(Builder):
 
             gadgets -= equal_class
         return bests
+
+    #### Main Entrance ####
+    def run(self, modifiable_memory_range=None, preserve_regs=None, **registers):
+        if len(registers) == 0:
+            return RopChain(self.project, self, badbytes=self.badbytes)
+
+        # sanity check
+        preserve_regs = set(preserve_regs) if preserve_regs else set()
+        unknown_regs = set(registers.keys()).union(preserve_regs) - set(self.arch.reg_list)
+        if unknown_regs:
+            raise RopException("unknown registers: %s" % unknown_regs)
+
+        # cast values to RopValue
+        for x in registers:
+            registers[x] = rop_utils.cast_rop_value(registers[x], self.project)
+
+        for gadgets in self.find_candidate_chains_giga_graph_search(modifiable_memory_range, registers, preserve_regs):
+            chain_str = "\n".join(g.dstr() for g in gadgets)
+            l.debug("building reg_setting chain with chain:\n%s", chain_str)
+            try:
+                gadgets = self._expand_ropblocks(gadgets)
+                chain = self._build_reg_setting_chain(gadgets, registers)
+                chain._concretize_chain_values(timeout=len(chain._values)*3)
+                if self.verify(chain, preserve_regs, registers):
+                    return chain
+            except (RopException, SimUnsatError):
+                pass
+
+        raise RopException("Couldn't set registers :(")
