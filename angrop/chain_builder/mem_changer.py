@@ -117,24 +117,8 @@ class MemChanger(Builder):
         if not possible_gadgets:
             raise RopException("Fail to find any gadget that can perform memory adding...")
 
-        # get the data from trying to set all the registers
-        registers = dict((reg, 0x41) for reg in self.chain_builder.arch.reg_list)
-        l.debug("getting reg data for mem adds")
-        _, _, reg_data = self.chain_builder._reg_setter.find_candidate_chains_graph_search(max_stack_change=0x50,
-                                                                                           **registers)
-        l.debug("trying mem_add gadgets")
-
-        # filter out gadgets that certainly cannot be used for add_mem
-        # e.g. we can't set needed registers
-        gadgets = set()
-        for t, _ in reg_data.items():
-            for g in possible_gadgets:
-                mem_change = g.mem_changes[0]
-                if (set(mem_change.addr_dependencies) | set(mem_change.data_dependencies)).issubset(set(t)):
-                    gadgets.add(g)
-
         # sort the gadgets with number of memory accesses and stack_change
-        gadgets = self._sort_gadgets(gadgets)
+        gadgets = self._sort_gadgets(possible_gadgets)
 
         if not gadgets:
             raise RopException("Couldnt set registers for any memory add gadget")
