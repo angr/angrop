@@ -122,7 +122,7 @@ class GadgetFinder:
         if self.kernel_mode:
             self._syscall_locations = []
         else:
-            self._syscall_locations = self._get_syscall_locations_by_string()
+            self._syscall_locations = self._get_syscall_locations()
 
         # find locations to analyze
         if self.only_check_near_rets and not self._ret_locations:
@@ -394,10 +394,10 @@ class GadgetFinder:
         :return: all the locations in the binary with a ret instruction
         """
 
-        try:
-            return self._get_ret_locations_by_string()
-        except RopException:
-            pass
+        if self.arch.ret_insts:
+            return self._get_locations_by_strings(self.arch.ret_insts)
+
+        l.warning("Only have ret strings for i386/amd64/aarch64/riscv, now start the slow path for identifying gadgets end with 'ret'")
 
         addrs = []
         seen = set()
@@ -427,22 +427,13 @@ class GadgetFinder:
 
         return sorted(addrs)
 
-    def _get_ret_locations_by_string(self):
-        """
-        uses a string filter to find the return instructions
-        :return: all the locations in the binary with a ret instruction
-        """
-        if not self.arch.ret_insts:
-            raise RopException("Only have ret strings for i386/x86_64/aarch64")
-        return self._get_locations_by_strings(self.arch.ret_insts)
-
-    def _get_syscall_locations_by_string(self):
+    def _get_syscall_locations(self):
         """
         uses a string filter to find all the system calls instructions
         :return: all the locations in the binary with a system call instruction
         """
         if not self.arch.syscall_insts:
-            l.warning("Only have syscall strings for i386 and x86_64")
+            l.warning("Only have syscall strings for i386/amd64/mips, fail to identify syscall strings")
             return []
         return self._get_locations_by_strings(self.arch.syscall_insts)
 
