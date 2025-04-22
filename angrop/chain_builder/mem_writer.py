@@ -208,6 +208,15 @@ class MemWriter(Builder):
         if len(gadget.mem_writes) != 1 or len(gadget.mem_reads) + len(gadget.mem_changes) > 0:
             raise RopException("too many memory accesses for my lazy implementation")
 
+        # before we start doing symbolic execution, which is super slow, let's sanity check that we can set
+        # all the dependency registers, if it can't, it will raise RopException
+        m = gadget.mem_writes[0]
+        deps = m.addr_dependencies | m.data_dependencies
+        test_value = 0x4141414141414141 % (1<<self.project.arch.bits)
+        test_regs = {x:test_value for x in deps}
+        self._set_regs(**test_regs, preserve_regs=preserve_regs, warn=False)
+
+        # actually start
         if use_partial_controllers and len(data) < self.project.arch.bytes:
             data = data.ljust(self.project.arch.bytes, b"\x00")
 

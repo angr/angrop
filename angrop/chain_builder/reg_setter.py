@@ -310,7 +310,7 @@ class RegSetter(Builder):
             objects = sorted(objects, key=cmp_to_key(giga_graph_gadget_compare))[:5]
             graph.get_edge_data(*edge)['objects'] = objects
 
-    def find_candidate_chains_giga_graph_search(self, modifiable_memory_range, registers, preserve_regs):
+    def find_candidate_chains_giga_graph_search(self, modifiable_memory_range, registers, preserve_regs, warn):
         if preserve_regs is None:
             preserve_regs = set()
         else:
@@ -394,7 +394,8 @@ class RegSetter(Builder):
         # bad, we can't set all registers, no need to try
         to_set_reg_set = set(registers.keys())
         if to_set_reg_set - total_reg_set:
-            l.warning("fail to cover all registers using giga_graph_search!\nregister covered: %s, registers to set: %s", total_reg_set, to_set_reg_set)
+            if warn:
+                l.warning("fail to cover all registers using giga_graph_search!\nregister covered: %s, registers to set: %s", total_reg_set, to_set_reg_set)
             return []
 
         self._reduce_graph(graph, regs)
@@ -587,7 +588,7 @@ class RegSetter(Builder):
         return bests
 
     #### Main Entrance ####
-    def run(self, modifiable_memory_range=None, preserve_regs=None, **registers):
+    def run(self, modifiable_memory_range=None, preserve_regs=None, warn=True, **registers):
         if len(registers) == 0:
             return RopChain(self.project, self, badbytes=self.badbytes)
 
@@ -601,7 +602,7 @@ class RegSetter(Builder):
         for x in registers:
             registers[x] = rop_utils.cast_rop_value(registers[x], self.project)
 
-        for gadgets in self.find_candidate_chains_giga_graph_search(modifiable_memory_range, registers, preserve_regs):
+        for gadgets in self.find_candidate_chains_giga_graph_search(modifiable_memory_range, registers, preserve_regs, warn):
             chain_str = "\n".join(g.dstr() for g in gadgets)
             l.debug("building reg_setting chain with chain:\n%s", chain_str)
             try:

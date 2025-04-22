@@ -70,9 +70,9 @@ class RegMover(Builder):
                 if m.bits > edge_data['bits']:
                     new_moves.append(m)
                     continue
-                # we use address as key here instead of gadget because the gadget
-                # returned by multiprocessing may be different from the original one
-                self._normalize_todos[gadget.addr] = (gadget, new_moves)
+            # we use address as key here instead of gadget because the gadget
+            # returned by multiprocessing may be different from the original one
+            self._normalize_todos[gadget.addr] = (gadget, new_moves)
 
     def normalize_todos(self):
         addrs = sorted(self._normalize_todos.keys())
@@ -121,6 +121,12 @@ class RegMover(Builder):
                 todo_new_moves = self._normalize_todos[addr][1]
                 if m in todo_new_moves:
                     todo_new_moves.remove(m)
+            # now we have this new_move, remove it from the todo list
+            for m in rb.reg_moves:
+                for addr in self._normalize_todos:
+                    new_moves = self._normalize_todos[addr][1]
+                    if m in new_moves:
+                        new_moves.remove(m)
             # we already normalized it, just use it as much as we can
             if rb.popped_regs:
                 self.chain_builder._reg_setter._insert_to_reg_dict([rb])
