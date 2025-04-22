@@ -450,14 +450,8 @@ class GadgetFinder:
         fmt = b'(' + b')|('.join(strings) + b')'
 
         addrs = []
-        state = self.project.factory.entry_state()
         for segment in self._get_executable_ranges():
-            # angr is slow to read huge chunks
-            read_bytes = []
-            for i in range(segment.min_addr, segment.min_addr+segment.memsize, 0x100):
-                read_size = min(0x100, segment.min_addr+segment.memsize-i)
-                read_bytes.append(state.solver.eval(state.memory.load(i, read_size), cast_to=bytes))
-            read_bytes = b"".join(read_bytes)
+            read_bytes = self.project.loader.memory.load(segment.min_addr, segment.memsize)
             # find all occurrences of the ret_instructions
             addrs += [segment.min_addr + m.start() for m in re.finditer(fmt, read_bytes)]
         return sorted(addrs)
