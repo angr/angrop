@@ -294,6 +294,13 @@ class Builder:
                     lhs = lhs.args[2]
                 case "Concat":
                     raise RopException("cannot rebalance Concat")
+                case "__rshift__" | "__lshift__":
+                    bits = lhs.args[1]
+                    if lhs.op == '__rshift__':
+                        rhs = rhs << bits
+                    else:
+                        rhs = rhs >> bits
+                    lhs = lhs.args[0]
                 case _:
                     raise ValueError(f"{lhs.op} cannot be rebalanced at the moment. plz create an issue!")
         assert self._ast_contains_stack_data(lhs)

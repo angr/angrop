@@ -665,8 +665,9 @@ class GadgetAnalyzer:
         # check whether it is loosely constrained if it is constrained
         if ast.variables.intersection(final_state.solver._solver.variables):
             return rop_utils.loose_constrained_check(final_state, ast)
-
-        return True
+        # if it is not constrained, check whether it is a decent ast
+        # (symbolic_stack_0_0_32 >> 0x1f) is not because we only control 1 bit
+        return rop_utils.fast_unconstrained_check(final_state, ast)
 
     def _check_if_stack_pivot(self, init_state, final_state):
         ip_variables = list(final_state.ip.variables)

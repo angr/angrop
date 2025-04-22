@@ -127,7 +127,7 @@ class ROP(Analysis):
         self._screen_gadgets()
         return g
 
-    def analyze_gadget_list(self, addr_list, processes=4, show_progress=True):
+    def analyze_gadget_list(self, addr_list, processes=4, show_progress=True, optimize=True):
         """
         Analyzes a list of addresses to identify ROP gadgets.
         Saves rop gadgets in self.rop_gadgets
@@ -140,6 +140,8 @@ class ROP(Analysis):
         self._all_gadgets = self.gadget_finder.analyze_gadget_list(
             addr_list, processes=processes, show_progress=show_progress)
         self._screen_gadgets()
+        if optimize:
+            self.chain_builder.optimize(processes=processes)
         return self.rop_gadgets
 
     def find_gadgets(self, optimize=True, **kwargs):
