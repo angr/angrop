@@ -270,7 +270,7 @@ class RegSetter(Builder):
                         new_blocks.add(rb)
         return new_blocks
 
-    def optimize(self):
+    def optimize(self, processes):
         # now we have a functional RegSetter, check whether we can do better
         res = False
 

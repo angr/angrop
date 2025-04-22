@@ -155,7 +155,8 @@ class ROP(Analysis):
         self._all_gadgets, self._duplicates = self.gadget_finder.find_gadgets(**kwargs)
         self._screen_gadgets()
         if optimize:
-            self.chain_builder.optimize()
+            processes = kwargs.get('processes', 4)
+            self.chain_builder.optimize(processes=processes)
         return self.rop_gadgets
 
     def find_gadgets_single_threaded(self, show_progress=True, optimize=True):
@@ -169,7 +170,7 @@ class ROP(Analysis):
                                                                  show_progress=show_progress)
         self._screen_gadgets()
         if optimize:
-            self.chain_builder.optimize()
+            self.chain_builder.optimize(processes=1)
         return self.rop_gadgets
 
     def _get_cache_tuple(self):

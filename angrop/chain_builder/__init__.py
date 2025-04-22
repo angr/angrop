@@ -185,7 +185,7 @@ class ChainBuilder:
         except RopException:
             self._can_do_write = False
 
-    def optimize(self):
+    def optimize(self, processes=1):
         # optimize reg_mover and reg_setter
         again = True
         cnt = 0
@@ -194,6 +194,6 @@ class ChainBuilder:
             # If we can't, then there is no way to normalize jmp_mem gadgets
             self.check_can_do_write()
 
-            again = self._reg_mover.optimize()
-            again |= self._reg_setter.optimize()
+            again = self._reg_mover.optimize(processes=processes)
+            again |= self._reg_setter.optimize(processes=processes)
             cnt += 1

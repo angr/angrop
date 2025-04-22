@@ -112,7 +112,6 @@ class RegMover(Builder):
             if cnt == 0:
                 again = False
 
-
     def normalize_single_threaded(self):
         for new_move, gadget in self.normalize_todos():
             gadget.project = self.project
@@ -135,7 +134,7 @@ class RegMover(Builder):
                 rb._blank_state = state
                 yield new_move, addr, rb
 
-    def optimize(self, processes=16):
+    def optimize(self, processes):
         res = False
         self.build_normalize_todos()
         if processes == 1:
