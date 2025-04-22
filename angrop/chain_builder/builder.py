@@ -619,6 +619,8 @@ class Builder:
         return None
 
     def _normalize_jmp_mem(self, gadget, pre_preserve=None, post_preserve=None):
+        if not self.chain_builder._can_do_write:
+            return None
         if pre_preserve is None:
             pre_preserve = set()
         if post_preserve is None:

@@ -9,6 +9,7 @@ from .sys_caller import SysCaller
 from .pivot import Pivot
 from .shifter import Shifter
 from .. import rop_utils
+from ..errors import RopException
 
 l = logging.getLogger("angrop.chain_builder")
 
@@ -48,6 +49,7 @@ class ChainBuilder:
             l.warning("%s is not a fully supported OS, SysCaller may not work on this OS",
                       self.project.loader.main_object.os)
         self._shifter = Shifter(self)
+        self._can_do_write = None
 
     def set_regs(self, *args, **kwargs):
         """
@@ -171,11 +173,27 @@ class ChainBuilder:
         self._pivot.bootstrap()
         self._shifter.bootstrap()
 
+    def check_can_do_write(self):
+        bits = self.project.arch.bits
+        if bits == 32:
+            ptr = 0x31313131
+        else:
+            ptr = 0x313131313131
+        try:
+            self.write_to_mem(ptr, b'A'*4)
+            self._can_do_write = True
+        except RopException:
+            self._can_do_write = False
+
     def optimize(self):
         # optimize reg_mover and reg_setter
         again = True
         cnt = 0
         while again and cnt < 5:
+            # check whether we can do memory write in the first place.
+            # If we can't, then there is no way to normalize jmp_mem gadgets
+            self.check_can_do_write()
+
             again = self._reg_mover.optimize()
             again |= self._reg_setter.optimize()
             cnt += 1
