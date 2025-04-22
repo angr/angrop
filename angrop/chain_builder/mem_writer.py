@@ -208,13 +208,12 @@ class MemWriter(Builder):
         if len(gadget.mem_writes) != 1 or len(gadget.mem_reads) + len(gadget.mem_changes) > 0:
             raise RopException("too many memory accesses for my lazy implementation")
 
-        # before we start doing symbolic execution, which is super slow, let's sanity check that we can set
-        # all the dependency registers, if it can't, it will raise RopException
-        m = gadget.mem_writes[0]
-        deps = m.addr_dependencies | m.data_dependencies
-        test_value = 0x4141414141414141 % (1<<self.project.arch.bits)
-        test_regs = {x:test_value for x in deps}
-        self._set_regs(**test_regs, preserve_regs=preserve_regs, warn=False)
+        # sanity check, make sure it doesn't clobber any preserved_regs
+        mem_write = gadget.mem_writes[0]
+        all_deps = mem_write.addr_dependencies | mem_write.data_dependencies
+        for reg in all_deps:
+            if reg in preserve_regs:
+                raise RopException(f"this gadget will overwrite {reg}, which is in preserve_regs")
 
         # actually start
         if use_partial_controllers and len(data) < self.project.arch.bytes:
@@ -229,7 +228,6 @@ class MemWriter(Builder):
         state = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
 
         # constrain the write
-        mem_write = gadget.mem_writes[0]
         the_action = None
         for a in state.history.actions.hardcopy:
             if a.type != "mem" or a.action != "write":
@@ -238,8 +236,7 @@ class MemWriter(Builder):
                     set(rop_utils.get_ast_dependency(a.data.ast)) == set(mem_write.data_dependencies):
                 the_action = a
                 break
-
-        if the_action is None:
+        else:
             raise RopException("Couldn't find the matching action")
 
         # constrain the addr
@@ -252,13 +249,10 @@ class MemWriter(Builder):
         test_state.add_constraints(state.memory.load(addr_val.data, len(data)) == claripy.BVV(data))
 
         # get the actual register values
-        all_deps = list(mem_write.addr_dependencies) + list(mem_write.data_dependencies)
         reg_vals = {}
         new_addr_val = None
         name = addr_bvs._encoded_name.decode()
-        for reg in set(all_deps):
-            if reg in preserve_regs:
-                raise RopException(f"this gadget will overwrite {reg}, which is in preserve_regs")
+        for reg in all_deps:
             var = test_state.solver.eval(test_state.registers.load(reg))
             # check whether this reg will propagate to addr
             # if yes, propagate its rebase value
