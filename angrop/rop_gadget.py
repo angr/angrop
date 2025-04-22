@@ -258,6 +258,13 @@ class RopGadget:
         out.pc_reg = self.pc_reg
         return out
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state['project'] = None
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
 
 class PivotGadget(RopGadget):
     """

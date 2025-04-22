@@ -408,3 +408,23 @@ class RopChain:
 
     def pp(self):
         print(self.dstr())
+
+    def set_project(self, project):
+        self._p = project
+        for g in self._gadgets:
+            g.project = project
+        for val in self._values:
+            val._project = project
+
+    def set_builder(self, builder):
+        self._builder = builder
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state['_p'] = None
+        state['_builder'] = None
+        state['_blank_state'] = None
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)

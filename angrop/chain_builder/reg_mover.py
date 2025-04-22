@@ -1,5 +1,6 @@
 import logging
 import itertools
+import multiprocessing as mp
 from collections import defaultdict
 
 import networkx as nx
@@ -14,6 +15,22 @@ from ..rop_gadget import RopRegMove
 
 l = logging.getLogger(__name__)
 
+_global_reg_mover = None
+def _set_global_reg_mover(reg_mover):
+    global _global_reg_mover# pylint: disable=global-statement
+    _global_reg_mover = reg_mover
+
+def worker_func(t):
+    new_move, gadget = t
+    gadget.project = _global_reg_mover.project
+    pre_preserve = {new_move.from_reg}
+    post_preserve = {new_move.to_reg}
+    rb = _global_reg_mover.normalize_gadget(gadget, pre_preserve=pre_preserve, post_preserve=post_preserve)
+    solver = None
+    if rb is not None:
+        solver = rb._blank_state.solver
+    return new_move, gadget.addr, solver, rb
+
 class RegMover(Builder):
     """
     handle register moves such as `mov rax, rcx`
@@ -23,21 +40,26 @@ class RegMover(Builder):
         self._reg_moving_gadgets = None
         self._reg_moving_blocks: set[RopBlock] = None # type: ignore
         self._graph: nx.Graph = None # type: ignore
+        self._normalize_todos = {}
 
     def bootstrap(self):
         self._reg_moving_gadgets = sorted(self.filter_gadgets(self.chain_builder.gadgets), key=lambda g:g.stack_change)
         self._reg_moving_blocks = {g for g in self._reg_moving_gadgets if g.self_contained}
         self._build_move_graph()
 
-    def optimize(self):
-        res = False
+    def build_normalize_todos(self):
+        """
+        identify non-self-contained gadgets that can potentially improve
+        our register move graph
+        """
+        self._normalize_todos = {}
         for gadget in self._reg_moving_gadgets:
             if gadget.self_contained:
                 continue
-
             # check whether the gadget brings new_moves:
             # 1. the edge doesn't exist at all
             # 2. it moves more bits than all existing ones
+            # TODO: 3. fewer clobbered registers?
             new_moves = []
             for m in gadget.reg_moves:
                 edge = (m.from_reg, m.to_reg)
@@ -48,37 +70,74 @@ class RegMover(Builder):
                 if m.bits > edge_data['bits']:
                     new_moves.append(m)
                     continue
+                # we use address as key here instead of gadget because the gadget
+                # returned by multiprocessing may be different from the original one
+                self._normalize_todos[gadget.addr] = (gadget, new_moves)
 
-            if not new_moves:
-                continue
+    def normalize_todos(self):
+        addrs = sorted(self._normalize_todos.keys())
+        for addr in addrs:
+            g, new_moves = self._normalize_todos[addr]
             while new_moves:
                 new_move = new_moves.pop()
-                pre_preserve = {new_move.from_reg}
-                post_preserve = {new_move.to_reg}
-                rb = self.normalize_gadget(gadget, pre_preserve=pre_preserve, post_preserve=post_preserve)
+                # don't send over g.project to multiprocessing, it is too slow
+                g.project = None
+                if g.transit_type != 'jmp_mem':
+                    continue
+                yield new_move, g
+
+    def normalize_single_threaded(self):
+        for new_move, gadget in self.normalize_todos():
+            gadget.project = self.project
+            pre_preserve = {new_move.from_reg}
+            post_preserve = {new_move.to_reg}
+            rb = self.normalize_gadget(gadget, pre_preserve=pre_preserve, post_preserve=post_preserve)
+            if rb is not None:
+                yield new_move, gadget.addr, rb
+
+    def normalize_multiprocessing(self, processes):
+        initargs = (self,)
+        with mp.Pool(processes=processes, initializer=_set_global_reg_mover, initargs=initargs) as pool:
+            for new_move, addr, solver, rb in pool.imap_unordered(worker_func, self.normalize_todos()):
                 if rb is None:
                     continue
-                # if we happen to normalized another move, don't do it again
-                for m in rb.reg_moves:
-                    if m in new_moves:
-                        new_moves.remove(m)
-                # we already normalized it, just use it as much as we can
-                if rb.popped_regs:
-                    self.chain_builder._reg_setter._insert_to_reg_dict([rb])
-                if not any(m == new_move for m in rb.reg_moves):
-                    l.warning("normalizing \n%s does not yield any wanted new reg moving capability: %s", rb.dstr(), new_moves)
-                    continue
-                res = True
-                for move in rb.reg_moves:
-                    edge = (move.from_reg, move.to_reg)
-                    if self._graph.has_edge(*edge):
-                        edge_data = self._graph.get_edge_data(*edge)
-                        edge_blocks = edge_data['block']
-                        edge_blocks.add(rb)
-                        if move.bits > edge_data['bits']:
-                            edge_data['bits'] = move.bits
-                    else:
-                        self._graph.add_edge(*edge, block={rb}, bits=move.bits)
+                state = rop_utils.make_symbolic_state(self.project, self.arch.reg_list, 0)
+                state.solver = solver
+                rb.set_project(self.project)
+                rb.set_builder(self)
+                rb._blank_state = state
+                yield new_move, addr, rb
+
+    def optimize(self, processes=16):
+        res = False
+        self.build_normalize_todos()
+        if processes == 1:
+            iterable = self.normalize_single_threaded()
+        else:
+            iterable = self.normalize_multiprocessing(processes)
+        for new_move, addr, rb in iterable:
+            # if we happen to normalized another move, don't do it again
+            for m in rb.reg_moves:
+                todo_new_moves = self._normalize_todos[addr][1]
+                if m in todo_new_moves:
+                    todo_new_moves.remove(m)
+            # we already normalized it, just use it as much as we can
+            if rb.popped_regs:
+                self.chain_builder._reg_setter._insert_to_reg_dict([rb])
+            if not any(m == new_move for m in rb.reg_moves):
+                l.warning("normalizing \n%s does not yield any wanted new reg moving capability: %s", rb.dstr(), new_move)
+                continue
+            res = True
+            for move in rb.reg_moves:
+                edge = (move.from_reg, move.to_reg)
+                if self._graph.has_edge(*edge):
+                    edge_data = self._graph.get_edge_data(*edge)
+                    edge_blocks = edge_data['block']
+                    edge_blocks.add(rb)
+                    if move.bits > edge_data['bits']:
+                        edge_data['bits'] = move.bits
+                else:
+                    self._graph.add_edge(*edge, block={rb}, bits=move.bits)
         return res
 
     def _build_move_graph(self):

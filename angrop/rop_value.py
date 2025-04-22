@@ -128,3 +128,11 @@ class RopValue:
         cp._rebase = self._rebase
         cp._code_base = self._code_base
         return cp
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state['_project'] = None
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)

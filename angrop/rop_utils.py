@@ -244,19 +244,19 @@ def fast_uninitialized_filler(_, addr, size, state):
     return state.solver.BVS("uninitialized_" + hex(addr), size, explicit_name=True)
 
 
+class SpecialMem(angr.storage.memory_mixins.SpecialFillerMixin, angr.storage.DefaultMemory):
+    """
+    class to use angr's SpecialFillerMixin to replace uninitialized memory
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
 def make_initial_state(project, stack_gsize):
     """
     :return: an initial state with a symbolic stack and good options for rop
     """
     # create a new plugin for memory
     # the purpose of this plugin is to optimize away some slowness with the default uninitialized memory
-    class SpecialMem(angr.storage.memory_mixins.SpecialFillerMixin, angr.storage.DefaultMemory):
-        """
-        class to use angr's SpecialFillerMixin to replace uninitialized memory
-        """
-        def __init__(self, **kwargs):
-            super().__init__(**kwargs)
-
     angr.SimState.register_default("sym_memory", SpecialMem)
 
     #angr.options.NO_SYMBOLIC_JUMP_RESOLUTION
