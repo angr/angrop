@@ -53,6 +53,7 @@ class RegMover(Builder):
         our register move graph
         """
         self._normalize_todos = {}
+        todos = {}
         for gadget in self._reg_moving_gadgets:
             if gadget.self_contained:
                 continue
@@ -70,21 +71,47 @@ class RegMover(Builder):
                 if m.bits > edge_data['bits']:
                     new_moves.append(m)
                     continue
-            # we use address as key here instead of gadget because the gadget
-            # returned by multiprocessing may be different from the original one
-            self._normalize_todos[gadget.addr] = (gadget, new_moves)
+            for new_move in new_moves:
+                if new_move in todos:
+                    todos[new_move].append(gadget)
+                else:
+                    todos[new_move] = [gadget]
+
+        # only normalize best ones
+        to_remove = []
+        for m1 in todos:
+            for m2 in todos:
+                if m1 == m2:
+                    continue
+                if m1.from_reg == m2.from_reg and m1.to_reg == m2.to_reg and m1.bits < m2.bits:
+                    to_remove.append(m1)
+        for m in to_remove:
+            del todos[m]
+
+        # we use address as key here instead of gadget because the gadget
+        # returned by multiprocessing may be different from the original one
+        for m, gadgets in todos.items():
+            for g in gadgets:
+                new_moves = [m for m in g.reg_moves if m in todos]
+                self._normalize_todos[g.addr] = (g, new_moves)
 
     def normalize_todos(self):
         addrs = sorted(self._normalize_todos.keys())
-        for addr in addrs:
-            g, new_moves = self._normalize_todos[addr]
-            while new_moves:
-                new_move = new_moves.pop()
-                # don't send over g.project to multiprocessing, it is too slow
-                g.project = None
-                if g.transit_type != 'jmp_mem':
-                    continue
-                yield new_move, g
+        again = True
+        while again:
+            cnt = 0
+            for addr in addrs:
+                # take different gadgets to maximize performance
+                g, new_moves = self._normalize_todos[addr]
+                if new_moves:
+                    new_move = new_moves.pop()
+                    # don't send over g.project to multiprocessing, it is too slow
+                    g.project = None
+                    cnt += 1
+                    yield new_move, g
+            if cnt == 0:
+                again = False
+
 
     def normalize_single_threaded(self):
         for new_move, gadget in self.normalize_todos():
