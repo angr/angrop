@@ -205,6 +205,7 @@ class GadgetFinder:
 
     def _analyze_gadgets_multiprocess(self, processes, tasks, show_progress, timeout, cond_br):
         gadgets = []
+        start = time.time()
 
         # select the target function
         if cond_br is not None:
@@ -283,7 +284,7 @@ class GadgetFinder:
 
     #### generate addresses from slices ####
     @staticmethod
-    def _addr_block_in_skip(analyzer, loc, skip_cache):
+    def _addr_block_in_cache(analyzer, loc, skip_cache, cache):
         """
         To avoid loading the block, we first check if the data that we would
         disassemble is already in the cache first
@@ -292,7 +293,7 @@ class GadgetFinder:
         align = analyzer.arch.alignment
         for i in range(align, len(data)+1, align):
             h = data[0:i]
-            if h in skip_cache:
+            if h in skip_cache or h in cache:
                 return True
         return False
 
@@ -318,7 +319,7 @@ class GadgetFinder:
                 do_update()
                 continue
 
-            if GadgetFinder._addr_block_in_skip(analyzer, loc, skip_cache):
+            if GadgetFinder._addr_block_in_cache(analyzer, loc, skip_cache, cache):
                 do_update()
                 continue
 
@@ -368,6 +369,10 @@ class GadgetFinder:
                 do_update()
                 continue
 
+            if not analyzer._block_make_sense(bl.addr):
+                do_update()
+                continue
+
             # we only analyze simple gadgets once
             h = None
             if addr in simple_cache or analyzer._is_simple_gadget(addr, bl):
@@ -379,8 +384,11 @@ class GadgetFinder:
                     cache[h] = {addr}
                 else:
                     cache[h].add(addr)
-                    do_update()
-                    continue
+            else:
+                s = ''
+                for insn in bl.capstone2.insns:
+                    s += insn.mnemonic + '\t' + insn.op_str + '\n'
+                h = hash(s)
             do_update()
             yield addr, h
 

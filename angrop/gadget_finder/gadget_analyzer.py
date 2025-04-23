@@ -199,6 +199,77 @@ class GadgetAnalyzer:
                     return True
         return False
 
+    def _block_make_sense_nostmt(self, block):
+        if block.size > self.arch.max_block_size:
+            l.debug("... too long")
+            return False
+        if block.vex.jumpkind in ('Ijk_SigTRAP', 'Ijk_NoDecode', 'Ijk_Privileged', 'Ijk_Yield'):
+            l.debug("... not decodable")
+            return False
+        for target in block.vex.constant_jump_targets:
+            if self.project.loader.find_segment_containing(target) is None:
+                return False
+        if self._fast_mode:
+            if block.vex.jumpkind != "Ijk_Ret" and not block.vex.jumpkind.startswith("Ijk_Sys"):
+                return False
+        return True
+
+    def _block_make_sense_vex(self, block):
+        # make sure all constant memory accesses are in-bound
+        for expr in block.vex.expressions:
+            if expr.tag in ('Iex_Load', 'Ist_Store'):
+                if isinstance(expr.addr, pyvex.expr.Const):
+                    if self.project.loader.find_segment_containing(expr.addr.con.value) is None:
+                        return False
+
+        if any(isinstance(s, pyvex.IRStmt.Dirty) for s in block.vex.statements):
+            l.debug("... has dirties that we probably can't handle")
+            return False
+
+        for op in block.vex.operations:
+            if op.startswith("Iop_Div"):
+                return False
+
+        # we don't like floating point and SIMD stuff
+        if any(t in block.vex.tyenv.types for t in ('Ity_F16', 'Ity_F32', 'Ity_F64', 'Ity_F128', 'Ity_V128')):
+            return False
+        return True
+
+    def _block_make_sense_sym_access(self, block):
+        # make sure there are not too many symbolic accesses
+        # note that we can't actually distinguish between memory accesses on stack
+        # and other memory accesses, we just assume all non-word access are symbolic memory accesses
+        # consider at most one access each instruction
+
+        # split statements by instructions
+        accesses = set()
+        word_ty = f'Ity_I{self.project.arch.bits}'
+        insts = []
+        inst = []
+        for stmt in block.vex.statements:
+            if isinstance(stmt, pyvex.stmt.IMark):
+                insts.append(inst)
+                inst = []
+            else:
+                inst.append(stmt)
+        if inst:
+            insts.append(inst)
+        # count memory accesses
+        for inst in insts:
+            exprs = itertools.chain(*[x.expressions for x in inst])
+            for expr in exprs:
+                if expr.tag not in ('Iex_Load', 'Ist_Store'):
+                    continue
+                if isinstance(expr.addr, pyvex.expr.Const):
+                    continue
+                if expr.ty == word_ty:
+                    continue
+                accesses.add(str(expr.addr))
+                break
+        if len(accesses) > self.arch.max_sym_mem_access:
+            return False
+        return True
+
     def _block_make_sense(self, addr):
         """
         Checks if a block at addr makes sense to analyze for rop gadgets
@@ -208,80 +279,6 @@ class GadgetAnalyzer:
         try:
             l.debug("... checking if block makes sense")
             block = self.project.factory.block(addr)
-
-            if block.size > self.arch.max_block_size:
-                l.debug("... too long")
-                return False
-
-            if block.vex.jumpkind in ('Ijk_SigTRAP', 'Ijk_NoDecode', 'Ijk_Privileged', 'Ijk_Yield'):
-                l.debug("... not decodable")
-                return False
-
-            for target in block.vex.constant_jump_targets:
-                if self.project.loader.find_segment_containing(target) is None:
-                    return False
-
-            if self._fast_mode:
-                if block.vex.jumpkind != "Ijk_Ret" and not block.vex.jumpkind.startswith("Ijk_Sys"):
-                    return False
-
-            # make sure all constant memory accesses are in-bound
-            for expr in block.vex.expressions:
-                if expr.tag in ('Iex_Load', 'Ist_Store'):
-                    if isinstance(expr.addr, pyvex.expr.Const):
-                        if self.project.loader.find_segment_containing(expr.addr.con.value) is None:
-                            return False
-
-            # make sure there are not too many symbolic accesses
-            # note that we can't actually distinguish between memory accesses on stack
-            # and other memory accesses, we just assume all non-word access are symbolic memory accesses
-            # consider at most one access each instruction
-
-            # split statements by instructions
-            accesses = set()
-            word_ty = f'Ity_I{self.project.arch.bits}'
-            insts = []
-            inst = []
-            for stmt in block.vex.statements:
-                if isinstance(stmt, pyvex.stmt.IMark):
-                    insts.append(inst)
-                    inst = []
-                else:
-                    inst.append(stmt)
-            if inst:
-                insts.append(inst)
-            # count memory accesses
-            for inst in insts:
-                exprs = itertools.chain(*[x.expressions for x in inst])
-                for expr in exprs:
-                    if expr.tag not in ('Iex_Load', 'Ist_Store'):
-                        continue
-                    if isinstance(expr.addr, pyvex.expr.Const):
-                        continue
-                    if expr.ty == word_ty:
-                        continue
-                    accesses.add(str(expr.addr))
-                    break
-            if len(accesses) > self.arch.max_sym_mem_access:
-                return False
-
-            if not block.capstone.insns and not isinstance(self.arch, RISCV64):
-                return False
-
-            if not self.arch.block_make_sense(block):
-                return False
-
-            if any(isinstance(s, pyvex.IRStmt.Dirty) for s in block.vex.statements):
-                l.debug("... has dirties that we probably can't handle")
-                return False
-
-            for op in block.vex.operations:
-                if op.startswith("Iop_Div"):
-                    return False
-
-            # we don't like floating point and SIMD stuff
-            if any(t in block.vex.tyenv.types for t in ('Ity_F16', 'Ity_F32', 'Ity_F64', 'Ity_F128', 'Ity_V128')):
-                return False
         except angr.errors.SimEngineError:
             l.debug("... some simengine error")
             return False
@@ -303,6 +300,20 @@ class GadgetAnalyzer:
             return False
         except KeyError:
             return False
+
+        if not self._block_make_sense_nostmt(block):
+            return False
+        if not self._block_make_sense_vex(block):
+            return False
+        if not self._block_make_sense_sym_access(block):
+            return False
+
+        if not self.arch.block_make_sense(block):
+            return False
+
+        if not block.capstone.insns and not isinstance(self.arch, RISCV64):
+            return False
+
 
         return True
 
@@ -1171,12 +1182,12 @@ class GadgetAnalyzer:
         """
         a hash to uniquely identify a simple block
         """
-        if block.vex.jumpkind.startswith('Ijk_Sys_'):
+        if block.vex_nostmt.jumpkind.startswith('Ijk_Sys_'):
             next_addr = block.addr + block.size
             obj = self.project.loader.find_object_containing(next_addr)
             if not obj:
                 return block.bytes
-            next_block = self.project.factory.block(next_addr)
+            next_block = self.project.factory.block(next_addr, skip_stmts=True)
             return block.bytes + next_block.bytes
         return block.bytes
 
