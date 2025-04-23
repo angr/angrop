@@ -6,7 +6,7 @@ class ROPArch:
     def __init__(self, project, kernel_mode=False):
         self.project = project
         self.kernel_mode = kernel_mode
-        self.max_sym_mem_access = 4
+        self.max_sym_mem_access = 1
         self.alignment = project.arch.instruction_alignment
         self.reg_list = self._get_reg_list()
         self.reg_set = set(self.reg_list) # backward compatibility, will be removed
