@@ -81,7 +81,7 @@ def get_ast_controllers(state, ast, reg_deps) -> set:
             if not state.registers.load(r).symbolic:
                  continue
             reg_sym_val = state.registers.load(r)
-            claripy.algorithm.replace(expr=test_ast,
+            test_ast = claripy.algorithm.replace(expr=test_ast,
                                       old=reg_sym_val,
                                       new=claripy.BVV(test_val, reg_sym_val.size()))
         # we consider 32-bit control on 64-bit system valid

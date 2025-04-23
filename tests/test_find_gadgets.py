@@ -220,12 +220,12 @@ def test_enter():
 def test_jmp_mem_gadget():
     proj = angr.Project(os.path.join(tests_dir, "x86_64", "libc.so.6"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
-    # 0x0000000000031f6d : jmp qword ptr [rax]
-    # 0x000000000004bec2 : call qword ptr [r11 + rax*8]
-    g = rop.analyze_gadget(0x0000000000431f6d)
+    # 0x00000000001a2bd9 : xchg edx, esi ; jmp qword ptr [rax]
+    # 0x00000000001905a1 : xor ebp, edx ; call qword ptr [rdx]
+    g = rop.analyze_gadget(0x5a2bd9)
     assert g is not None
     assert g.transit_type == 'jmp_mem'
-    g = rop.analyze_gadget(0x000000000044bec2)
+    g = rop.analyze_gadget(0x5905a1)
     assert g is not None
     assert g.transit_type == 'jmp_mem'
 
