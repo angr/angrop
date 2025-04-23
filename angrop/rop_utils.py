@@ -135,13 +135,17 @@ def loose_constrained_check(state, ast, extra_constraints=None):
         cnt += 1
     if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_1]):
         cnt += 1
+    if cnt > 1: return False
     if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_2]):
         cnt += 1
+    if cnt > 1: return False
     if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_3]):
         cnt += 1
+    if cnt > 1: return False
     if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_4]):
         cnt += 1
-    return cnt <= 1
+    if cnt > 1:
+        return False
 
 def unconstrained_check(state, ast, extra_constraints=None):
     """
@@ -196,7 +200,7 @@ def fast_unconstrained_check(state, ast):
                 if not arg.symbolic and arg.concrete_value != 0:
                     return True
 
-        if ast.op == "__rshift__" or ast.op == "__lshift__":
+        if ast.op in ("__rshift__", "__lshift__"):
             for arg in ast.args:
                 if not arg.symbolic and arg.concrete_value != 0:
                     return True
@@ -223,7 +227,7 @@ def fast_unconstrained_check(state, ast):
         if not b.symbolic or must_be_constrained(b):
             return False
 
-    return unconstrained_check(state, ast)
+    return loose_constrained_check(state, ast)
 
 def get_reg_name(arch, reg_offset):
     """
