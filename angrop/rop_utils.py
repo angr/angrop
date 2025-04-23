@@ -215,8 +215,11 @@ def fast_unconstrained_check(state, ast):
         return False
 
     # check that we don't have any obvious constrained parts
-    for i in range(ast.length//8):
-        b = ast.get_byte(i)
+    ast2 = ast
+    if state.project.arch.bits == 64 and ast.op in ('SignExt', 'ZeroExt') and ast.args[0] == 32:
+        ast2 = ast.args[1]
+    for i in range(ast2.length//8):
+        b = ast2.get_byte(i)
         if not b.symbolic or must_be_constrained(b):
             return False
 

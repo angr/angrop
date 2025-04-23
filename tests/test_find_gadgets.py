@@ -282,7 +282,7 @@ def test_symbolized_got():
     # this will be considered pop, but it is not pop
     # pop rax; add al, 0; add al, al; ret
     g = rop.analyze_gadget(0x406850)
-    assert g is None
+    assert g is None or 'rax' not in g.popped_regs
 
 def test_syscall_when_ret_only():
     proj = angr.load_shellcode(
