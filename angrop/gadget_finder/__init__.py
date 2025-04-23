@@ -470,6 +470,26 @@ class GadgetFinder:
         start = max(start, seg.min_addr)
         return (start, end)
 
+    @staticmethod
+    def merge_slices(slices):
+        """
+        generate a list of slices that don't overlap
+        """
+        if not slices:
+            return []
+
+        # sort by start of each slice
+        slices.sort(key=lambda x: x[0])
+
+        merged = [slices[0]]
+        for current in slices[1:]:
+            last = merged[-1]
+            if current[0] <= last[1]: # overlapping
+                merged[-1] = (last[0], max(last[1], current[1])) # merge
+            else:
+                merged.append(current)
+        return merged
+
     def _slices_to_check(self):
         """
         :return: all the slices to check, slice is inclusive: [start, end]
@@ -477,18 +497,15 @@ class GadgetFinder:
         alignment = self.arch.alignment
         blocksize = (self.arch.max_block_size & ((1 << self.project.arch.bits) - alignment)) + alignment
 
-        # step 1: check syscall locations
-        if not self.arch.kernel_mode and self._syscall_locations:
-            for addr in self._syscall_locations:
-                yield self._get_slice_by_addr(addr, blocksize)
-
-        # step 2: check gadgets near rets
-        if self._ret_locations:
-            for addr in self._ret_locations:
-                yield self._get_slice_by_addr(addr, blocksize)
-
-        # step 3: check every possible addresses
-        if not self.only_check_near_rets:
+        if self.only_check_near_rets:
+            slices = []
+            if not self.arch.kernel_mode and self._syscall_locations:
+                slices += [self._get_slice_by_addr(addr, blocksize) for addr in self._syscall_locations]
+            if self._ret_locations:
+                slices += [self._get_slice_by_addr(addr, blocksize) for addr in self._ret_locations]
+            slices = self.merge_slices(slices)
+            yield from slices
+        else:
             for segment in self._get_executable_ranges():
                 start = alignment * ((segment.min_addr + alignment - 1) // alignment)
                 end = segment.min_addr + segment.memsize
