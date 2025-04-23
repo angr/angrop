@@ -22,6 +22,8 @@ logging.getLogger('pyvex.lifting').setLevel("ERROR")
 
 ANALYZE_GADGET_TIMEOUT = 3
 _global_gadget_analyzer = None
+_global_skip_cache = None
+_global_cache = None
 
 # disable loggers in each worker
 def _disable_loggers():
@@ -32,18 +34,20 @@ def _disable_loggers():
 
 # global initializer for multiprocessing
 def _set_global_gadget_analyzer(rop_gadget_analyzer):
-    global _global_gadget_analyzer # pylint: disable=global-statement
+    global _global_gadget_analyzer, _global_skip_cache, _global_cache # pylint: disable=global-statement
     _global_gadget_analyzer = rop_gadget_analyzer
+    _global_skip_cache = set()
+    _global_cache = {}
     _disable_loggers()
 
 def handler(signum, frame):
     l.warning("[angrop] worker_func2 times out, exit the worker process!")
     os._exit(0)
 
-def worker_func1(addr):
-    h = None
+def worker_func1(slice):
     analyzer = _global_gadget_analyzer
-    return analyzer._static_analyze_first_block(addr)
+    res = list(GadgetFinder._addresses_from_slice(analyzer, slice, _global_skip_cache, _global_cache, None))
+    return (slice[1]-slice[0]+1, res)
 
 def worker_func2(addr, cond_br=None):
     analyzer = _global_gadget_analyzer
@@ -119,7 +123,7 @@ class GadgetFinder:
 
     def _initialize_gadget_analyzer(self):
 
-        if self.kernel_mode:
+        if self.kernel_mode or not self.only_check_near_rets:
             self._syscall_locations = []
         else:
             self._syscall_locations = self._get_syscall_locations()
@@ -158,38 +162,49 @@ class GadgetFinder:
             g.project = self.project
         return g
 
-    def _build_cache(self, processes, tasks, task_len, show_progress):
+    def _truncated_slices(self):
+        for slice in self._slices_to_check():
+            size = slice[1] - slice[0] + 1
+            if size <= 0x100:
+                yield slice
+                continue
+            while slice[1] - slice[0] + 1 > 0x100:
+                new = (slice[0], slice[0]+0xff)
+                slice = (slice[0]+0x100, slice[1])
+                yield new
+            yield slice
+
+    def _multiprocess_static_analysis(self, processes, show_progress):
         """
         use multiprocessing to build the cache
         """
-
+        task_len = self._num_addresses_to_check()
         todos = []
-        initargs = (self.gadget_analyzer,)
+
         t = None
         if show_progress:
             t = tqdm.tqdm(smoothing=0, total=task_len, desc="ROP", maxinterval=0.5, dynamic_ncols=True)
+
+        initargs = (self.gadget_analyzer,)
         with mp.Pool(processes=processes, initializer=_set_global_gadget_analyzer, initargs=initargs) as pool:
-            for h, addr in pool.imap_unordered(worker_func1, tasks, chunksize=100):
-                if t:
-                    t.update(1)
-                if addr is None:
-                    continue
-                if h:
-                    if h in self._cache:
-                        self._cache[h].add(addr)
+            for n, results in pool.imap_unordered(worker_func1, self._truncated_slices(), chunksize=40):
+                t.update(n)
+                for addr, h in results:
+                    if addr is None:
+                        continue
+                    if h:
+                        if h in self._cache:
+                            self._cache[h].add(addr)
+                        else:
+                            self._cache[h] = {addr}
+                            todos.append(addr)
                     else:
-                        self._cache[h] = {addr}
                         todos.append(addr)
-                else:
-                    todos.append(addr)
+
         return todos
 
-    def _analyze_gadgets_multiprocess(self, processes, tasks, task_len, show_progress, timeout, cond_br):
+    def _analyze_gadgets_multiprocess(self, processes, tasks, show_progress, timeout, cond_br):
         gadgets = []
-        self._cache = {}
-        start = time.time()
-
-        todos = self._build_cache(processes, tasks, task_len, show_progress)
 
         # select the target function
         if cond_br is not None:
@@ -200,7 +215,7 @@ class GadgetFinder:
         # the progress bar
         t = None
         if show_progress:
-            t = tqdm.tqdm(smoothing=0, total=len(todos), desc="ROP", maxinterval=0.5, dynamic_ncols=True)
+            t = tqdm.tqdm(smoothing=0, total=len(tasks), desc="ROP", maxinterval=0.5, dynamic_ncols=True)
 
         # prep for the main loop
         sync_data = [time.time(), 0]
@@ -214,11 +229,11 @@ class GadgetFinder:
         # the main loop
         initargs = (self.gadget_analyzer,)
         with mp.Pool(processes=processes, initializer=_set_global_gadget_analyzer, initargs=initargs) as pool:
-            for addr in todos:
+            for addr in tasks:
                 pool.apply_async(func, args=(addr,), callback=on_success)
             pool.close()
 
-            while time.time() - sync_data[0] < ANALYZE_GADGET_TIMEOUT and sync_data[1] < len(todos):
+            while time.time() - sync_data[0] < ANALYZE_GADGET_TIMEOUT and sync_data[1] < len(tasks):
                 if timeout and time.time() - start > timeout:
                     break
                 time.sleep(0.1)
@@ -231,7 +246,7 @@ class GadgetFinder:
         return sorted(gadgets, key=lambda x: x.addr)
 
     def analyze_gadget_list(self, addr_list, processes=4, show_progress=True):
-        return self._analyze_gadgets_multiprocess(processes, addr_list, len(addr_list), show_progress, None, False)
+        return self._analyze_gadgets_multiprocess(processes, addr_list, show_progress, None, False)
 
     def get_duplicates(self):
         """
@@ -242,9 +257,9 @@ class GadgetFinder:
 
     def find_gadgets(self, processes=4, show_progress=True, timeout=None):
         assert self.gadget_analyzer is not None
-        tasks = self._addresses_to_check()
-        task_len = self._num_addresses_to_check()
-        return self._analyze_gadgets_multiprocess(processes, tasks, task_len, show_progress, timeout, None), self.get_duplicates()
+        self._cache = {}
+        tasks = self._multiprocess_static_analysis(processes, show_progress)
+        return self._analyze_gadgets_multiprocess(processes, tasks, show_progress, timeout, None), self.get_duplicates()
 
     def find_gadgets_single_threaded(self, show_progress=True):
         gadgets = []
@@ -266,27 +281,126 @@ class GadgetFinder:
 
         return sorted(gadgets, key=lambda x: x.addr), self.get_duplicates()
 
+    #### generate addresses from slices ####
+    @staticmethod
+    def _addr_block_in_skip(analyzer, loc, skip_cache):
+        """
+        To avoid loading the block, we first check if the data that we would
+        disassemble is already in the cache first
+        """
+        data = analyzer.project.loader.memory.load(loc, analyzer.arch.max_block_size)
+        align = analyzer.arch.alignment
+        for i in range(align, len(data)+1, align):
+            h = data[0:i]
+            if h in skip_cache:
+                return True
+        return False
+
+    @staticmethod
+    def _addresses_from_slice(analyzer, slice, skip_cache, cache, it):
+        offset = 1 if isinstance(analyzer.arch, ARM) and analyzer.arch.is_thumb else 0
+        alignment = analyzer.arch.alignment
+        max_block_size = analyzer.arch.max_block_size
+
+        def do_update():
+            if it is not None:
+                it.update(1)
+
+        skip_addrs = set()
+        simple_cache = set()
+        for addr in range(slice[0], slice[1]+1, alignment):
+            # when loading from memory, use loc
+            # when calling block, use addr
+            loc = addr
+            addr += offset # this is the actual address
+
+            if addr in skip_addrs:
+                do_update()
+                continue
+
+            if GadgetFinder._addr_block_in_skip(analyzer, loc, skip_cache):
+                do_update()
+                continue
+
+            try:
+                bl = analyzer.project.factory.block(addr, skip_stmts=True, max_size=analyzer.arch.max_block_size+0x10)
+            except (SimEngineError, SimMemoryError):
+                do_update()
+                continue
+            # check size
+            if bl.size > max_block_size:
+                for ins_addr in bl.instruction_addrs:
+                     size = bl.size-(ins_addr-addr)
+                     if size > max_block_size:
+                         skip_addrs.add(ins_addr)
+                do_update()
+                continue
+            # check jumpkind
+            jumpkind = bl.vex_nostmt.jumpkind
+            if jumpkind == 'Ijk_NoDecode':
+                do_update()
+                continue
+            if jumpkind in ('Ijk_SigTRAP', 'Ijk_Privileged', 'Ijk_Yield'):
+                for ins_addr in bl.instruction_addrs:
+                    bad = bl.bytes[ins_addr-addr:]
+                    skip_cache.add(bad)
+                    skip_addrs.add(ins_addr)
+                do_update()
+                continue
+            if analyzer._fast_mode and jumpkind not in ("Ijk_Ret", "Ijk_Boring") and not jumpkind.startswith('Ijk_Sys_'):
+                for ins_addr in bl.instruction_addrs:
+                    bad = bl.bytes[ins_addr-addr:]
+                    skip_cache.add(bad)
+                    skip_addrs.add(ins_addr)
+                do_update()
+                continue
+            # check conditional jumps
+            if not analyzer._allow_conditional_branches and len(bl.vex_nostmt.constant_jump_targets) > 1:
+                for ins_addr in bl.instruction_addrs:
+                    bad = bl.bytes[ins_addr-addr:]
+                    skip_cache.add(bad)
+                    skip_addrs.add(ins_addr)
+                do_update()
+                continue
+            # it doesn't make sense to include a gadget that starts with a jump or call
+            # the jump target itself will be the gadget
+            if bl.vex_nostmt.instructions == 1 and jumpkind in ('Ijk_Boring', 'Ijk_Call'):
+                do_update()
+                continue
+
+            # we only analyze simple gadgets once
+            h = None
+            if addr in simple_cache or analyzer._is_simple_gadget(addr, bl):
+                # if a block is simple, all aligned sub blocks are simple
+                for ins_addr in bl.instruction_addrs:
+                    simple_cache.add(ins_addr)
+                h = analyzer.block_hash(bl)
+                if h not in cache:
+                    cache[h] = {addr}
+                else:
+                    cache[h].add(addr)
+                    do_update()
+                    continue
+            do_update()
+            yield addr, h
+
     def _addresses_to_check_with_caching(self, show_progress=True):
+        """
+        The goal of this function is to do a fast check of the block
+        only jumpkind, jump targets check and cache the result to avoid the need of symbolically
+        analyzing a ton of gadget candidates
+        """
         num_addrs = self._num_addresses_to_check()
 
-        iterable = self._addresses_to_check()
+        it = None
         if show_progress:
-            iterable = tqdm.tqdm(iterable=iterable, smoothing=0, total=num_addrs,
-                                 desc="ROP", maxinterval=0.5, dynamic_ncols=True)
-
-        for a in iterable:
-            h, addr = self.gadget_analyzer._static_analyze_first_block(a)
-            if addr is None:
-                continue
-            if h:
-                if h not in self._cache:
-                    self._cache[h] = {a}
-                else:
-                    # we only return the first unique gadget
-                    # so skip duplicates
-                    self._cache[h].add(a)
-                    continue
-            yield a
+            it = tqdm.tqdm(smoothing=0, total=num_addrs,
+                           desc="ROP", maxinterval=0.5, dynamic_ncols=True)
+        self._cache = {}
+        skip_cache = set() # bytes to skip
+        for slice in self._slices_to_check():
+            for addr, _ in self._addresses_from_slice(self.gadget_analyzer, slice, skip_cache, self._cache, it):
+                yield addr
 
     def block_hash(self, block):
         """
@@ -301,6 +415,7 @@ class GadgetFinder:
             return block.bytes + next_block.bytes
         return block.bytes
 
+    #### generate slices to analyze ####
     def _get_executable_ranges(self):
         """
         returns the ranges which are executable
@@ -333,62 +448,53 @@ class GadgetFinder:
                 return True
         return False
 
-    def _addresses_to_check(self):
+    def _find_executable_range(self, addr):
+        for r in self._get_executable_ranges():
+            if r.contains_addr(addr):
+                return r
+        return None
+
+    def _get_slice_by_addr(self, addr, blocksize):
+        start = addr - blocksize
+        end = addr
+        seg = self._find_executable_range(addr)
+        assert seg is not None
+        start = max(start, seg.min_addr)
+        return (start, end)
+
+    def _slices_to_check(self):
         """
-        :return: all the addresses to check
+        :return: all the slices to check, slice is inclusive: [start, end]
         """
-        # align block size
-        seen_addrs = set()
         alignment = self.arch.alignment
-        offset = 1 if isinstance(self.arch, ARM) and self.arch.is_thumb else 0
+        blocksize = (self.arch.max_block_size & ((1 << self.project.arch.bits) - alignment)) + alignment
 
         # step 1: check syscall locations
         if not self.arch.kernel_mode and self._syscall_locations:
             for addr in self._syscall_locations:
-                seen_addrs.add(addr+offset)
-                yield addr+offset
+                yield self._get_slice_by_addr(addr, blocksize)
 
         # step 2: check gadgets near rets
         if self._ret_locations:
-            block_size = (self.arch.max_block_size & ((1 << self.project.arch.bits) - alignment)) + alignment
-            slices = [(addr-block_size, addr) for addr in self._ret_locations]
-            current_addr = 0
-            for st, _ in slices:
-                current_addr = max(current_addr, st)
-                end_addr = st + block_size + alignment
-                for i in range(current_addr, end_addr, alignment):
-                    if i+offset in seen_addrs:
-                        continue
-                    if self._addr_in_executable_memory(i):
-                        yield i+offset
-                current_addr = max(current_addr, end_addr)
+            for addr in self._ret_locations:
+                yield self._get_slice_by_addr(addr, blocksize)
 
         # step 3: check every possible addresses
         if not self.only_check_near_rets:
             for segment in self._get_executable_ranges():
-                l.debug("Analyzing segment with address range: 0x%x, 0x%x", segment.min_addr, segment.max_addr)
                 start = alignment * ((segment.min_addr + alignment - 1) // alignment)
-                for addr in range(start, start+segment.memsize, alignment):
-                    if addr+offset in seen_addrs:
-                        continue
-                    yield addr+offset
+                end = segment.min_addr + segment.memsize
+                end -= end % alignment
+                end -= alignment # a slice is inclusive
+                yield (start, end)
 
     def _num_addresses_to_check(self):
-        if self.only_check_near_rets:
-            # TODO: This could probably be optimized further by fewer segments checks (i.e. iterating for segments and
-            #  adding ranges instead of incrementing, instead of calling _addressses_to_check) although this is still a
-            # significant improvement.
-            return sum(1 for _ in self._addresses_to_check())
-
         cnt = 0
-        if self._syscall_locations:
-            cnt += len(self._syscall_locations)
-
-        alignment = self.arch.alignment
-        for segment in self._get_executable_ranges():
-            cnt += segment.memsize // alignment
+        for slice in self._slices_to_check():
+            cnt += slice[1] - slice[0] + 1
         return cnt
 
+    #### identify ret/syscall locations ####
     def _get_ret_locations(self):
         """
         :return: all the locations in the binary with a ret instruction
