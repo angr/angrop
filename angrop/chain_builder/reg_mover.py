@@ -105,8 +105,6 @@ class RegMover(Builder):
                 g, new_moves = self._normalize_todos[addr]
                 if new_moves:
                     new_move = new_moves.pop()
-                    # don't send over g.project to multiprocessing, it is too slow
-                    g.project = None
                     cnt += 1
                     yield new_move, g
             if cnt == 0:

@@ -146,6 +146,7 @@ def loose_constrained_check(state, ast, extra_constraints=None):
         cnt += 1
     if cnt > 1:
         return False
+    return True
 
 def unconstrained_check(state, ast, extra_constraints=None):
     """
