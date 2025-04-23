@@ -215,6 +215,14 @@ class GadgetAnalyzer:
         return True
 
     def _block_make_sense_vex(self, block):
+        # we don't like floating point and SIMD stuff
+        if any(t in block.vex.tyenv.types for t in ('Ity_F16', 'Ity_F32', 'Ity_F64', 'Ity_F128', 'Ity_V128')):
+            return False
+
+        if any(isinstance(s, pyvex.IRStmt.Dirty) for s in block.vex.statements):
+            l.debug("... has dirties that we probably can't handle")
+            return False
+
         # make sure all constant memory accesses are in-bound
         for expr in block.vex.expressions:
             if expr.tag in ('Iex_Load', 'Ist_Store'):
@@ -222,17 +230,10 @@ class GadgetAnalyzer:
                     if self.project.loader.find_segment_containing(expr.addr.con.value) is None:
                         return False
 
-        if any(isinstance(s, pyvex.IRStmt.Dirty) for s in block.vex.statements):
-            l.debug("... has dirties that we probably can't handle")
-            return False
-
         for op in block.vex.operations:
             if op.startswith("Iop_Div"):
                 return False
 
-        # we don't like floating point and SIMD stuff
-        if any(t in block.vex.tyenv.types for t in ('Ity_F16', 'Ity_F32', 'Ity_F64', 'Ity_F128', 'Ity_V128')):
-            return False
         return True
 
     def _block_make_sense_sym_access(self, block):

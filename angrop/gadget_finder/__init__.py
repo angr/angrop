@@ -12,8 +12,7 @@ from angr.errors import SimEngineError, SimMemoryError
 from angr.misc.loggers import CuteFormatter
 
 from . import gadget_analyzer
-from ..arch import get_arch
-from ..errors import RopException
+from ..arch import get_arch, RISCV64
 from ..arch import ARM, X86, AMD64, AARCH64
 
 l = logging.getLogger(__name__)
@@ -363,13 +362,28 @@ class GadgetFinder:
                     skip_addrs.add(ins_addr)
                 do_update()
                 continue
+            # make sure all the jump targets are valid
+            valid = True
+            for target in bl.vex_nostmt.constant_jump_targets:
+                if analyzer.project.loader.find_segment_containing(target) is None:
+                    valid = False
+            if not valid:
+                for ins_addr in bl.instruction_addrs:
+                    skip_addrs.add(ins_addr)
+                do_update()
+                continue
+
             # it doesn't make sense to include a gadget that starts with a jump or call
             # the jump target itself will be the gadget
             if bl.vex_nostmt.instructions == 1 and jumpkind in ('Ijk_Boring', 'Ijk_Call'):
                 do_update()
                 continue
 
-            if not analyzer._block_make_sense(bl.addr):
+            ####### use vex ########
+            if not analyzer._block_make_sense_vex(bl) or not analyzer._block_make_sense_sym_access(bl) or not analyzer.arch.block_make_sense(bl):
+                do_update()
+                continue
+            if not bl.capstone.insns and not isinstance(analyzer.arch, RISCV64):
                 do_update()
                 continue
 
