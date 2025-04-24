@@ -187,7 +187,8 @@ class GadgetFinder:
         initargs = (self.gadget_analyzer,)
         with mp.Pool(processes=processes, initializer=_set_global_gadget_analyzer, initargs=initargs) as pool:
             for n, results in pool.imap_unordered(worker_func1, self._truncated_slices(), chunksize=40):
-                t.update(n)
+                if t:
+                    t.update(n)
                 for addr, h in results:
                     if addr is None:
                         continue
