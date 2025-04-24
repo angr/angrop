@@ -146,7 +146,7 @@ class RegMover(Builder):
         else:
             iterable = self.normalize_multiprocessing(processes)
         for new_move, addr, rb in iterable:
-            # if we happen to normalized another move, don't do it again
+            # if we happen to have normalized another move, don't do it again
             for m in rb.reg_moves:
                 todo_new_moves = self._normalize_todos[addr][1]
                 if m in todo_new_moves:
@@ -169,11 +169,12 @@ class RegMover(Builder):
                 if self._graph.has_edge(*edge):
                     edge_data = self._graph.get_edge_data(*edge)
                     edge_blocks = edge_data['block']
-                    edge_blocks.add(rb)
+                    edge_blocks.append(rb)
+                    edge_data['block'] = sorted(edge_blocks, key=lambda x: x.stack_change)
                     if move.bits > edge_data['bits']:
                         edge_data['bits'] = move.bits
                 else:
-                    self._graph.add_edge(*edge, block={rb}, bits=move.bits)
+                    self._graph.add_edge(*edge, block=[rb], bits=move.bits)
         return res
 
     def _build_move_graph(self):
@@ -182,15 +183,16 @@ class RegMover(Builder):
         # each node is a register
         graph.add_nodes_from(self.arch.reg_list)
         # an edge means there is a move from the src register to the dst register
-        objects = defaultdict(set)
+        objects = defaultdict(list)
         max_bits_dict = defaultdict(int)
         for block in self._reg_moving_blocks:
             for move in block.reg_moves:
                 edge = (move.from_reg, move.to_reg)
-                objects[edge].add(block)
+                objects[edge].append(block)
                 if move.bits > max_bits_dict[edge]:
                     max_bits_dict[edge] = move.bits
         for edge, val in objects.items():
+            val = sorted(val, key=lambda g:g.stack_change)
             graph.add_edge(edge[0], edge[1], block=val, bits=max_bits_dict[edge])
 
     def verify(self, chain, preserve_regs, registers):
@@ -360,6 +362,7 @@ class RegMover(Builder):
     def _better_than(self, g1, g2):
         if g1.stack_change <= g2.stack_change and \
                 g1.num_sym_mem_access <= g2.num_sym_mem_access and \
+                rop_utils.transit_num(g1) <= rop_utils.transit_num(g2) and \
                 g1.isn_count <= g2.isn_count:
             return True
         return False

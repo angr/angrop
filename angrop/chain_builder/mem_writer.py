@@ -55,6 +55,8 @@ class MemWriter(Builder):
             return False
         if not g1.changed_regs.issubset(g2.changed_regs):
             return False
+        if rop_utils.transit_num(g1) > rop_utils.transit_num(g2):
+            return False
         return True
 
     def _gen_mem_write_gadgets(self, string_data):

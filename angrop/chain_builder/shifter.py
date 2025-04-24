@@ -141,6 +141,8 @@ class Shifter(Builder):
             return False
         if not g1.changed_regs.issubset(g2.changed_regs):
             return False
+        if rop_utils.transit_num(g1) > rop_utils.transit_num(g2):
+            return False
         if g1.isn_count > g2.isn_count:
             return False
         return True

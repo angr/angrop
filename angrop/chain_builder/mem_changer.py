@@ -64,6 +64,7 @@ class MemChanger(Builder):
         if g1.isn_count <= g2.isn_count and \
             g1.stack_change <= g2.stack_change and \
             len(g1.changed_regs) <= len(g2.changed_regs) and \
+            rop_utils.transit_num(g1) <= rop_utils.transit_num(g2) and \
             g1.num_sym_mem_access <= g2.num_sym_mem_access:
             return True
         return False

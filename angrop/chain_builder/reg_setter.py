@@ -147,6 +147,21 @@ class RegSetter(Builder):
 
         return rb
 
+    def _should_normalize_reg_move(self, src, dst, shortest):
+        # situations we want to check
+        # 1. this is a hard register and we can set the source
+        # 2. the final chain is expected to be shorter than the best setter
+        # for the second scenario, we only check whether the move can be done in one step
+        mover_graph = self.chain_builder._reg_mover._graph
+        if not self._reg_setting_dict[dst] and self._reg_setting_dict[src]:
+            return True
+        edge = (src, dst)
+        if mover_graph.has_edge(edge[0], edge[1]):
+            edge_blocks = mover_graph.get_edge_data(edge[0], edge[1])['block']
+            if edge_blocks[0].stack_change + shortest[src] < shortest[dst]:
+                return True
+        return False
+
     def _optimize_with_reg_moves(self):
         # basically, we are looking for situations like this:
         # 1) we can set register A to arbitrary value (in self._reg_setting_dict) AND
@@ -157,45 +172,47 @@ class RegSetter(Builder):
         for src, dst in itertools.product(self._reg_setting_dict.keys(), self.arch.reg_list):
             if src == dst:
                 continue
-            # this is a hard register and we can set the source
-            if not self._reg_setting_dict[dst] and self._reg_setting_dict[src]:
-                paths = nx.all_simple_paths(mover_graph, src, dst, cutoff=3)
-                all_chains = []
-                for path in paths:
-                    path_chain = [self._reg_setting_dict[src]]
-                    edges = zip(path, path[1:])
-                    for edge in edges:
-                        edge_blocks = mover_graph.get_edge_data(edge[0], edge[1])['block']
-                        path_chain.append(edge_blocks)
-                    all_chains += list(itertools.product(*path_chain))
-                all_chains = sorted(all_chains, key=lambda c: sum(g.stack_change for g in c))
 
-                # no need to create the chains if we know it is not going to help
-                if not all_chains or (dst in shortest and sum(g.stack_change for g in all_chains[0]) >= shortest[dst]):
-                    continue
+            if not self._should_normalize_reg_move(src, dst, shortest):
+                continue
 
-                # TODO: optimize this, currently we take the first 5 valid chains with the smallest stack_change
-                cnt = 0
-                for c in all_chains:
-                    try:
-                        gadgets = self._expand_ropblocks(c)
-                        c = self._build_reg_setting_chain(gadgets, {})
-                        c = RopBlock.from_chain(c)
-                        if dst not in shortest or c.stack_change < shortest[dst]:
-                            shortest[dst] = c.stack_change
-                        if dst in c.popped_regs:
-                            cnt +=  1
-                            if c.pop_equal_set:
-                                for s in c.pop_equal_set:
-                                    if dst in s:
-                                        c.popped_regs -= set(s)
-                                        c.popped_regs.add(dst)
-                            rop_blocks.append(c)
-                            break
-                        if cnt == 5:
-                            break
-                    except RopException:
-                        pass
+            paths = nx.all_simple_paths(mover_graph, src, dst, cutoff=3)
+            all_chains = []
+            for path in paths:
+                path_chain = [self._reg_setting_dict[src]]
+                edges = zip(path, path[1:])
+                for edge in edges:
+                    edge_blocks = mover_graph.get_edge_data(edge[0], edge[1])['block']
+                    path_chain.append(edge_blocks)
+                all_chains += list(itertools.product(*path_chain))
+            all_chains = sorted(all_chains, key=lambda c: sum(g.stack_change for g in c))
+
+            # no need to create the chains if we know it is not going to help
+            if not all_chains or (dst in shortest and sum(g.stack_change for g in all_chains[0]) >= shortest[dst]):
+                continue
+
+            # TODO: optimize this, currently we take the first 5 valid chains with the smallest stack_change
+            cnt = 0
+            for c in all_chains:
+                try:
+                    gadgets = self._expand_ropblocks(c)
+                    c = self._build_reg_setting_chain(gadgets, {})
+                    c = RopBlock.from_chain(c)
+                    if dst not in shortest or c.stack_change < shortest[dst]:
+                        shortest[dst] = c.stack_change
+                    if dst in c.popped_regs:
+                        cnt +=  1
+                        if c.pop_equal_set:
+                            for s in c.pop_equal_set:
+                                if dst in s:
+                                    c.popped_regs -= set(s)
+                                    c.popped_regs.add(dst)
+                        rop_blocks.append(c)
+                        break
+                    if cnt == 5:
+                        break
+                except RopException:
+                    pass
         return rop_blocks
 
     def _optimize_with_gadgets(self):

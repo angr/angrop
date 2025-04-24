@@ -439,6 +439,10 @@ def step_to_syscall(state):
             return state
     return None
 
+transit_arr = ["pop_pc", "jmp_reg", "jmp_mem", None]
+def transit_num(g):
+    return transit_arr.index(g.transit_type)
+
 def handler(signum, frame):# pylint:disable=unused-argument
     # Exception during __del__ will be ignore
     # so if we happen to hit a __del__, retry the alarm

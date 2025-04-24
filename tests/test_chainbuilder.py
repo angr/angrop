@@ -961,6 +961,21 @@ def test_sim_exec_memory_write():
     _, state = rb.sim_exec()
     assert state.solver.eval(state.memory.load(addr, 4)) == 0x41414141
 
+def local_conflict_address():
+    path = "/home/kylebot/Desktop/projects/angrop-ng/experiments/dataset/base_dataset/ALLSTAR_9base_dd"
+    proj = angr.Project(path, auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    rop.find_gadgets(processes=16)
+
+    chain = rop.execve()
+    chain.pp()
+    state = chain.sim_exec_til_syscall()
+    data = state.solver.eval(state.memory.load(state.regs.rdi, 8), cast_to=bytes)
+    assert data == b'/bin/sh\x00'
+
+    assert len(chain._values) <= 23
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
@@ -968,6 +983,8 @@ def run_all():
         if hasattr(all_functions[f], '__call__'):
             print(f)
             all_functions[f]()
+    print("local_conflict_address")
+    local_conflict_address()
 
 if __name__ == "__main__":
     import sys
