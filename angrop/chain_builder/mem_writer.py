@@ -1,4 +1,5 @@
 import logging
+from collections import defaultdict
 
 import angr
 import claripy
@@ -20,11 +21,11 @@ class MemWriter(Builder):
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
         self._mem_write_gadgets: set = None # type: ignore
-        self._good_mem_write_gadgets: set = None # type: ignore
+        self._good_mem_write_gadgets = None # type: ignore
 
     def bootstrap(self):
         self._mem_write_gadgets = self._get_all_mem_write_gadgets(self.chain_builder.gadgets)
-        self._good_mem_write_gadgets = set()
+        self._good_mem_write_gadgets = defaultdict(set)
 
     def _set_regs(self, *args, **kwargs):
         return self.chain_builder._reg_setter.run(*args, **kwargs)
@@ -62,12 +63,13 @@ class MemWriter(Builder):
         # TODO could allow mem_reads as long as we control the address?
 
         # generate from the cache first
-        if self._good_mem_write_gadgets:
-            yield from self._good_mem_write_gadgets
+        data_len = len(string_data)
+        if self._good_mem_write_gadgets[data_len]:
+            yield from self._good_mem_write_gadgets[data_len]
 
         # now look for gadgets that require least stack change
         possible_gadgets = {g for g in self._mem_write_gadgets if g.self_contained}
-        possible_gadgets -= self._good_mem_write_gadgets # already yield these
+        possible_gadgets -= self._good_mem_write_gadgets[data_len] # already yield these
 
         reg_setter = self.chain_builder._reg_setter
         can_set_regs = {x for x in reg_setter._reg_setting_dict if reg_setter._reg_setting_dict[x]}
@@ -144,7 +146,7 @@ class MemWriter(Builder):
                 continue
             try:
                 chain = self._try_write_to_mem(gadget, False, addr, string_data, preserve_regs, fill_byte)
-                self._good_mem_write_gadgets.add(gadget)
+                self._good_mem_write_gadgets[len(string_data)].add(gadget)
                 return chain
             except (RopException, angr.errors.SimEngineError, angr.errors.SimUnsatError):
                 pass
