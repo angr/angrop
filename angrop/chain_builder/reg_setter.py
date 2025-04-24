@@ -409,7 +409,7 @@ class RegSetter(Builder):
 
         chains = [] # here, each "chain" is a list of gadgets
         try:
-            paths = nx.all_simple_paths(graph, source=src, target=dst, cutoff=len(registers)+2)
+            paths = nx.all_simple_paths(graph, source=src, target=dst, cutoff=min(len(registers)+2, 6))
             for path in paths:
                 if hard_chain:
                     tmp = [[x] for x in hard_chain]
