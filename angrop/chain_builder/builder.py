@@ -19,7 +19,7 @@ class Builder:
     """
     a generic class to bootstrap more complicated chain building functionality
     """
-    used_writable_ptrs = set()
+    used_writable_ptrs = []
 
     def __init__(self, chain_builder):
         self.chain_builder = chain_builder
@@ -89,7 +89,7 @@ class Builder:
         it shouldn't contain bad byte
         """
         null = b'\x00'*size
-        used_writable_ptrs = self.__class__.used_writable_ptrs
+        used_writable_ptrs = list(self.__class__.used_writable_ptrs)
 
         plt_sec = None
         # get all writable segments
@@ -126,13 +126,13 @@ class Builder:
                 if all(not self._word_contain_badbyte(x) for x in range(addr, addr+size, self.project.arch.bytes)):
                     data_len = size
                     if addr >= seg.max_addr:
-                        used_writable_ptrs.add((addr, size))
+                        self.__class__.used_writable_ptrs.append((addr, size))
                         return addr
                     if addr+size > seg.max_addr:
                         data_len = addr+size - seg.max_addr
                     data = self.project.loader.memory.load(addr, data_len)
                     if data == null[:data_len]:
-                        used_writable_ptrs.add((addr, size))
+                        self.__class__.used_writable_ptrs.append((addr, size))
                         return addr
         return None
 

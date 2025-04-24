@@ -16,9 +16,10 @@ from ..rop_gadget import RopRegMove
 l = logging.getLogger(__name__)
 
 _global_reg_mover = None
-def _set_global_reg_mover(reg_mover):
+def _set_global_reg_mover(reg_mover, ptr_list):
     global _global_reg_mover# pylint: disable=global-statement
     _global_reg_mover = reg_mover
+    Builder.used_writable_ptrs = ptr_list
 
 def worker_func(t):
     new_move, gadget = t
@@ -120,17 +121,22 @@ class RegMover(Builder):
                 yield new_move, gadget.addr, rb
 
     def normalize_multiprocessing(self, processes):
-        initargs = (self,)
-        with mp.Pool(processes=processes, initializer=_set_global_reg_mover, initargs=initargs) as pool:
-            for new_move, addr, solver, rb in pool.imap_unordered(worker_func, self.normalize_todos()):
-                if rb is None:
-                    continue
-                state = rop_utils.make_symbolic_state(self.project, self.arch.reg_list, 0)
-                state.solver = solver
-                rb.set_project(self.project)
-                rb.set_builder(self)
-                rb._blank_state = state
-                yield new_move, addr, rb
+        with mp.Manager() as manager:
+            # HACK: ideally, used_ptrs should be a resource of each ropblock that can be reassigned when conflict happens
+            # but currently, I'm being lazy and just make sure every pointer is different
+            ptr_list = manager.list(Builder.used_writable_ptrs)
+            initargs = (self, ptr_list)
+            with mp.Pool(processes=processes, initializer=_set_global_reg_mover, initargs=initargs) as pool:
+                for new_move, addr, solver, rb in pool.imap_unordered(worker_func, self.normalize_todos()):
+                    if rb is None:
+                        continue
+                    state = rop_utils.make_symbolic_state(self.project, self.arch.reg_list, 0)
+                    state.solver = solver
+                    rb.set_project(self.project)
+                    rb.set_builder(self)
+                    rb._blank_state = state
+                    yield new_move, addr, rb
+            Builder.used_writable_ptrs = list(ptr_list)
 
     def optimize(self, processes):
         res = False
