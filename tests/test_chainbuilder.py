@@ -962,8 +962,7 @@ def test_sim_exec_memory_write():
     assert state.solver.eval(state.memory.load(addr, 4)) == 0x41414141
 
 def local_conflict_address():
-    path = "/home/kylebot/Desktop/projects/angrop-ng/experiments/dataset/base_dataset/ALLSTAR_9base_dd"
-    proj = angr.Project(path, auto_load_libs=False)
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "ALLSTAR_9base_dd"), load_options={'main_opts':{'base_addr': 0}})
     rop = proj.analyses.ROP()
 
     rop.find_gadgets(processes=16)

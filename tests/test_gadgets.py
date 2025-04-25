@@ -48,7 +48,7 @@ def test_arm_mem_change_gadget():
     # pylint: disable=pointless-string-statement
 
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
-    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True, max_sym_mem_access=4)
 
     """
     0x0004f08c <+28>:	ldr	r2, [r4, #48]	; 0x30
@@ -367,9 +367,10 @@ def test_arm_jmp_mem():
 
 def test_num_mem_access():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "cgc", "sc1_0b32aa01_01"), auto_load_libs=False)
-    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, max_sym_mem_access=2)
 
     g = rop.analyze_gadget(0x8048500)
+    assert g is not None
     assert g.has_symbolic_access() is True
     assert g.num_sym_mem_access == 2
     assert len(g.mem_changes) == 2

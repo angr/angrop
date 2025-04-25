@@ -148,6 +148,9 @@ class RegSetter(Builder):
         return rb
 
     def _should_normalize_reg_move(self, src, dst, shortest):
+        # we can't set the source register, no point in normalizing it
+        if src not in shortest:
+            return False
         # situations we want to check
         # 1. this is a hard register and we can set the source
         # 2. the final chain is expected to be shorter than the best setter
