@@ -173,10 +173,11 @@ class GadgetFinder:
                 yield new
             yield slice
 
-    def _multiprocess_static_analysis(self, processes, show_progress):
+    def _multiprocess_static_analysis(self, processes, show_progress, timeout):
         """
         use multiprocessing to build the cache
         """
+        start = time.time()
         task_len = self._num_addresses_to_check()
         todos = []
 
@@ -200,8 +201,13 @@ class GadgetFinder:
                             todos.append(addr)
                     else:
                         todos.append(addr)
+                if timeout is not None and time.time() - start > timeout:
+                    break
 
-        return todos
+        remaining = None
+        if timeout is not None:
+            remaining = timeout - (time.time() - start)
+        return todos, remaining
 
     def _analyze_gadgets_multiprocess(self, processes, tasks, show_progress, timeout, cond_br):
         gadgets = []
@@ -259,8 +265,9 @@ class GadgetFinder:
     def find_gadgets(self, processes=4, show_progress=True, timeout=None):
         assert self.gadget_analyzer is not None
         self._cache = {}
-        tasks = self._multiprocess_static_analysis(processes, show_progress)
-        return self._analyze_gadgets_multiprocess(processes, tasks, show_progress, timeout, None), self.get_duplicates()
+        timeout1 = timeout / 2
+        tasks, remaining = self._multiprocess_static_analysis(processes, show_progress, timeout1)
+        return self._analyze_gadgets_multiprocess(processes, tasks, show_progress, remaining+timeout/2, None), self.get_duplicates()
 
     def find_gadgets_single_threaded(self, show_progress=True):
         gadgets = []
