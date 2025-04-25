@@ -54,6 +54,8 @@ class RopMemAccess:
 
     @property
     def stack_offset(self):
+        if self.addr_constant is None:
+            return None
         return self.addr_constant - 0x7ffffffffff0000
 
     def __eq__(self, other):

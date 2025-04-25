@@ -633,7 +633,14 @@ class Builder:
         if post_preserve is None:
             post_preserve = set()
 
+        # calculate the number of bytes we need to shift after jmp_mem
+        # this handles out of patch access
         mem_writer = self.chain_builder._mem_writer
+        stack_offsets = [0, gadget.stack_change + self.project.arch.bytes]
+        for m in gadget.mem_reads + gadget.mem_writes + gadget.mem_changes:
+            if m.stack_offset is not None:
+                stack_offsets.append(m.stack_offset + self.project.arch.bytes)
+        max_stack_offset = max(stack_offsets) + abs(gadget.stack_change) # max stack access + the negative shifting
 
         # make sure we can set the pc_target ast in the first place
         needed_regs = set(x[5:].split('-', 1)[0] for x in gadget.pc_target.variables if x.startswith('sreg_'))
@@ -660,7 +667,7 @@ class Builder:
                 return None
             shifter_list = itertools.chain.from_iterable(shifter_list)
             for shifter in shifter_list:
-                if shifter.pc_offset < abs(gadget.stack_change):
+                if shifter.pc_offset < max_stack_offset:
                     continue
                 if not shifter.changed_regs.intersection(post_preserve):
                     break

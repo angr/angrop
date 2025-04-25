@@ -975,6 +975,22 @@ def local_conflict_address():
 
     assert len(chain._values) <= 23
 
+def test_normalize_jmp_mem_with_oop_access():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "ALLSTAR_aces3_xaces3"), load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
+
+    rop.analyze_gadget(0x0000000000a42cc2)
+    rop.analyze_gadget(0x0000000000a28b7e)
+    rop.analyze_gadget(0x00000000004ff8aa)
+    rop.analyze_gadget(0x00000000004ff46a)
+    rop.analyze_gadget(0x00000000004e91f7)
+    rop.analyze_gadget(0x000000000043b2fa) # : add rsp, 0x18 ; ret
+
+    rop.optimize()
+
+    chain = rop.set_regs(r10=0x41414141)
+    assert chain is not None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
