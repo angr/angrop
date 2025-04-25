@@ -512,7 +512,7 @@ class GadgetFinder:
                 merged.append(current)
         return merged
 
-    def _slices_to_check(self):
+    def _slices_to_check(self, do_sort=True):
         """
         :return: all the slices to check, slice is inclusive: [start, end]
         """
@@ -525,8 +525,33 @@ class GadgetFinder:
                 slices += [self._get_slice_by_addr(addr, blocksize) for addr in self._syscall_locations]
             if self._ret_locations:
                 slices += [self._get_slice_by_addr(addr, blocksize) for addr in self._ret_locations]
+
+            # avoid decoding one address multiple times
             slices = self.merge_slices(slices)
-            yield from slices
+            if not do_sort:
+                yield from slices
+                return
+
+            # prioritize syscalls, so we still have syscall gadgets even if we timeout during gadget analysis
+            start = time.time()
+            syscall_locations = sorted(list(self._syscall_locations))
+            slices1 = []
+            for s in slices:
+                if not syscall_locations:
+                    break
+                loc = syscall_locations[0]
+                if s[0] <= loc <= s[1]:
+                    slices1.append(s)
+                    for idx in range(1, len(syscall_locations)):
+                        if s[0] <= syscall_locations[idx] <= s[1]:
+                            continue
+                        break
+                    else:
+                        break
+                    syscall_locations = syscall_locations[idx:]
+            slices2 = [s for s in slices if s not in slices1]
+
+            yield from slices1 + slices2
         else:
             for segment in self._get_executable_ranges():
                 start = alignment * ((segment.min_addr + alignment - 1) // alignment)
@@ -537,7 +562,7 @@ class GadgetFinder:
 
     def _num_addresses_to_check(self):
         cnt = 0
-        for slice in self._slices_to_check():
+        for slice in self._slices_to_check(do_sort=False):
             cnt += slice[1] - slice[0] + 1
         return cnt
 
