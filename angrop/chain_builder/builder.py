@@ -309,7 +309,7 @@ class Builder:
 
     @rop_utils.timeout(3)
     def _build_reg_setting_chain(
-        self, gadgets, register_dict):
+        self, gadgets, register_dict, constrained_addrs=None):
         """
         This function figures out the actual values needed in the chain
         for a particular set of gadgets and register values
@@ -423,7 +423,11 @@ class Builder:
                 if len(state.solver.eval_to_ast(action.addr, 2)) == 1:
                     continue
                 if len(action.addr.ast.variables) == 1 and set(action.addr.ast.variables).pop().startswith("symbolic_stack"):
-                    ptr_bv = claripy.BVV(self._get_ptr_to_writable(action.size.ast//8), action.addr.ast.size())
+                    if constrained_addrs is not None:
+                        ptr_bv = constrained_addrs[0]
+                        constrained_addrs = constrained_addrs[1:]
+                    else:
+                        ptr_bv = claripy.BVV(self._get_ptr_to_writable(action.size.ast//8), action.addr.ast.size())
                     ropvalue = rop_utils.cast_rop_value(ptr_bv, self.project)
                     lhs, rhs = self._rebalance_ast(action.addr.ast, ptr_bv)
                     if self.project.arch.memory_endness == 'Iend_LE':

@@ -255,6 +255,7 @@ class MemWriter(Builder):
         # get the actual register values
         reg_vals = {}
         new_addr_val = None
+        constrained_addrs = None
         name = addr_bvs._encoded_name.decode()
         for reg in all_deps:
             var = test_state.solver.eval(test_state.registers.load(reg))
@@ -277,12 +278,15 @@ class MemWriter(Builder):
                     break
             reg_vals[reg] = var
 
+        # if this address is set by stack
+        if new_addr_val is None:
+            constrained_addrs = [addr_val.data]
 
         chain = self._set_regs(**reg_vals, preserve_regs=preserve_regs)
         chain = RopBlock.from_chain(chain)
-        chain = self._build_reg_setting_chain([chain, gadget], {})
+        chain = self._build_reg_setting_chain([chain, gadget], {}, constrained_addrs=constrained_addrs)
         for idx, val in enumerate(chain._values):
-            if not val.symbolic and not new_addr_val.symbolic and val.concreted == new_addr_val.concreted:
+            if not val.symbolic and new_addr_val is not None and not new_addr_val.symbolic and val.concreted == new_addr_val.concreted:
                 chain._values[idx] = new_addr_val
                 break
 
