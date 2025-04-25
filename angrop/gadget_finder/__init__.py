@@ -265,9 +265,10 @@ class GadgetFinder:
     def find_gadgets(self, processes=4, show_progress=True, timeout=None):
         assert self.gadget_analyzer is not None
         self._cache = {}
-        timeout1 = timeout / 2
+        timeout1 = timeout/2 if timeout is not None else None
         tasks, remaining = self._multiprocess_static_analysis(processes, show_progress, timeout1)
-        return self._analyze_gadgets_multiprocess(processes, tasks, show_progress, remaining+timeout/2, None), self.get_duplicates()
+        timeout = remaining+timeout/2 if timeout is not None else None
+        return self._analyze_gadgets_multiprocess(processes, tasks, show_progress, timeout, None), self.get_duplicates()
 
     def find_gadgets_single_threaded(self, show_progress=True):
         gadgets = []
