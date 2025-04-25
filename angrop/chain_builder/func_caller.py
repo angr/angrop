@@ -223,6 +223,7 @@ class FuncCaller(Builder):
         registers = {self._cc.ARG_REGS[i]:register_args[i] for i in range(len(register_args))}
         reg_names = set(registers.keys())
         ptr_to_func = self._find_function_pointer(address)
+        hard_regs = [x for x in registers if not self.chain_builder._reg_setter._reg_setting_dict[x]]
         if ptr_to_func is not None:
             for g in self._func_jmp_gadgets:
                 if g.popped_regs.intersection(reg_names):
@@ -231,17 +232,20 @@ class FuncCaller(Builder):
 
                 # build the new target registers
                 registers = registers.copy()
-                bad = False
+                skip = False
                 for move in g.reg_moves:
+                    if move.from_reg in hard_regs or move.to_reg not in hard_regs:
+                        skip = True
+                        break
                     if move.to_reg in registers.keys():
                         val = registers[move.to_reg]
                         if move.from_reg in registers:
                             l.warning("oops, overlapped moves not handled atm: %s", g.dstr())
-                            bad = True
+                            skip = True
                             break
                         del registers[move.to_reg]
                         registers[move.from_reg] = val
-                if bad:
+                if skip:
                     continue
 
                 if g.transit_type != 'jmp_mem':
