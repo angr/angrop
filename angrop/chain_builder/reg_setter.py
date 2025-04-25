@@ -439,7 +439,11 @@ class RegSetter(Builder):
                 for edge in edges:
                     objects = graph.get_edge_data(edge[0], edge[1])['objects']
                     tmp.append(objects)
-                chains += itertools.product(*tmp)
+                # for each path, take the shortest 5 chains
+                path_chains = itertools.product(*tmp)
+                path_chains = sorted(path_chains, key=lambda c: sum(g.stack_change for g in c))[:5]
+                chains += path_chains
+            chains = list(chains)
         except nx.exception.NetworkXNoPath:
             return []
 
