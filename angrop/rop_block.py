@@ -48,7 +48,6 @@ class RopBlock(RopChain, RopEffect):
         # clear the effects
         rb.changed_regs = set()
         rb.popped_regs = set()
-        rb.popped_reg_vars = {}
         rb.concrete_regs = {}
         rb.reg_dependencies = {}
         rb.reg_controllers = {}
