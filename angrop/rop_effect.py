@@ -143,7 +143,7 @@ class RopEffect:
         """
         accesses = self.mem_reads + self.mem_writes + self.mem_changes
         res = len([x for x in accesses if x.is_symbolic_access()])
-        if isinstance(self, RopGadget) and  self.transit_type == 'jmp_mem' and self.pc_target.symbolic:
+        if hasattr(self, "transit_type") and self.transit_type == 'jmp_mem' and self.pc_target.symbolic:
             assert res > 0
             res -= 1
         return res
@@ -165,5 +165,3 @@ class RopEffect:
         cp.bbl_addrs = list(self.bbl_addrs)
         cp.isn_count = self.isn_count
         return cp
-
-from .rop_gadget import RopGadget 
