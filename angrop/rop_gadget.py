@@ -45,7 +45,7 @@ class RopGadget(RopEffect):
         s = "Gadget %#x\n" % self.addr
         s += "Stack change: %#x\n" % self.stack_change
         s += "Changed registers: " + str(self.changed_regs) + "\n"
-        s += "Popped registers: " + str(self.popped_regs) + "\n"
+        s += "Popped registers: " + str(self.reg_pops) + "\n"
         for move in self.reg_moves:
             s += "Register move: [%s to %s, %d bits]\n" % (move.from_reg, move.to_reg, move.bits)
         s += "Register dependencies:\n"

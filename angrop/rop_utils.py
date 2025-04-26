@@ -247,6 +247,13 @@ def get_reg_name(arch, reg_offset):
             reg_offset -= 1
     raise RegNotFoundException("register %s not found" % str(original_offset))
 
+def bits_extended(ast):
+    if ast.op in ('ZeroExt', 'SignExt'):
+        return ast.args[0]
+    for c in ast.children_asts():
+        if c.op in ('ZeroExt', 'SignExt'):
+            return c.args[0]
+    return None
 
 def fast_uninitialized_filler(_, addr, size, state):
     return state.solver.BVS("uninitialized_" + hex(addr), size, explicit_name=True)

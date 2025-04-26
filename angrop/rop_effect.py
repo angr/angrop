@@ -92,6 +92,22 @@ class RopRegMove:
     def __repr__(self):
         return f"RegMove: {self.to_reg} <= {self.from_reg} ({self.bits} bits)"
 
+class RopRegPop:
+    def __init__(self, reg, bits):
+        self.reg = reg
+        self.bits = bits
+
+    def __hash__(self):
+        return hash((self.reg, self.bits))
+
+    def __eq__(self, other):
+        if type(other) != RopRegPop:
+            return False
+        return self.reg == other.reg and self.bits == other.bits
+
+    def __repr__(self):
+        return f"RegPop: {self.reg} ({self.bits} bits)"
+
 class RopEffect:
     def __init__(self):
 
@@ -99,12 +115,12 @@ class RopEffect:
 
         # register effect information
         self.changed_regs = set()
-        self.popped_regs = set()
         # Stores the stack variables that each register depends on.
         # Used to check for cases where two registers are popped from the same location.
         self.concrete_regs = {}
         self.reg_dependencies = {}  # like rax might depend on rbx, rcx
         self.reg_controllers = {}  # like rax might be able to be controlled by rbx (for any value of rcx)
+        self.reg_pops = set()
         self.reg_moves = []
 
         # memory effect information
@@ -148,13 +164,26 @@ class RopEffect:
             res -= 1
         return res
 
+    @property
+    def popped_regs(self):
+        return {x.reg for x in self.reg_pops}
+
+    def get_pop(self, reg):
+        for x in self.reg_pops:
+            if x.reg == reg:
+                return x
+        return None
+
+    def clear_effect(self):
+        RopEffect.__init__(self)
+
     def import_effect(self, gadget):
         gadget.copy_effect(self)
 
     def copy_effect(self, cp):
         cp.stack_change = self.stack_change
         cp.changed_regs = set(self.changed_regs)
-        cp.popped_regs = set(self.popped_regs)
+        cp.reg_pops = set(self.reg_pops)
         cp.concrete_regs = dict(self.concrete_regs)
         cp.reg_dependencies = dict(self.reg_dependencies)
         cp.reg_controllers = dict(self.reg_controllers)

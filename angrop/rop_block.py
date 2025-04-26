@@ -42,19 +42,11 @@ class RopBlock(RopChain, RopEffect):
 
         ga = self._builder._gadget_analyzer
 
+        # clear the effects
+        rb.clear_effect()
+
         # stack change
         ga._compute_sp_change(init_state, final_state, rb)
-
-        # clear the effects
-        rb.changed_regs = set()
-        rb.popped_regs = set()
-        rb.concrete_regs = {}
-        rb.reg_dependencies = {}
-        rb.reg_controllers = {}
-        rb.reg_moves = []
-        rb.mem_reads = []
-        rb.mem_writes = []
-        rb.mem_changes = []
 
         # reg effect
         ga._check_reg_changes(final_state, init_state, rb)

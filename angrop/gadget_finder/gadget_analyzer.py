@@ -14,7 +14,7 @@ from angr.errors import SimEngineError, SimMemoryError
 from .. import rop_utils
 from ..arch import get_arch, X86, RISCV64
 from ..rop_gadget import RopGadget, PivotGadget, SyscallGadget
-from ..rop_effect import RopMemAccess, RopRegMove
+from ..rop_effect import RopMemAccess, RopRegMove, RopRegPop
 from ..rop_block import RopBlock
 from ..errors import RopException, RegNotFoundException, RopTimeoutException
 
@@ -539,7 +539,13 @@ class GadgetAnalyzer:
             elif self._check_if_stack_controls_ast(ast, final_state, stack_change):
                 if ast.op == 'Concat':
                     raise RopException("cannot handle Concat")
-                gadget.popped_regs.add(reg)
+                bits = self.project.arch.bits
+                extended = rop_utils.bits_extended(ast)
+                if extended is not None and bits == 64:
+                    if extended <= 32:
+                        bits = 32
+                pop = RopRegPop(reg, bits)
+                gadget.reg_pops.add(pop)
                 gadget.changed_regs.add(reg)
             else:
                 gadget.changed_regs.add(reg)

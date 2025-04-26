@@ -205,11 +205,13 @@ class RegSetter(Builder):
                         shortest[dst] = c.stack_change
                     if dst in c.popped_regs:
                         cnt +=  1
+                        pop = c.get_pop(dst)
                         if c.pop_equal_set:
                             for s in c.pop_equal_set:
-                                if dst in s:
-                                    c.popped_regs -= set(s)
-                                    c.popped_regs.add(dst)
+                                if dst in s and c.get_pop(s):
+                                    tmp_pop = c.get_pop(s)
+                                    c.reg_pops -= set(tmp_pop)
+                                    c.reg_pops.add(pop)
                         rop_blocks.append(c)
                         break
                     if cnt == 5:
