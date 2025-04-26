@@ -94,6 +94,7 @@ class RopRegMove:
 
 class RopRegPop:
     def __init__(self, reg, bits):
+        assert type(reg) is str
         self.reg = reg
         self.bits = bits
 
@@ -106,7 +107,7 @@ class RopRegPop:
         return self.reg == other.reg and self.bits == other.bits
 
     def __repr__(self):
-        return f"RegPop: {self.reg} ({self.bits} bits)"
+        return f"<RegPop {self.reg}-{self.bits}bits>"
 
 class RopEffect:
     def __init__(self):

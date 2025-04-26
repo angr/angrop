@@ -223,7 +223,7 @@ class FuncCaller(Builder):
         registers = {self._cc.ARG_REGS[i]:register_args[i] for i in range(len(register_args))}
         reg_names = set(registers.keys())
         ptr_to_func = self._find_function_pointer(address)
-        hard_regs = [x for x in registers if not self.chain_builder._reg_setter._reg_setting_dict[x]]
+        hard_regs = [x for x in registers if not self.chain_builder._reg_setter.can_set_reg(x)]
         if ptr_to_func is not None:
             for g in self._func_jmp_gadgets:
                 if g.popped_regs.intersection(reg_names):

@@ -610,7 +610,7 @@ class Builder:
         if pre_preserve is None:
             pre_preserve = set()
         reg_setter = self.chain_builder._reg_setter
-        if gadget.pc_reg not in reg_setter._reg_setting_dict:
+        if not reg_setter.can_set_reg(gadget.pc_reg):
             return None
 
         # choose the best gadget to set the PC for this jmp_reg gadget
@@ -661,7 +661,7 @@ class Builder:
         needed_regs = set(x[5:].split('-', 1)[0] for x in gadget.pc_target.variables if x.startswith('sreg_'))
         reg_setter = self.chain_builder._reg_setter
         for reg in needed_regs:
-            if reg not in reg_setter._reg_setting_dict:
+            if not reg_setter.can_set_reg(reg):
                 return None
 
         # if the target is not symbolic, make sure the target location is writable
@@ -712,7 +712,7 @@ class Builder:
                 return None
             to_set_regs = {x:y for x,y in reg_solves.items() if x not in rb.popped_regs}
             preserve_regs = set(reg_solves.keys()) - set(to_set_regs.keys())
-            if any(x for x in to_set_regs if x not in self.chain_builder._reg_setter._reg_setting_dict):
+            if any(x for x in to_set_regs if not self.chain_builder._reg_setter.can_set_reg(x)):
                 return None
             if preserve_regs:
                 for reg in preserve_regs:

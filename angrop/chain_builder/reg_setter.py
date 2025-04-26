@@ -11,6 +11,7 @@ from .. import rop_utils
 from ..rop_chain import RopChain
 from ..rop_block import RopBlock
 from ..rop_gadget import RopGadget
+from ..rop_effect import RopRegPop
 from ..errors import RopException
 
 l = logging.getLogger(__name__)
@@ -124,6 +125,9 @@ class RegSetter(Builder):
         pc_var = set(state.regs.pc.variables).pop()
         return pc_var.startswith("next_pc")
 
+    def can_set_reg(self, reg):
+        return bool(self._reg_setting_dict[reg])
+
     #### Graph Optimization ####
     def _normalize_for_move(self, gadget, new_move):
         """
@@ -165,6 +169,14 @@ class RegSetter(Builder):
                 return True
         return False
 
+    def _can_set_reg_with_bits(self, reg, bits):
+        blocks = self._reg_setting_dict[reg]
+        for block in blocks:
+            pop = block.get_pop(reg)
+            if pop.bits >= bits:
+                return True
+        return False
+
     def _optimize_with_reg_moves(self):
         # basically, we are looking for situations like this:
         # 1) we can set register A to arbitrary value (in self._reg_setting_dict) AND
@@ -180,23 +192,62 @@ class RegSetter(Builder):
                 continue
 
             paths = nx.all_simple_paths(mover_graph, src, dst, cutoff=3)
-            all_chains = []
+            all_chains = defaultdict(list)
             for path in paths:
-                path_chain = [self._reg_setting_dict[src]]
+                path_chain = []
                 edges = zip(path, path[1:])
+                path_bits = self.project.arch.bits
                 for edge in edges:
-                    edge_blocks = mover_graph.get_edge_data(edge[0], edge[1])['block']
+                    edge_data = mover_graph.get_edge_data(edge[0], edge[1])
+                    edge_blocks = edge_data['block']
+                    edge_bits = edge_data['bits']
+                    if edge_bits < path_bits:
+                        path_bits = edge_bits
+                    # for each edge, take the shortest 5 blocks
+                    def block_with_max_bit_moves(blocks):
+                        results = []
+                        for block in blocks:
+                            for m in block.reg_moves:
+                                if m.from_reg == edge[0] and m.to_reg == edge[1]:
+                                    break
+                            else:
+                                raise RuntimeError("????")
+                            if m.bits == edge_bits:
+                                results.append(block)
+                        return results
+                    edge_blocks = sorted(block_with_max_bit_moves(edge_blocks), key=lambda g: g.stack_change)[:5]
                     path_chain.append(edge_blocks)
-                all_chains += list(itertools.product(*path_chain))
-            all_chains = sorted(all_chains, key=lambda c: sum(g.stack_change for g in c))
+                setter_chain = []
+                for setter in self._reg_setting_dict[src]:
+                    pop = setter.get_pop(src)
+                    if pop.bits >= path_bits:
+                        setter_chain.append(setter)
+                if not setter_chain:
+                    continue
+                path_chains = list(itertools.product(*([setter_chain]+path_chain)))
+                all_chains[path_bits] += path_chains
 
-            # no need to create the chains if we know it is not going to help
-            if not all_chains or (dst in shortest and sum(g.stack_change for g in all_chains[0]) >= shortest[dst]):
+            if not all_chains:
                 continue
 
+            def chain_sc(gadgets):
+                sc = 0
+                for g in gadgets:
+                    sc += g.stack_change
+                return sc
+            unique_chains = []
+            max_bits = max(all_chains.keys())
+            if not self._can_set_reg_with_bits(dst, max_bits):
+                unique_chains = sorted(all_chains[max_bits], key=chain_sc)[:5]
+            shorter_chains = []
+            if dst in shortest:
+                for bits in all_chains:
+                    shorter_chains += sorted(all_chains[bits], key=chain_sc)[:5]
+                shorter_chains = sorted(shorter_chains, key=chain_sc)[:5]
+                shorter_chains = [c for c in shorter_chains if chain_sc(c) < shortest[dst]]
+
             # TODO: optimize this, currently we take the first 5 valid chains with the smallest stack_change
-            cnt = 0
-            for c in all_chains:
+            for c in unique_chains + shorter_chains:
                 try:
                     gadgets = self._expand_ropblocks(c)
                     c = self._build_reg_setting_chain(gadgets, {})
@@ -204,7 +255,6 @@ class RegSetter(Builder):
                     if dst not in shortest or c.stack_change < shortest[dst]:
                         shortest[dst] = c.stack_change
                     if dst in c.popped_regs:
-                        cnt +=  1
                         pop = c.get_pop(dst)
                         if c.pop_equal_set:
                             for s in c.pop_equal_set:
@@ -213,8 +263,6 @@ class RegSetter(Builder):
                                     c.reg_pops -= set(tmp_pop)
                                     c.reg_pops.add(pop)
                         rop_blocks.append(c)
-                        break
-                    if cnt == 5:
                         break
                 except RopException:
                     pass
