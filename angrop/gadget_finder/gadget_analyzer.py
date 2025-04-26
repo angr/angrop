@@ -435,6 +435,7 @@ class GadgetAnalyzer:
         self._check_reg_change_dependencies(init_state, final_state, gadget)
         self._check_reg_movers(init_state, final_state, gadget)
         self._analyze_concrete_regs(final_state, gadget)
+        self._check_pop_equal_set(gadget, final_state)
 
         # memory access analysis
         l.debug("... analyzing mem accesses")
@@ -568,6 +569,24 @@ class GadgetAnalyzer:
                 controllers = self._get_reg_controllers(symbolic_state, symbolic_p, reg, dependencies)
                 if controllers:
                     gadget.reg_controllers[reg] = set(controllers)
+
+    def _check_pop_equal_set(self, gadget, final_state):
+
+        d = defaultdict(list)
+        for reg in self.arch.reg_list:
+            ast = final_state.registers.load(reg)
+            if ast.op in ('ZeroExt', 'SignExt'):
+                tmp = ast.args[1]
+                if tmp.op == 'Extract':
+                    ast = tmp.args[2]
+            d[ast].append(reg)
+        for k in d:
+            if len(k.variables) != 1:
+                continue
+            variable = list(k.variables)[0]
+            if not variable.startswith("symbolic_stack"):
+                continue
+            gadget.pop_equal_set.add(tuple(d[k]))
 
     @staticmethod
     def _is_add_int(final_val, init_val):

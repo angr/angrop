@@ -24,8 +24,6 @@ class RopBlock(RopChain, RopEffect):
         RopChain.__init__(self, project, builder, state=state, badbytes=badbytes)
         RopEffect.__init__(self)
 
-        self.pop_equal_set = set() # like pop rax; mov rbx, rax; they must be the same
-
     def _chain_block(self, other):
         assert type(other) is RopBlock
         res = super().__add__(other)
@@ -52,6 +50,7 @@ class RopBlock(RopChain, RopEffect):
         ga._check_reg_changes(final_state, init_state, rb)
         ga._check_reg_change_dependencies(init_state, final_state, rb)
         ga._check_reg_movers(init_state, final_state, rb)
+        ga._check_pop_equal_set(rb, final_state)
 
         # mem effect
         ga._analyze_concrete_regs(final_state, rb)
@@ -60,24 +59,6 @@ class RopBlock(RopChain, RopEffect):
         rb.bbl_addrs = list(final_state.history.bbl_addrs)
         project = init_state.project
         rb.isn_count = sum(project.factory.block(addr).instructions for addr in rb.bbl_addrs)
-
-        d = defaultdict(list)
-        for reg in self._builder.arch.reg_list:
-            ast = final_state.registers.load(reg)
-            if ast.op in ('ZeroExt', 'SignExt'):
-                tmp = ast.args[1]
-                if tmp.op == 'Extract':
-                    ast = tmp.args[2]
-            d[ast].append(reg)
-        for k in d:
-            if len(k.variables) != 1:
-                continue
-            variable = list(k.variables)[0]
-            if not variable.startswith("symbolic_stack"):
-                continue
-            if len(d[k]) == 1:
-                continue
-            self.pop_equal_set.add(tuple(d[k]))
 
     def sim_exec(self):
         project = self._p

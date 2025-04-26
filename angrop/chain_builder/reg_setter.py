@@ -254,14 +254,6 @@ class RegSetter(Builder):
                     c = RopBlock.from_chain(c)
                     if dst not in shortest or c.stack_change < shortest[dst]:
                         shortest[dst] = c.stack_change
-                    if dst in c.popped_regs:
-                        pop = c.get_pop(dst)
-                        if c.pop_equal_set:
-                            for s in c.pop_equal_set:
-                                if dst in s and c.get_pop(s):
-                                    tmp_pop = c.get_pop(s)
-                                    c.reg_pops -= set(tmp_pop)
-                                    c.reg_pops.add(pop)
                         rop_blocks.append(c)
                         break
                 except RopException:
@@ -456,21 +448,24 @@ class RegSetter(Builder):
             if isinstance(g, RopGadget) and not g.self_contained:
                 continue
             reg_set = can_set_regs(g)
-            clobbered_regs = g.changed_regs - reg_set
-            # don't add the edge if changes registers that we want to preserve
-            if g.changed_regs.intersection(preserve_regs):
-                continue
-            total_reg_set.update(reg_set)
-            for n in nodes:
-                src_node = n
-                dst_node = get_dst_node(n, reg_set, clobbered_regs)
-                if src_node == dst_node:
+            for unique_reg_set in list(itertools.product(*g.pop_equal_set)):
+                unique_reg_set = set(unique_reg_set)
+                unique_reg_set = unique_reg_set.intersection(reg_set)
+                clobbered_regs = g.changed_regs - unique_reg_set
+                # don't add the edge if changes registers that we want to preserve
+                if g.changed_regs.intersection(preserve_regs):
                     continue
-                # greedy algorithm: only add edges that transit to an at least equally good node
-                src_cnt = len([x for x in src_node if x is True])
-                dst_cnt = len([x for x in dst_node if x is True])
-                if dst_cnt >= src_cnt:
-                    add_edge(src_node, dst_node, g)
+                total_reg_set.update(unique_reg_set)
+                for n in nodes:
+                    src_node = n
+                    dst_node = get_dst_node(n, unique_reg_set, clobbered_regs)
+                    if src_node == dst_node:
+                        continue
+                    # greedy algorithm: only add edges that transit to an at least equally good node
+                    src_cnt = len([x for x in src_node if x is True])
+                    dst_cnt = len([x for x in dst_node if x is True])
+                    if dst_cnt >= src_cnt:
+                        add_edge(src_node, dst_node, g)
 
         # bad, we can't set all registers, no need to try
         to_set_reg_set = set(registers.keys())

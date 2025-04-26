@@ -134,6 +134,8 @@ class RopEffect:
         # Instruction count to estimate complexity
         self.isn_count: int = None # type: ignore
 
+        self.pop_equal_set = set() # like pop rax; mov rbx, rax; they must be the same
+
     @property
     def oop(self):
         """
