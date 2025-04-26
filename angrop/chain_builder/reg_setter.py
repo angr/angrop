@@ -396,6 +396,17 @@ class RegSetter(Builder):
 
         # now do the giga graph search
         regs = sorted(list(registers.keys()))
+        # build the target pops
+        bit_map = {}
+        for reg, val in registers.items():
+            if self.project.arch.bits == 32 or val.symbolic:
+                bits = self.project.arch.bits
+            else:
+                if (val.concreted >> 32) == 0:
+                    bits = 32
+                else:
+                    bits = 64
+            bit_map[reg] = bits
 
         graph = nx.DiGraph()
 
@@ -430,7 +441,7 @@ class RegSetter(Builder):
 
         def can_set_regs(g):
             # ofc pops
-            reg_set = set(g.popped_regs)
+            reg_set = set(pop.reg for pop in g.reg_pops if pop.reg not in bit_map or pop.bits >= bit_map[pop.reg])
             # if concrete values happen to match
             for reg in regs:
                 if registers[reg].symbolic:
