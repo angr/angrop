@@ -13,7 +13,8 @@ from angr.errors import SimEngineError, SimMemoryError
 
 from .. import rop_utils
 from ..arch import get_arch, X86, RISCV64
-from ..rop_gadget import RopGadget, RopMemAccess, RopRegMove, PivotGadget, SyscallGadget
+from ..rop_gadget import RopGadget, PivotGadget, SyscallGadget
+from ..rop_effect import RopMemAccess, RopRegMove
 from ..rop_block import RopBlock
 from ..errors import RopException, RegNotFoundException, RopTimeoutException
 

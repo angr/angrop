@@ -4,12 +4,13 @@ from collections import defaultdict
 from .rop_chain import RopChain
 from .rop_value import RopValue
 from .rop_gadget import RopGadget
+from .rop_effect import RopEffect
 from .errors import RopException
 from . import rop_utils
 
 l = logging.getLogger(__name__)
 
-class RopBlock(RopChain):
+class RopBlock(RopChain, RopEffect):
     """
     A mini-chain that satisfies the following conditions:
     1. positive stack_change
@@ -20,49 +21,10 @@ class RopBlock(RopChain):
     """
 
     def __init__(self, project, builder, state=None, badbytes=None):
-        super().__init__(project, builder, state=state, badbytes=badbytes)
+        RopChain.__init__(self, project, builder, state=state, badbytes=badbytes)
+        RopEffect.__init__(self)
 
-        self.stack_change = None
-
-        # register effect information
-        self.changed_regs = set()
-        self.popped_regs = set()
-        # Stores the stack variables that each register depends on.
-        # Used to check for cases where two registers are popped from the same location.
-        self.popped_reg_vars = {}
-        self.concrete_regs = {}
-        self.reg_dependencies = {}  # like rax might depend on rbx, rcx
-        self.reg_controllers = {}  # like rax might be able to be controlled by rbx (for any value of rcx)
-        self.reg_moves = []
         self.pop_equal_set = set() # like pop rax; mov rbx, rax; they must be the same
-
-        # memory effect information
-        self.mem_reads = []
-        self.mem_writes = []
-        self.mem_changes = []
-
-        self.bbl_addrs = []
-        self.isn_count: int = None # type: ignore
-
-    @property
-    def oop(self):
-        """
-        whether the gadget contains out of patch access
-        """
-        return any(m.out_of_patch  for m in self.mem_reads + self.mem_writes + self.mem_changes)
-
-    @property
-    def num_sym_mem_access(self):
-        """
-        by definition, jmp_mem gadgets have one symbolic memory access, which is its PC
-        we take into account that
-        """
-        accesses = self.mem_reads + self.mem_writes + self.mem_changes
-        res = len([x for x in accesses if x.is_symbolic_access()])
-        return res
-
-    def has_symbolic_access(self):
-        return self.num_sym_mem_access > 0
 
     def _chain_block(self, other):
         assert type(other) is RopBlock
@@ -145,20 +107,6 @@ class RopBlock(RopChain):
         final_state = simgr.unconstrained[0]
         return state, final_state
 
-    def import_gadget_effect(self, gadget):
-        self.stack_change = gadget.stack_change
-        self.changed_regs = gadget.changed_regs
-        self.popped_regs = gadget.popped_regs
-        self.popped_reg_vars = gadget.popped_reg_vars
-        self.concrete_regs = gadget.concrete_regs
-        self.reg_dependencies = gadget.reg_dependencies
-        self.reg_controllers = gadget.reg_controllers
-        self.reg_moves = gadget.reg_moves
-        self.mem_reads = gadget.mem_reads
-        self.mem_writes = gadget.mem_writes
-        self.mem_changes = gadget.mem_changes
-        self.isn_count = gadget.isn_count
-
     @staticmethod
     def from_gadget(gadget, builder):
         assert isinstance(gadget, RopGadget)
@@ -184,7 +132,7 @@ class RopBlock(RopChain):
 
         # now build the block(chain)
         rb = RopBlock(project, builder, state=state, badbytes=builder.badbytes)
-        rb.import_gadget_effect(gadget)
+        rb.import_effect(gadget)
 
         # fill in values and gadgets
         value = RopValue(gadget.addr, project)
@@ -249,16 +197,5 @@ class RopBlock(RopChain):
 
     def copy(self):
         cp = super().copy()
-        cp.changed_regs = set(self.changed_regs)
-        cp.popped_regs = set(self.popped_regs)
-        cp.popped_reg_vars = dict(self.popped_reg_vars)
-        cp.concrete_regs = dict(self.concrete_regs)
-        cp.reg_dependencies = dict(self.reg_dependencies)
-        cp.reg_controllers = dict(self.reg_controllers)
-        cp.stack_change = self.stack_change
-        cp.reg_moves = list(self.reg_moves)
-        cp.mem_reads = list(self.mem_reads)
-        cp.mem_writes = list(self.mem_writes)
-        cp.mem_changes = list(self.mem_changes)
-        cp.isn_count = self.isn_count
+        cp = self.copy_effect(cp)
         return cp

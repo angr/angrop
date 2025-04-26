@@ -11,7 +11,7 @@ from .. import rop_utils
 from ..rop_chain import RopChain
 from ..rop_block import RopBlock
 from ..errors import RopException
-from ..rop_gadget import RopRegMove
+from ..rop_effect import RopRegMove
 
 l = logging.getLogger(__name__)
 
