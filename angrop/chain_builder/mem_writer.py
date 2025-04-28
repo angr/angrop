@@ -59,19 +59,18 @@ class MemWriter(Builder):
             return False
         return True
 
-    def _gen_mem_write_gadgets(self, string_data):
+    def _gen_mem_write_gadgets(self, string_data, cache_key):
         # create a dict of bytes per write to gadgets
         # assume we need intersection of addr_dependencies and data_dependencies to be 0
         # TODO could allow mem_reads as long as we control the address?
 
         # generate from the cache first
-        data_len = len(string_data)
-        if self._good_mem_write_gadgets[data_len]:
-            yield from self._good_mem_write_gadgets[data_len]
+        if self._good_mem_write_gadgets[cache_key]:
+            yield from self._good_mem_write_gadgets[cache_key]
 
         # now look for gadgets that require least stack change
         possible_gadgets = {g for g in self._mem_write_gadgets if g.self_contained}
-        possible_gadgets -= self._good_mem_write_gadgets[data_len] # already yield these
+        possible_gadgets -= self._good_mem_write_gadgets[cache_key] # already yield these
 
         reg_setter = self.chain_builder._reg_setter
         can_set_regs = {x for x in reg_setter._reg_setting_dict if reg_setter._reg_setting_dict[x]}
@@ -143,12 +142,13 @@ class MemWriter(Builder):
         if preserve_regs is None:
             preserve_regs = set()
 
-        for gadget in self._gen_mem_write_gadgets(string_data):
+        key = (len(string_data), tuple(sorted(preserve_regs)))
+        for gadget in self._gen_mem_write_gadgets(string_data, key):
             if gadget.changed_regs.intersection(preserve_regs):
                 continue
             try:
                 chain = self._try_write_to_mem(gadget, False, addr, string_data, preserve_regs, fill_byte)
-                self._good_mem_write_gadgets[len(string_data)].add(gadget)
+                self._good_mem_write_gadgets[key].add(gadget)
                 return chain
             except (RopException, angr.errors.SimEngineError, angr.errors.SimUnsatError):
                 pass
