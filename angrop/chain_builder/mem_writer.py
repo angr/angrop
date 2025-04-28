@@ -27,19 +27,20 @@ class MemWriter(Builder):
         self._mem_write_gadgets = self._get_all_mem_write_gadgets(self.chain_builder.gadgets)
         self._good_mem_write_gadgets = defaultdict(set)
 
-    def _set_regs(self, *args, **kwargs):
-        return self.chain_builder._reg_setter.run(*args, **kwargs)
-
     @staticmethod
     def _get_all_mem_write_gadgets(gadgets):
+        """
+        we consider a gadget mem_write gadget if
+        1. it is self-contained
+        2. there is only one symbolic memory access and it is a memory write
+        3. addr/data are independent
+        """
         possible_gadgets = set()
         for g in gadgets:
             if not g.self_contained:
                 continue
             sym_rw = [m for m in g.mem_reads + g.mem_changes if m.is_symbolic_access()]
             if len(sym_rw) > 0 or len(g.mem_writes) != 1:
-                continue
-            if g.stack_change <= 0:
                 continue
             for m_access in g.mem_writes:
                 if m_access.addr_controllable() and m_access.data_controllable() and m_access.addr_data_independent():
@@ -156,6 +157,11 @@ class MemWriter(Builder):
         raise RopException("Fail to write data to memory :(")
 
     def write_to_mem(self, addr, data, preserve_regs=None, fill_byte=b"\xff"):
+        """
+        main function
+        1. do parameter sanitization
+        2. cutting the data to smaller pieces to handle bad bytes in the data
+        """
         if preserve_regs is None:
             preserve_regs = set()
 
@@ -282,7 +288,7 @@ class MemWriter(Builder):
         if new_addr_val is None:
             constrained_addrs = [addr_val.data]
 
-        chain = self._set_regs(**reg_vals, preserve_regs=preserve_regs)
+        chain = self.set_regs(**reg_vals, preserve_regs=preserve_regs)
         chain = RopBlock.from_chain(chain)
         chain = self._build_reg_setting_chain([chain, gadget], {}, constrained_addrs=constrained_addrs)
         for idx, val in enumerate(chain._values):

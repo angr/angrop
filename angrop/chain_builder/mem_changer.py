@@ -41,9 +41,6 @@ class MemChanger(Builder):
         if not set(state.regs.pc.variables).pop().startswith("next_pc_"):
             raise RopException("memory add fails - 3")
 
-    def _set_regs(self, *args, **kwargs):
-        return self.chain_builder._reg_setter.run(*args, **kwargs)
-
     def _same_effect(self, g1, g2):
         change1 = g1.mem_changes[0]
         change2 = g2.mem_changes[0]
@@ -196,7 +193,7 @@ class MemChanger(Builder):
         for reg in set(all_deps):
             reg_vals[reg] = test_state.solver.eval(test_state.registers.load(reg))
 
-        chain = self._set_regs(**reg_vals)
+        chain = self.set_regs(**reg_vals)
         chain = RopBlock.from_chain(chain)
         chain = self._build_reg_setting_chain([chain, gadget], {})
         return chain

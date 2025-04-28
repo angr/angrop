@@ -49,6 +49,9 @@ class Builder:
         state.regs.ip = pc
         return state
 
+    def set_regs(self, *args, **kwargs):
+        return self.chain_builder._reg_setter.run(*args, **kwargs)
+
     @staticmethod
     def _sort_chains(chains):
         def cmp_func(chain1, chain2):
@@ -600,7 +603,7 @@ class Builder:
             var = claripy.BVS(f"bvar_{reg}", self.project.arch.bits)
             registers[reg] = var
         try:
-            chain = self.chain_builder._reg_setter.run(preserve_regs=preserve_regs, **registers)
+            chain = self.set_regs(preserve_regs=preserve_regs, **registers)
         except RopException:
             return None
         gadgets = chain._gadgets
@@ -718,7 +721,7 @@ class Builder:
                 for reg in preserve_regs:
                     rb._blank_state.solver.add(final_state.registers.load(reg) == reg_solves[reg])
             if to_set_regs:
-                chain = self.chain_builder._reg_setter.run(**to_set_regs, preserve_regs=preserve_regs.union(pre_preserve))
+                chain = self.set_regs(**to_set_regs, preserve_regs=preserve_regs.union(pre_preserve))
                 rb += RopBlock.from_chain(chain)
 
             # step4: chain it with the jmp_mem gadget
@@ -846,7 +849,7 @@ class Builder:
                     data = claripy.BVS('sym_addr', self.project.arch.bits)
                     request[reg] = data
                 if request:
-                    tmp = self.chain_builder._reg_setter.run(**request)
+                    tmp = self.set_regs(**request)
                     tmp = RopBlock.from_chain(tmp)
                     _, final_state = tmp.sim_exec()
                     st = rb._blank_state
