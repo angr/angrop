@@ -192,7 +192,8 @@ class ChainBuilder:
         while again and cnt < 5:
             # check whether we can do memory write in the first place.
             # If we can't, then there is no way to normalize jmp_mem gadgets
-            self.check_can_do_write()
+            if not self._can_do_write:
+                self.check_can_do_write()
 
             again = self._reg_mover.optimize(processes=processes)
             again |= self._reg_setter.optimize(processes=processes)

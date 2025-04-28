@@ -246,8 +246,19 @@ class RegSetter(Builder):
                 shorter_chains = sorted(shorter_chains, key=chain_sc)[:5]
                 shorter_chains = [c for c in shorter_chains if chain_sc(c) < shortest[dst]]
 
-            # TODO: optimize this, currently we take the first 5 valid chains with the smallest stack_change
-            for c in unique_chains + shorter_chains:
+            # take the first normalized unique_chain
+            for c in unique_chains:
+                try:
+                    gadgets = self._expand_ropblocks(c)
+                    c = self._build_reg_setting_chain(gadgets, {})
+                    c = RopBlock.from_chain(c)
+                    rop_blocks.append(c)
+                    break
+                except RopException:
+                    pass
+
+            # take the first normalized shorter_chain
+            for c in shorter_chains:
                 try:
                     gadgets = self._expand_ropblocks(c)
                     c = self._build_reg_setting_chain(gadgets, {})
@@ -333,6 +344,8 @@ class RegSetter(Builder):
         return new_blocks
 
     def optimize(self, processes):
+        # TODO: make it multiprocessing
+
         # now we have a functional RegSetter, check whether we can do better
         res = False
 
