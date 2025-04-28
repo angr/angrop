@@ -112,7 +112,7 @@ class MemWriter(Builder):
                 break
 
     @rop_utils.timeout(5)
-    def _try_write_to_mem(self, gadget, use_partial_controllers, addr, string_data, preserve_regs, fill_byte):
+    def _try_write_to_mem(self, gadget, addr, string_data, preserve_regs, fill_byte):
         gadget_code = str(self.project.factory.block(gadget.addr).capstone)
         l.debug("building mem_write chain with gadget:\n%s", gadget_code)
         mem_write = gadget.mem_writes[0]
@@ -121,15 +121,15 @@ class MemWriter(Builder):
         # there should be only two cases. Either it is a string, or it is a single badbyte
         chain = RopChain(self.project, self, badbytes=self.badbytes)
         if len(string_data) == 1 and ord(string_data) in self.badbytes:
-            chain += self._write_to_mem_with_gadget(gadget, addr, string_data, preserve_regs, use_partial_controllers)
+            chain += self._write_to_mem_with_gadget(gadget, addr, string_data, preserve_regs)
         else:
-            bytes_per_write = mem_write.data_size//8 if not use_partial_controllers else 1
+            bytes_per_write = mem_write.data_size//8
             for i in range(0, len(string_data), bytes_per_write):
                 to_write = string_data[i: i+bytes_per_write]
                 # pad if needed
                 if len(to_write) < bytes_per_write and fill_byte:
                     to_write += fill_byte * (bytes_per_write-len(to_write))
-                chain += self._write_to_mem_with_gadget(gadget, addr + i, to_write, preserve_regs, use_partial_controllers)
+                chain += self._write_to_mem_with_gadget(gadget, addr + i, to_write, preserve_regs)
 
         return chain
 
@@ -145,10 +145,17 @@ class MemWriter(Builder):
 
         key = (len(string_data), tuple(sorted(preserve_regs)))
         for gadget in self._gen_mem_write_gadgets(string_data, key):
+            # sanity checks, make sure it doesn't clobber any preserved_regs
             if gadget.changed_regs.intersection(preserve_regs):
                 continue
+            mem_write = gadget.mem_writes[0]
+            all_deps = mem_write.addr_dependencies | mem_write.data_dependencies
+            if all_deps.intersection(preserve_regs):
+                continue
+
+            # actually trying each gadget and cache the good gadgets
             try:
-                chain = self._try_write_to_mem(gadget, False, addr, string_data, preserve_regs, fill_byte)
+                chain = self._try_write_to_mem(gadget, addr, string_data, preserve_regs, fill_byte)
                 self._good_mem_write_gadgets[key].add(gadget)
                 return chain
             except (RopException, angr.errors.SimEngineError, angr.errors.SimUnsatError):
@@ -156,78 +163,13 @@ class MemWriter(Builder):
 
         raise RopException("Fail to write data to memory :(")
 
-    def write_to_mem(self, addr, data, preserve_regs=None, fill_byte=b"\xff"):
-        """
-        main function
-        1. do parameter sanitization
-        2. cutting the data to smaller pieces to handle bad bytes in the data
-        """
-        if preserve_regs is None:
-            preserve_regs = set()
-
-        # sanity check
-        if not (isinstance(fill_byte, bytes) and len(fill_byte) == 1):
-            raise RopException("fill_byte is not a one byte string, aborting")
-        if not isinstance(data, bytes):
-            raise RopException("data is not a byte string, aborting")
-        if ord(fill_byte) in self.badbytes:
-            raise RopException("fill_byte is a bad byte!")
-        if isinstance(addr, RopValue) and addr.symbolic:
-            raise RopException("cannot write to a symbolic address")
-
-        # split the string into smaller elements so that we can
-        # handle bad bytes
-        if all(x not in self.badbytes for x in data):
-            elems = [data]
-        else:
-            elems = []
-            e = b''
-            for x in data:
-                if x not in self.badbytes:
-                    e += bytes([x])
-                else:
-                    if e:
-                        elems.append(e)
-                    elems.append(bytes([x]))
-                    e = b''
-            if e:
-                elems.append(e)
-
-        # do the write
-        offset = 0
-        chain = RopChain(self.project, self, badbytes=self.badbytes)
-        for elem in elems:
-            ptr = addr + offset
-            if self._word_contain_badbyte(ptr):
-                raise RopException(f"{ptr} contains bad byte!")
-            if len(elem) != 1 or ord(elem) not in self.badbytes:
-                chain += self._write_to_mem(ptr, elem, preserve_regs=preserve_regs, fill_byte=fill_byte)
-                offset += len(elem)
-            else:
-                chain += self._write_to_mem(ptr, elem, preserve_regs=preserve_regs, fill_byte=fill_byte)
-                offset += 1
-        return chain
-
-    def _write_to_mem_with_gadget(self, gadget, addr_val, data, preserve_regs, use_partial_controllers=False):
+    def _write_to_mem_with_gadget(self, gadget, addr_val, data, preserve_regs):
         """
         addr_val is a RopValue
         """
         addr_bvs = claripy.BVS("addr", self.project.arch.bits)
-
-        # sanity check for simple gadget
-        if len(gadget.mem_writes) != 1 or len(gadget.mem_reads) + len(gadget.mem_changes) > 0:
-            raise RopException("too many memory accesses for my lazy implementation")
-
-        # sanity check, make sure it doesn't clobber any preserved_regs
         mem_write = gadget.mem_writes[0]
         all_deps = mem_write.addr_dependencies | mem_write.data_dependencies
-        for reg in all_deps:
-            if reg in preserve_regs:
-                raise RopException(f"this gadget will overwrite {reg}, which is in preserve_regs")
-
-        # actually start
-        if use_partial_controllers and len(data) < self.project.arch.bytes:
-            data = data.ljust(self.project.arch.bytes, b"\x00")
 
         # constrain the successor to be at the gadget
         # emulate 'pop pc'
@@ -307,4 +249,57 @@ class MemWriter(Builder):
             raise RopException("must have only one pc variable")
         if not set(state.regs.pc.variables).pop().startswith("next_pc_"):
             raise RopException("the next pc is not in our control!")
+        return chain
+
+    ##### Main Entrance #####
+    def write_to_mem(self, addr, data, preserve_regs=None, fill_byte=b"\xff"):
+        """
+        main function
+        1. do parameter sanitization
+        2. cutting the data to smaller pieces to handle bad bytes in the data
+        """
+        if preserve_regs is None:
+            preserve_regs = set()
+
+        # sanity check
+        if not (isinstance(fill_byte, bytes) and len(fill_byte) == 1):
+            raise RopException("fill_byte is not a one byte string, aborting")
+        if not isinstance(data, bytes):
+            raise RopException("data is not a byte string, aborting")
+        if ord(fill_byte) in self.badbytes:
+            raise RopException("fill_byte is a bad byte!")
+        if isinstance(addr, RopValue) and addr.symbolic:
+            raise RopException("cannot write to a symbolic address")
+
+        # split the string into smaller elements so that we can
+        # handle bad bytes
+        if all(x not in self.badbytes for x in data):
+            elems = [data]
+        else:
+            elems = []
+            e = b''
+            for x in data:
+                if x not in self.badbytes:
+                    e += bytes([x])
+                else:
+                    if e:
+                        elems.append(e)
+                    elems.append(bytes([x]))
+                    e = b''
+            if e:
+                elems.append(e)
+
+        # do the write
+        offset = 0
+        chain = RopChain(self.project, self, badbytes=self.badbytes)
+        for elem in elems:
+            ptr = addr + offset
+            if self._word_contain_badbyte(ptr):
+                raise RopException(f"{ptr} contains bad byte!")
+            if len(elem) != 1 or ord(elem) not in self.badbytes:
+                chain += self._write_to_mem(ptr, elem, preserve_regs=preserve_regs, fill_byte=fill_byte)
+                offset += len(elem)
+            else:
+                chain += self._write_to_mem(ptr, elem, preserve_regs=preserve_regs, fill_byte=fill_byte)
+                offset += 1
         return chain
