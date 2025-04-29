@@ -155,6 +155,11 @@ class Builder:
         vs = ast.variables
         return len(vs) == 1 and list(vs)[0].startswith('symbolic_stack_')
 
+    @staticmethod
+    def _ast_contains_reg_data(ast):
+        vs = ast.variables
+        return len(vs) == 1 and list(vs)[0].startswith('sreg_')
+
     def _build_ast_constraints(self, ast):
         var_map = {}
 
@@ -225,7 +230,7 @@ class Builder:
                 raise NotImplementedError("plz raise an issue")
         return reg_d, stack_d
 
-    def _rebalance_ast(self, lhs, rhs):
+    def _rebalance_ast(self, lhs, rhs, mode='stack'):
         """
         we know that lhs (stack content with modification) == rhs (user ropvalue)
         since user ropvalue may be symbolic, we need to present the stack content using the user ropvalue and store it
@@ -235,13 +240,15 @@ class Builder:
         if lhs.op == 'If':
             raise RopException("cannot handle conditional value atm")
 
-        assert self._ast_contains_stack_data(lhs)
+        check_func = Builder._ast_contains_stack_data if mode == 'stack' else Builder._ast_contains_reg_data
+
+        assert check_func(lhs)
         while lhs.depth != 1:
             match lhs.op:
                 case "__add__" | "__sub__":
                     arg0 = lhs.args[0]
                     arg1 = lhs.args[1]
-                    flag = self._ast_contains_stack_data(arg0)
+                    flag = check_func(arg0)
                     op = lhs.op
                     if flag:
                         lhs = arg0
@@ -258,7 +265,7 @@ class Builder:
                 case "__and__" | "__or__":
                     arg0 = lhs.args[0]
                     arg1 = lhs.args[1]
-                    flag = self._ast_contains_stack_data(arg0)
+                    flag = check_func(arg0)
                     op = lhs.op
                     if flag:
                         lhs = arg0
@@ -305,7 +312,7 @@ class Builder:
                         rhs = rhs >> bits
                     lhs = lhs.args[0]
                 case "__xor__":
-                    if self._ast_contains_stack_data(lhs.args[0]):
+                    if check_func(lhs.args[0]):
                         other = lhs.args[1]
                         lhs = lhs.args[0]
                     else:
@@ -314,7 +321,7 @@ class Builder:
                     rhs = rhs ^ other
                 case _:
                     raise ValueError(f"{lhs.op} cannot be rebalanced at the moment. plz create an issue!")
-        assert self._ast_contains_stack_data(lhs)
+        assert check_func(lhs)
         assert lhs.length == rhs.length
         return lhs, rhs
 

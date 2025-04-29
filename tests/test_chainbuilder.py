@@ -1005,7 +1005,7 @@ def test_mem_write_with_stack_controller():
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
     rop.find_gadgets_single_threaded(show_progress=False)
 
-    chain = rop.write_to_mem(0x41414141, b'BBBB')
+    chain = rop.write_to_mem(0x41424344, b'BBBB')
     assert chain is not None
 
 def test_partial_pop():
@@ -1030,6 +1030,25 @@ def test_partial_pop():
         chains = list(rop.chain_builder._reg_setter.find_candidate_chains_giga_graph_search(None, {'rbx': value}, {}, False))
         chain = rop.set_regs(rbx=0x4141414141414141)
         assert chain is not None
+
+def test_mem_write_with_cache():
+    proj = angr.load_shellcode(
+        """
+        mov dword ptr [rax+0x10], ebx; ret
+        pop rax; ret
+        pop rbx; ret
+        """,
+        "amd64",
+        simos='linux',
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    g = rop.analyze_gadget(0x400000)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.write_to_mem(0x41414141, b'BBBB')
+    assert chain is not None
 
 def run_all():
     functions = globals()

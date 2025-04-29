@@ -1,3 +1,4 @@
+import struct
 import logging
 from collections import defaultdict
 
@@ -11,7 +12,121 @@ from ..rop_chain import RopChain
 from ..rop_value import RopValue
 from ..rop_block import RopBlock
 
-l = logging.getLogger("angrop.chain_builder.mem_writer")
+l = logging.getLogger(__name__)
+
+class MemWriteChain:
+    def __init__(self, builder, gadget, preserve_regs):
+        self.project = builder.project
+        self.builder = builder
+        self.gadget = gadget
+        self.preserve_regs = preserve_regs
+        mem_write = self.gadget.mem_writes[0]
+        self.addr_bv = claripy.BVS("addr", mem_write.addr_size)
+        self.data_bv = claripy.BVS("data", mem_write.data_size)
+        self.state = builder.make_sim_state(gadget.addr, gadget.stack_change//self.project.arch.bytes)
+        self.chain = self._build_chain()
+
+    def _build_chain(self):
+        mem_write = self.gadget.mem_writes[0]
+
+        # step through the state once to identify the mem_write action
+        state = self.state
+        final_state = rop_utils.step_to_unconstrained_successor(self.project, state)
+        the_action = None
+        for a in final_state.history.actions.hardcopy:
+            if a.type != "mem" or a.action != "write":
+                continue
+            if set(rop_utils.get_ast_dependency(a.addr.ast)) == set(mem_write.addr_dependencies) or \
+                    set(rop_utils.get_ast_dependency(a.data.ast)) == set(mem_write.data_dependencies):
+                the_action = a
+                break
+        else:
+            raise RopException("Couldn't find the matching action")
+
+        # they both need to contain one single variable
+        addr_ast = the_action.addr.ast
+        data_ast = the_action.data.ast
+        assert len(addr_ast.variables) == 1 and len(data_ast.variables) == 1
+
+        # check the register values
+        reg_vals = {}
+        constrained_addrs = None
+        for ast, bv, t in [(addr_ast, self.addr_bv, 'addr'), (data_ast, self.data_bv, 'data')]:
+            variable = list(ast.variables)[0]
+            if variable.startswith('sreg_'):
+                reg_vals[variable.split('-', 1)[0][5:]] = self.builder._rebalance_ast(ast, bv, mode='reg')[1]
+            elif variable.startswith('symbolic_stack_'):
+                if t == 'addr':
+                    assert constrained_addrs is None
+                    constrained_addrs = [ast]
+            else:
+                raise RuntimeError("what variable this is?")
+
+        chain = self.builder.set_regs(**reg_vals, preserve_regs=self.preserve_regs)
+        chain = RopBlock.from_chain(chain)
+        chain = self.builder._build_reg_setting_chain([chain, self.gadget], {}, constrained_addrs=constrained_addrs)
+
+        if not constrained_addrs:
+            return chain
+        addr_ast = constrained_addrs[0]
+        addr_ast_vars = addr_ast.variables
+        for idx, val in enumerate(chain._values):
+            if not val.symbolic:
+                continue
+            if not addr_ast_vars.intersection(val.ast.variables):
+                continue
+            ast = self.builder._rebalance_ast(addr_ast, self.addr_bv)[1]
+            # FIXME: again endness issue
+            if ast.op == 'Reverse':
+                ast = ast.args[0]
+            val._value = ast
+            break
+        return chain
+
+    def concretize(self, addr_val, data):
+        chain = self.chain.copy()
+        fmt = self.project.arch.struct_fmt()
+        # replace addr and data
+        for idx, val in enumerate(chain._values):
+            if not val.symbolic or not val.ast.variables:
+                continue
+            if list(val.ast.variables)[0].startswith('addr_'):
+                test_ast = claripy.algorithm.replace(expr=val.ast,
+                                          old=self.addr_bv,
+                                          new=addr_val.data)
+                new = addr_val.copy()
+                new._value = test_ast
+                if addr_val._rebase:
+                    new.rebase_ptr()
+                chain._values[idx] = new
+                continue
+            if list(val.ast.variables)[0].startswith('data_'):
+                var = claripy.BVV(struct.unpack(fmt, data.ljust(self.project.arch.bytes, b'\x00'))[0], len(self.data_bv))
+                test_ast = claripy.algorithm.replace(expr=val.ast,
+                                          old=self.data_bv,
+                                          new=var)
+                arch_bits = self.project.arch.bits
+                if len(test_ast) < arch_bits:
+                    test_ast = claripy.ZeroExt(arch_bits-len(test_ast), test_ast)
+                # since this is data, we assume it should not be rebased
+                val = RopValue(test_ast, self.project)
+                val._rebase = False
+                chain._values[idx] = val
+                continue
+            if list(val.ast.variables)[0].startswith('symbolic_stack_'):
+                # FIXME: my lazy implementation, the endness mess really needs to be rewritten
+                tmp = claripy.BVS(f"symbolic_stack_{idx}", self.project.arch.bits)
+                if self.project.arch.memory_endness == 'Iend_LE':
+                    tmp = claripy.Reverse(tmp)
+                chain._values[idx] = RopValue(tmp, self.project)
+        return chain
+
+    @property
+    def changed_regs(self):
+        s = set()
+        for g in self.chain._gadgets:
+            s |= g.changed_regs
+        return s
 
 class MemWriter(Builder):
     """
@@ -22,6 +137,7 @@ class MemWriter(Builder):
         super().__init__(chain_builder)
         self._mem_write_gadgets: set = None # type: ignore
         self._good_mem_write_gadgets = None # type: ignore
+        self._mem_write_chain_cache = defaultdict(list)
 
     def bootstrap(self):
         self._mem_write_gadgets = self._get_all_mem_write_gadgets(self.chain_builder.gadgets)
@@ -121,7 +237,7 @@ class MemWriter(Builder):
         # there should be only two cases. Either it is a string, or it is a single badbyte
         chain = RopChain(self.project, self, badbytes=self.badbytes)
         if len(string_data) == 1 and ord(string_data) in self.badbytes:
-            chain += self._write_to_mem_with_gadget(gadget, addr, string_data, preserve_regs)
+            chain += self._write_to_mem_with_gadget_with_cache(gadget, addr, string_data, preserve_regs)
         else:
             bytes_per_write = mem_write.data_size//8
             for i in range(0, len(string_data), bytes_per_write):
@@ -129,7 +245,7 @@ class MemWriter(Builder):
                 # pad if needed
                 if len(to_write) < bytes_per_write and fill_byte:
                     to_write += fill_byte * (bytes_per_write-len(to_write))
-                chain += self._write_to_mem_with_gadget(gadget, addr + i, to_write, preserve_regs)
+                chain += self._write_to_mem_with_gadget_with_cache(gadget, addr + i, to_write, preserve_regs)
 
         return chain
 
@@ -162,6 +278,23 @@ class MemWriter(Builder):
                 pass
 
         raise RopException("Fail to write data to memory :(")
+
+    def _write_to_mem_with_gadget_with_cache(self, gadget, addr_val, data, preserve_regs):
+        if not self._mem_write_chain_cache[gadget]:
+            try:
+                cache_chain = MemWriteChain(self, gadget, preserve_regs)
+                self._mem_write_chain_cache[gadget].append(cache_chain)
+            except RopException:
+                pass
+        for cache_chain in self._mem_write_chain_cache[gadget]:
+            if cache_chain.changed_regs.intersection(preserve_regs):
+                continue
+            chain = cache_chain.concretize(addr_val, data)
+            state = chain.exec()
+            sim_data = state.memory.load(addr_val.data, len(data))
+            assert state.solver.eval(sim_data == data)
+            return chain
+        return self._write_to_mem_with_gadget(gadget, addr_val, data, preserve_regs)
 
     def _write_to_mem_with_gadget(self, gadget, addr_val, data, preserve_regs):
         """
