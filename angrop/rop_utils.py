@@ -303,7 +303,7 @@ def make_initial_state(project, stack_gsize):
     return initial_state
 
 
-def make_symbolic_state(project, reg_set, stack_gsize, extra_reg_set=None):
+def make_symbolic_state(project, reg_set, stack_gsize, extra_reg_set=None, symbolize_got=False):
     """
     converts an input state into a state with symbolic registers
     :return: the symbolic state
@@ -327,8 +327,9 @@ def make_symbolic_state(project, reg_set, stack_gsize, extra_reg_set=None):
     # restore sp
     symbolic_state.regs.sp = input_state.regs.sp
 
-    # symbolic got table if it is not FULL RELRO
-    symbolize_got_table(project, symbolic_state)
+    # symbolic got table if it is not FULL RELRO, we only need this for gadget identification
+    if symbolize_got:
+        symbolize_got_table(project, symbolic_state)
     return symbolic_state
 
 def symbolize_got_table(project, state):
