@@ -571,22 +571,22 @@ class GadgetAnalyzer:
                     gadget.reg_controllers[reg] = set(controllers)
 
     def _check_pop_equal_set(self, gadget, final_state):
+        """
+        identify the situation where the final registers are dependent on each other
+        e.g. in `pop rax; mov rbx, rax; add rbx, 1; ret;` rax and rbx are set by the same variable
+        """
 
         d = defaultdict(list)
         for reg in self.arch.reg_list:
             ast = final_state.registers.load(reg)
-            if ast.op in ('ZeroExt', 'SignExt'):
-                tmp = ast.args[1]
-                if tmp.op == 'Extract':
-                    ast = tmp.args[2]
-            d[ast].append(reg)
-        for k in d:
-            if len(k.variables) != 1:
+            for v in ast.variables:
+                d[v].append(reg)
+        for v, regs in d.items():
+            if not regs:
                 continue
-            variable = list(k.variables)[0]
-            if not variable.startswith("symbolic_stack"):
+            if not v.startswith("symbolic_stack"):
                 continue
-            gadget.pop_equal_set.add(tuple(d[k]))
+            gadget.pop_equal_set.add(tuple(regs))
 
     @staticmethod
     def _is_add_int(final_val, init_val):

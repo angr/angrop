@@ -1050,6 +1050,24 @@ def test_mem_write_with_cache():
     chain = rop.write_to_mem(0x41414141, b'BBBB')
     assert chain is not None
 
+def test_reg_setting_equal_set():
+    proj = angr.load_shellcode(
+        """
+        pop rdi; ret
+        lea rax, [rdi + 2]; ret
+        """,
+        "amd64",
+        simos='linux',
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    g = rop.analyze_gadget(0x400000)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.set_regs(rax=0x41414141, rdi=0x42424242)
+    chain.pp()
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
