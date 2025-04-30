@@ -294,8 +294,11 @@ class MemWriter(Builder):
                 chain = cache_chain.concretize(addr_val, data)
                 state = chain.exec()
                 sim_data = state.memory.load(addr_val.data, len(data))
-                assert state.solver.eval(sim_data == data)
-                return chain
+                if state.solver.eval(sim_data, cast_to=bytes) == data:
+                    return chain
+                l.error("write_to_mem_with_gadget_with_cache failed: %s %s %s\n%s\n%s", addr_val,
+                        data, preserve_regs, gadget.dstr(), sim_data)
+                continue
         return self._write_to_mem_with_gadget(gadget, addr_val, data, preserve_regs)
 
     def _write_to_mem_with_gadget(self, gadget, addr_val, data, preserve_regs):
