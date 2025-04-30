@@ -52,6 +52,9 @@ class MemWriteChain:
         reg_vals = {}
         constrained_addrs = None
         for ast, bv, t in [(addr_ast, self.addr_bv, 'addr'), (data_ast, self.data_bv, 'data')]:
+            # in case of short write
+            if bv.size() < ast.size():
+                bv = claripy.ZeroExt(ast.size() - bv.size(), bv)
             variable = list(ast.variables)[0]
             if variable.startswith('sreg_'):
                 reg_vals[variable.split('-', 1)[0][5:]] = self.builder._rebalance_ast(ast, bv, mode='reg')[1]
