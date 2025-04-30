@@ -89,6 +89,13 @@ class RopRegMove:
             return False
         return self.from_reg == other.from_reg and self.to_reg == other.to_reg and self.bits == other.bits
 
+    def __lt__(self, other):
+        if type(other) != RopRegMove:
+            return False
+        t1 = (self.from_reg, self.to_reg, self.bits)
+        t2 = (other.from_reg, other.to_reg, other.bits)
+        return t1 < t2
+
     def __repr__(self):
         return f"RegMove: {self.to_reg} <= {self.from_reg} ({self.bits} bits)"
 

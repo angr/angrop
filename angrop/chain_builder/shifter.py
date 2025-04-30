@@ -127,25 +127,13 @@ class Shifter(Builder):
 
         raise RopException(f"Failed to create a ret-sled sp for {size:#x} bytes while preserving {preserve_regs}")
 
-    def _same_effect(self, g1, g2):
-        if g1.stack_change != g2.stack_change:
-            return False
-        if g1.transit_type != g2.transit_type:
-            return False
-        if g1.pc_offset != g2.pc_offset:
-            return False
-        return True
+    def _effect_tuple(self, g):
+        v1 = g.stack_change
+        v2 = g.pc_offset
+        return (v1, v2)
 
-    def _better_than(self, g1, g2):
-        if g1.num_sym_mem_access > g2.num_sym_mem_access:
-            return False
-        if not g1.changed_regs.issubset(g2.changed_regs):
-            return False
-        if rop_utils.transit_num(g1) > rop_utils.transit_num(g2):
-            return False
-        if g1.isn_count > g2.isn_count:
-            return False
-        return True
+    def _comparison_tuple(self, g):
+        return (len(g.changed_regs), g.stack_change, rop_utils.transit_num(g), g.isn_count)
 
     def filter_gadgets(self, gadgets):
         """

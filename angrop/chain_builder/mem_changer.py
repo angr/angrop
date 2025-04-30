@@ -41,30 +41,18 @@ class MemChanger(Builder):
         if not set(state.regs.pc.variables).pop().startswith("next_pc_"):
             raise RopException("memory add fails - 3")
 
-    def _same_effect(self, g1, g2):
-        change1 = g1.mem_changes[0]
-        change2 = g2.mem_changes[0]
+    def _effect_tuple(self, g):
+        change = g.mem_changes[0]
+        v1 = change.op
+        v2 = change.data_size
+        v3 = change.data_constant
+        v4 = tuple(sorted(change.addr_dependencies))
+        v5 = tuple(sorted(change.data_dependencies))
+        return (v1, v2, v3, v4, v5)
 
-        if change1.op != change2.op:
-            return False
-        if change1.data_size != change2.data_size:
-            return False
-        if change1.data_constant != change2.data_constant:
-            return False
-        if change1.addr_dependencies != change2.addr_dependencies:
-            return False
-        if change1.data_dependencies != change2.data_dependencies:
-            return False
-        return True
-
-    def _better_than(self, g1, g2):
-        if g1.isn_count <= g2.isn_count and \
-            g1.stack_change <= g2.stack_change and \
-            len(g1.changed_regs) <= len(g2.changed_regs) and \
-            rop_utils.transit_num(g1) <= rop_utils.transit_num(g2) and \
-            g1.num_sym_mem_access <= g2.num_sym_mem_access:
-            return True
-        return False
+    def _comparison_tuple(self, g):
+        return (len(g.changed_regs), g.stack_change, g.num_sym_mem_access,
+                rop_utils.transit_num(g), g.isn_count)
 
     def _get_all_mem_change_gadgets(self, gadgets):
         possible_gadgets = set()

@@ -246,6 +246,8 @@ class GadgetFinder:
                 time.sleep(0.1)
 
             pool.terminate()
+        if t is not None:
+            t.close()
 
         for g in gadgets:
             g.project = self.project

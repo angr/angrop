@@ -4,6 +4,7 @@ import struct
 import itertools
 from abc import abstractmethod
 from functools import cmp_to_key
+from collections import defaultdict
 
 import claripy
 
@@ -527,48 +528,59 @@ class Builder:
             return claripy.BVS("filler", self.project.arch.bits)
 
     @abstractmethod
-    def _same_effect(self, g1, g2):
-        raise NotImplementedError("_same_effect is not implemented!")
+    def _effect_tuple(self, g):
+        raise NotImplementedError("_effect_tuple is not implemented!")
 
     @abstractmethod
-    def _better_than(self, g1, g2):
-        raise NotImplementedError("_better_than is not implemented!")
-
-    def same_effect(self, g1, g2):
-        return self._same_effect(g1, g2)
-
-    def better_than(self, g1, g2):
-        if not self.same_effect(g1, g2):
-            return False
-        return self._better_than(g1, g2)
+    def _comparison_tuple(self, g):
+        raise NotImplementedError("_comparison_tuple is not implemented!")
 
     def __filter_gadgets(self, gadgets):
         """
-        remove any gadgets that are strictly worse than others
-        FIXME: make all gadget filtering logic like what we do in reg_setter, which is correct and way more faster
+        group gadgets by features and drop lesser groups
         """
-        gadgets = set(gadgets)
+        # gadget grouping
+        d = defaultdict(list)
+        for g in gadgets:
+            key = self._comparison_tuple(g)
+            d[key].append(g)
+        if len(d) == 0:
+            return set()
+        if len(d) == 1:
+            return {gadgets.pop()}
+
+        # only keep the best groups
+        keys = set(d.keys())
         bests = set()
-        while gadgets:
-            g1 = gadgets.pop()
-            # check if nothing is better than g1
-            for g2 in bests|gadgets:
-                if self._better_than(g2, g1): #pylint: disable=arguments-out-of-order
+        while keys:
+            k1 = keys.pop()
+            # check if nothing is better than k1
+            for k2 in bests|keys:
+                # if k2 is better than k1
+                if all(k2[i] <= k1[i] for i in range(len(key))):
                     break
             else:
-                bests.add(g1)
-        return bests
+                bests.add(k1)
+
+        # turn groups back to gadgets
+        gadgets = set()
+        for key, val in d.items():
+            if key not in bests:
+                continue
+            gadgets = gadgets.union(val)
+        return gadgets
 
     def _filter_gadgets(self, gadgets):
+        """
+        process gadgets based on their effects
+        exclude gadgets that do symbolic memory access
+        """
         bests = set()
-        gadgets = set(gadgets)
-        while gadgets:
-            g0 = gadgets.pop()
-            equal_class = {g for g in gadgets if self._same_effect(g0, g)}
-            equal_class.add(g0)
+        equal_classes = defaultdict(set)
+        for g in gadgets:
+            equal_classes[self._effect_tuple(g)].add(g)
+        for _, equal_class in equal_classes.items():
             bests = bests.union(self.__filter_gadgets(equal_class))
-
-            gadgets -= equal_class
         return bests
 
     @staticmethod

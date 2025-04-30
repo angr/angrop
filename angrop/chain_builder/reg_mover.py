@@ -349,20 +349,13 @@ class RegMover(Builder):
         new_gadgets = set(x for x in gadgets if any(y.from_reg != y.to_reg for y in x.reg_moves))
         return new_gadgets
 
-    def _same_effect(self, g1, g2):
-        """
-        having the same register moving effect compared to the other gadget
-        """
-        if set(g1.reg_moves) != set(g2.reg_moves):
-            return False
-        if g1.reg_dependencies != g2.reg_dependencies:
-            return False
-        return True
+    def _effect_tuple(self, g):
+        v1 = tuple(sorted(g.reg_moves))
+        v2 = []
+        for x,y in g.reg_dependencies.items():
+            v2.append((x, tuple(sorted(y))))
+        v2 = tuple(sorted(v2))
+        return (v1, v2)
 
-    def _better_than(self, g1, g2):
-        if g1.stack_change <= g2.stack_change and \
-                g1.num_sym_mem_access <= g2.num_sym_mem_access and \
-                rop_utils.transit_num(g1) <= rop_utils.transit_num(g2) and \
-                g1.isn_count <= g2.isn_count:
-            return True
-        return False
+    def _comparison_tuple(self, g):
+        return (g.stack_change, g.num_sym_mem_access, rop_utils.transit_num(g), g.isn_count)

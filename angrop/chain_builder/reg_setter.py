@@ -617,41 +617,19 @@ class RegSetter(Builder):
 
     #### Gadget Filtering ####
 
-    def _filter_gadgets(self, gadgets):
-        """
-        group gadgets by features and drop lesser groups
-        """
-        # gadget grouping
-        d = defaultdict(list)
-        for g in gadgets:
-            key = (len(g.changed_regs-g.popped_regs), g.stack_change, g.num_sym_mem_access,
+    def _effect_tuple(self, g):
+        v1 = tuple(sorted(g.popped_regs))
+        v2 = tuple(sorted(g.concrete_regs.items()))
+        v3 = []
+        for x,y in g.reg_dependencies.items():
+            v3.append((x, tuple(sorted(y))))
+        v3 = tuple(sorted(v3))
+        v4 = g.transit_type
+        return (v1, v2, v3, v4)
+
+    def _comparison_tuple(self, g):
+        return (len(g.changed_regs-g.popped_regs), g.stack_change, g.num_sym_mem_access,
                    g.isn_count, int(g.has_conditional_branch is True))
-            d[key].append(g)
-        if len(d) == 0:
-            return set()
-        if len(d) == 1:
-            return {gadgets.pop()}
-
-        # only keep the best groups
-        keys = set(d.keys())
-        bests = set()
-        while keys:
-            k1 = keys.pop()
-            # check if nothing is better than k1
-            for k2 in bests|keys:
-                # if k2 is better than k1
-                if all(k2[i] <= k1[i] for i in range(len(key))):
-                    break
-            else:
-                bests.add(k1)
-
-        # turn groups back to gadgets
-        gadgets = set()
-        for key, val in d.items():
-            if key not in bests:
-                continue
-            gadgets = gadgets.union(val)
-        return gadgets
 
     def _same_effect(self, g1, g2):
         if g1.popped_regs != g2.popped_regs:
@@ -669,16 +647,8 @@ class RegSetter(Builder):
         process gadgets based on their effects
         exclude gadgets that do symbolic memory access
         """
-        bests = set()
-        gadgets = set(gadgets)
-        while gadgets:
-            g0 = gadgets.pop()
-            equal_class = {g for g in gadgets if self._same_effect(g0, g)}
-            equal_class.add(g0)
-            bests = bests.union(self._filter_gadgets(equal_class))
-
-            gadgets -= equal_class
-        return bests
+        gadgets = [g for g in gadgets if g.popped_regs or g.concrete_regs]
+        return self._filter_gadgets(gadgets)
 
     #### Main Entrance ####
     def run(self, modifiable_memory_range=None, preserve_regs=None, warn=True, **registers):

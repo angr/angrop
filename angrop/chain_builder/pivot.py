@@ -108,25 +108,14 @@ class Pivot(Builder):
 
         raise RopException(f"Fail to pivot the stack to {reg}!")
 
-    def _same_effect(self, g1, g2):
-        if g1.sp_controllers != g2.sp_controllers:
-            return False
-        if g1.stack_change != g2.stack_change:
-            return False
-        if g1.stack_change_after_pivot != g2.stack_change_after_pivot:
-            return False
-        return True
+    def _effect_tuple(self, g):
+        v1 = tuple(sorted(g.sp_controllers))
+        return (v1, g.stack_change, g.stack_change_after_pivot)
 
-    def _better_than(self, g1, g2):
-        if g1.num_sym_mem_access > g2.num_sym_mem_access:
-            return False
-        if not g1.changed_regs.issubset(g2.changed_regs):
-            return False
-        if g1.isn_count > g2.isn_count:
-            return False
-        return True
+    def _comparison_tuple(self, g):
+        return (g.num_sym_mem_access, len(g.changed_regs), g.isn_count)
 
     def filter_gadgets(self, gadgets):
-        gadgets = [x for x in gadgets if not x.has_conditional_branch and x.transit_type != 'jmp_reg' and not x.has_symbolic_access()]
+        gadgets = [x for x in gadgets if not x.has_conditional_branch and x.transit_type == 'pop_pc' and not x.has_symbolic_access()]
         gadgets = self._filter_gadgets(gadgets)
         return sorted(gadgets, key=functools.cmp_to_key(cmp))
