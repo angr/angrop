@@ -280,20 +280,22 @@ class MemWriter(Builder):
         raise RopException("Fail to write data to memory :(")
 
     def _write_to_mem_with_gadget_with_cache(self, gadget, addr_val, data, preserve_regs):
-        if not self._mem_write_chain_cache[gadget]:
-            try:
-                cache_chain = MemWriteChain(self, gadget, preserve_regs)
-                self._mem_write_chain_cache[gadget].append(cache_chain)
-            except RopException:
-                pass
-        for cache_chain in self._mem_write_chain_cache[gadget]:
-            if cache_chain.changed_regs.intersection(preserve_regs):
-                continue
-            chain = cache_chain.concretize(addr_val, data)
-            state = chain.exec()
-            sim_data = state.memory.load(addr_val.data, len(data))
-            assert state.solver.eval(sim_data == data)
-            return chain
+        mem_write = gadget.mem_writes[0]
+        if len(mem_write.addr_dependencies) <= 1 and len(mem_write.data_dependencies) <= 1 and mem_write.data_size in (32, 64):
+            if not self._mem_write_chain_cache[gadget]:
+                try:
+                    cache_chain = MemWriteChain(self, gadget, preserve_regs)
+                    self._mem_write_chain_cache[gadget].append(cache_chain)
+                except RopException:
+                    pass
+            for cache_chain in self._mem_write_chain_cache[gadget]:
+                if cache_chain.changed_regs.intersection(preserve_regs):
+                    continue
+                chain = cache_chain.concretize(addr_val, data)
+                state = chain.exec()
+                sim_data = state.memory.load(addr_val.data, len(data))
+                assert state.solver.eval(sim_data == data)
+                return chain
         return self._write_to_mem_with_gadget(gadget, addr_val, data, preserve_regs)
 
     def _write_to_mem_with_gadget(self, gadget, addr_val, data, preserve_regs):
