@@ -1066,7 +1066,25 @@ def test_reg_setting_equal_set():
     rop.find_gadgets_single_threaded(show_progress=False)
 
     chain = rop.set_regs(rax=0x41414141, rdi=0x42424242)
-    chain.pp()
+    assert chain is not None
+
+def test_short_write():
+    proj = angr.load_shellcode(
+        """
+        mov ecx, 0x480021c6; cwde ; mov qword ptr [rdx + rcx*8 - 8], rax; add rsp, 8; ret
+        pop rax; ret
+        pop rdx; ret
+        """,
+        "amd64",
+        simos='linux',
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.write_to_mem(0x41414141, b'BBBB')
+    assert chain is not None
 
 def run_all():
     functions = globals()

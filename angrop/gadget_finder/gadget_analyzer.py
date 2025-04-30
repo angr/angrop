@@ -896,7 +896,10 @@ class GadgetAnalyzer:
                     if not succ_state.solver.satisfiable(extra_constraints=(test_constraint,)):
                         mem_access.data_dependencies.add(reg)
 
-        mem_access.data_size = a.data.ast.size()
+        data_ast = a.data.ast
+        while data_ast.op in ('ZeroExt', 'SignExt'):
+            data_ast = data_ast.args[1]
+        mem_access.data_size = data_ast.size()
         mem_access.addr_size = a.addr.ast.size()
         return mem_access
 
