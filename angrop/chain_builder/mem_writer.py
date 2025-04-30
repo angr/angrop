@@ -36,7 +36,7 @@ class MemWriteChain:
         for a in final_state.history.actions.hardcopy:
             if a.type != "mem" or a.action != "write":
                 continue
-            if set(rop_utils.get_ast_dependency(a.addr.ast)) == set(mem_write.addr_dependencies) or \
+            if set(rop_utils.get_ast_dependency(a.addr.ast)) == set(mem_write.addr_dependencies) and \
                     set(rop_utils.get_ast_dependency(a.data.ast)) == set(mem_write.data_dependencies):
                 the_action = a
                 break

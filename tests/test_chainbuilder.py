@@ -1086,6 +1086,24 @@ def test_short_write():
     chain = rop.write_to_mem(0x41414141, b'BBBB')
     assert chain is not None
 
+def test_pop_write():
+    proj = angr.load_shellcode(
+        """
+        push rax; pop qword ptr [rcx]; ret
+        pop rax; ret
+        pop rcx; ret
+        """,
+        "amd64",
+        simos='linux',
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.write_to_mem(0x41414141, b'BBBB')
+    assert chain is not None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
