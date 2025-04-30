@@ -194,10 +194,11 @@ def local_multiprocess_analyze_gadget_list():
 def test_gadget_filtering():
     proj = angr.Project(os.path.join(tests_dir, "armel", "libc-2.31.so"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
-    rop.analyze_gadget(0x42bca5)
-    rop.analyze_gadget(0x42c3c1)
+    g1 = rop.analyze_gadget(0x42bca5)
+    g2 = rop.analyze_gadget(0x42c3c1)
     rop.chain_builder.bootstrap()
-    assert len(rop.chain_builder._reg_setter._reg_setting_gadgets) == 1
+    values = list(rop.chain_builder._shifter.shift_gadgets.values())
+    assert len(values) == 1 and len(values[0]) == 1
 
 def test_aarch64_svc():
     proj = angr.Project(os.path.join(tests_dir, "aarch64", "libc.so.6"), auto_load_libs=False)

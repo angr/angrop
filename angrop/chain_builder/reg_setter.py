@@ -275,7 +275,7 @@ class RegSetter(Builder):
         new_blocks = set()
         shortest = {x:y[0] for x,y in self._reg_setting_dict.items() if y}
         arch_bytes = self.project.arch.bytes
-        for gadget in self._reg_setting_gadgets:
+        for gadget in itertools.chain(self._reg_setting_gadgets, self.chain_builder._reg_mover._reg_moving_gadgets):
             if gadget.self_contained and not gadget.has_symbolic_access():
                 continue
             # check whether it introduces new capabilities
@@ -648,7 +648,8 @@ class RegSetter(Builder):
         exclude gadgets that do symbolic memory access
         """
         gadgets = [g for g in gadgets if g.popped_regs or g.concrete_regs]
-        return self._filter_gadgets(gadgets)
+        results = self._filter_gadgets(gadgets)
+        return results
 
     #### Main Entrance ####
     def run(self, modifiable_memory_range=None, preserve_regs=None, warn=True, **registers):

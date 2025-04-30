@@ -116,6 +116,6 @@ class Pivot(Builder):
         return (g.num_sym_mem_access, len(g.changed_regs), g.isn_count)
 
     def filter_gadgets(self, gadgets):
-        gadgets = [x for x in gadgets if not x.has_conditional_branch and x.transit_type == 'pop_pc' and not x.has_symbolic_access()]
+        gadgets = [x for x in gadgets if not x.has_conditional_branch and x.transit_type != 'jmp_reg' and not x.has_symbolic_access()]
         gadgets = self._filter_gadgets(gadgets)
         return sorted(gadgets, key=functools.cmp_to_key(cmp))
