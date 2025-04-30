@@ -535,7 +535,7 @@ class GadgetAnalyzer:
             # we need to make sure they arent equal to the exit target otherwise they arent controlled
             # TODO what to do about moves to bp
             ast = final_state.registers.load(reg)
-            if ast is exit_target:
+            if ast is exit_target or ast.variables.intersection(exit_target.variables):
                 gadget.changed_regs.add(reg)
             elif self._check_if_stack_controls_ast(ast, final_state, stack_change):
                 if ast.op == 'Concat':

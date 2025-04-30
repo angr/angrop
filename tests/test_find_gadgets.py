@@ -328,6 +328,19 @@ def test_jmp_mem_num_mem_access():
     g = rop.analyze_gadget(0x400000)
     assert g is not None
 
+def test_exit_target():
+    proj = angr.load_shellcode(
+        """
+        mov eax, dword ptr [rsp]; ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
+    g = rop.analyze_gadget(0x400000)
+    assert not g.popped_regs
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
