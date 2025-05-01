@@ -430,7 +430,7 @@ def test_controller():
 
 def test_cdq():
     proj = angr.load_shellcode(
-        """ 
+        """
         pop rax
         cdq
         ret
@@ -438,12 +438,25 @@ def test_cdq():
         "amd64",
         load_address=0x400000,
         auto_load_libs=False,
-    )   
+    )
     rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
     g = rop.analyze_gadget(0x400000)
     assert g is not None
     assert 'rax' in g.popped_regs
     assert 'rdx' not in g.popped_regs
+
+def test_invalid_ptr():
+    proj = angr.load_shellcode(
+        """
+        pop rcx; xor al, 0x52; movabs byte ptr [0xc997d3941b683390], al; ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
+    g = rop.analyze_gadget(0x400000)
+    assert g is None
 
 def run_all():
     functions = globals()

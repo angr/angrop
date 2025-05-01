@@ -1052,6 +1052,11 @@ class GadgetAnalyzer:
                 if found is True:
                     continue
 
+            # error out on invalid memory accesses
+            if not a.addr.ast.symbolic:
+                if abs(init_state.regs.sp.concrete_value - a.addr.ast.concrete_value) > 0x400:
+                    return False
+
             all_mem_actions.append(a)
 
         # step 2: identify memory change accesses by indexing using the memory address as the key
