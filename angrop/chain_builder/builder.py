@@ -336,7 +336,7 @@ class Builder:
         then constraining the final registers to the values that were requested
         """
 
-        total_sc = sum(g.stack_change for g in gadgets if g.stack_change >= 0)
+        total_sc = sum(max(g.stack_change, g.max_stack_offset + self.project.arch.bytes) for g in gadgets)
         arch_bytes = self.project.arch.bytes
 
         # emulate a 'pop pc' of the first gadget
@@ -857,9 +857,29 @@ class Builder:
             if rb is None:
                 return None
 
-            # TODO
+            # handle cases where the ropblock has out_of_patch accesses
+            # the solution is to shift the stack to contain the accesses
+            # FIXME: currently, we allow bytes*2 more bytes in shifting because of the mismatch on how
+            # stack_max_offset is calculated in ropblock and ropgadget
             if rb.oop:
-                return None
+                shift_gadgets = self.chain_builder._shifter.shift_gadgets
+                keys = sorted(shift_gadgets.keys())
+                shifter_list = itertools.chain.from_iterable([shift_gadgets[k] for k in keys])
+                for shifter in shifter_list:
+                    if shifter.stack_change + rb.stack_change <= rb.max_stack_offset:
+                        continue
+                    if shifter.pc_offset == rb.max_stack_offset - rb.stack_change:
+                        continue
+                    try:
+                        chain = self._build_reg_setting_chain([rb, shifter], {})
+                        rb = RopBlock.from_chain(chain)
+                        rb._values = rb._values[:rb.stack_change//self.project.arch.bytes+1]
+                        rb.payload_len = len(rb._values) * self.project.arch.bytes
+                        break
+                    except RopException:
+                        pass
+                else:
+                    return None
 
             # constrain memory accesses
             if m is not None:

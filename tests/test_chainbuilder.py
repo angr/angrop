@@ -1104,6 +1104,25 @@ def test_pop_write():
     chain = rop.write_to_mem(0x41414141, b'BBBB')
     assert chain is not None
 
+def test_riscv_oop_normalization():
+    cache_path = os.path.join(CACHE_DIR, "riscv_asterisk-libasteriskpj.so.2")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "asterisk-libasteriskpj.so.2"), load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path, optimize=False)
+    else:
+        rop.find_gadgets(processes=16, optimize=False)
+        rop.save_gadgets(cache_path)
+
+    g = rop.analyze_gadget(0x00000000000407cc)
+    rb = rop.chain_builder._reg_setter.normalize_gadget(g)
+    assert rb is not None
+
+    g = rop.analyze_gadget(0x000000000007cc66)
+    rb = rop.chain_builder._reg_setter.normalize_gadget(g)
+    assert rb is not None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

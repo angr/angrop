@@ -155,7 +155,10 @@ class RopEffect:
 
     @property
     def max_stack_offset(self):
-        res = self.stack_change - self.project.arch.bytes
+        project = getattr(self, "project", None)
+        if project is None:
+            project = getattr(self, "_p", None)
+        res = self.stack_change - project.arch.bytes
         for m in self.mem_reads + self.mem_writes + self.mem_changes:
             if m.out_of_patch and m.stack_offset > res:
                 res = m.stack_offset
