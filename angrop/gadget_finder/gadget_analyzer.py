@@ -790,6 +790,8 @@ class GadgetAnalyzer:
                 raise RopException("SP change is symbolic")
 
             gadget.stack_change = self._to_signed(stack_changes[0])
+            if gadget.stack_change % self.project.arch.bytes != 0 or abs(gadget.stack_change) > 0x1000:
+                raise RopException("bad SP")
 
         elif type(gadget) is PivotGadget:
             dependencies = self._get_reg_dependencies(final_state, "sp")
@@ -838,6 +840,10 @@ class GadgetAnalyzer:
             gadget.stack_change_after_pivot = sols[0]
             gadget.sp_reg_controllers = set(self._get_reg_controllers(init_state, final_state, 'sp', dependencies))
             gadget.sp_stack_controllers = {x for x in final_state.regs.sp.variables if x.startswith("symbolic_stack_")}
+            if gadget.stack_change_before_pivot % self.project.arch.bytes != 0 or abs(gadget.stack_change_before_pivot) > 0x1000:
+                raise RopException("bad SP")
+            if gadget.stack_change_after_pivot % self.project.arch.bytes != 0 or abs(gadget.stack_change_after_pivot) > 0x1000:
+                raise RopException("bad SP")
         else:
             raise NotImplementedError(f"Unknown gadget type {type(gadget)}")
 
