@@ -405,8 +405,8 @@ def test_out_of_patch():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
     rop = proj.analyses.ROP()
 
-    # mov rax, qword ptr [rip + 0x2c0939]; mov eax, dword ptr [rax + 0x38]; ret
-    g = rop.analyze_gadget(0x4fd520)
+    # 0x000000000007c950 : mov rax, qword ptr [rip + 0x342849] ; ret
+    g = rop.analyze_gadget(0x000000000047c950)
     assert g.oop is False
 
 def test_controller():
@@ -457,6 +457,34 @@ def test_invalid_ptr():
     rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
     g = rop.analyze_gadget(0x400000)
     assert g is None
+
+def test_cond_br_guard_pop_conflict():
+    proj = angr.load_shellcode(
+        """
+        ldr x3, [sp, #0x10];
+        mov x15, x3;
+        add x3, x3, #2;
+        str x3, [sp, #0x10];
+        ldr x24, [sp, #0x18];
+        cmp x15, x24;
+        b.eq #0x24;
+        str x1, [x0];
+        str x1, [x1];
+        mov x0, #1;
+        ldr x30, [sp, #0x28];
+        add sp, sp, #0x30;
+        ret
+        """,
+        "aarch64",
+        load_address=0,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
+    gs = rop.analyze_addr(0)
+    assert len(gs) == 1
+    g = gs[0]
+    assert g.has_conditional_branch
+    assert not g.reg_pops
 
 def run_all():
     functions = globals()
