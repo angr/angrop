@@ -7,6 +7,7 @@ import multiprocessing as mp
 from functools import partial
 
 import tqdm
+import psutil
 
 from angr.errors import SimEngineError, SimMemoryError
 from angr.misc.loggers import CuteFormatter
@@ -23,6 +24,7 @@ ANALYZE_GADGET_TIMEOUT = 3
 _global_gadget_analyzer = None
 _global_skip_cache = None
 _global_cache = None
+_global_init_rss = None
 
 # disable loggers in each worker
 def _disable_loggers():
@@ -33,11 +35,13 @@ def _disable_loggers():
 
 # global initializer for multiprocessing
 def _set_global_gadget_analyzer(rop_gadget_analyzer):
-    global _global_gadget_analyzer, _global_skip_cache, _global_cache # pylint: disable=global-statement
+    global _global_gadget_analyzer, _global_skip_cache, _global_cache, _global_init_rss # pylint: disable=global-statement
     _global_gadget_analyzer = rop_gadget_analyzer
     _global_skip_cache = set()
     _global_cache = {}
     _disable_loggers()
+    process = psutil.Process()
+    _global_init_rss = process.memory_info().rss
 
 def handler(signum, frame):
     l.warning("[angrop] worker_func2 times out, exit the worker process!")
@@ -58,11 +62,19 @@ def worker_func2(addr, cond_br=None):
     else:
         res = analyzer.analyze_gadget(addr, allow_conditional_branches=cond_br)
     signal.alarm(0)
+
+    if not res:
+        # HACK: we are seeing some very bad memory leak situation, restart the worker
+        process = psutil.Process()
+        rss = process.memory_info().rss
+        if rss - _global_init_rss > 500*1024*1024:
+            l.warning("[angrop] worker_func2 encounters memory leak, exit the worker process!")
+            os._exit(0)
+
     if res is None:
         return []
     if isinstance(res, list):
         return res
-
     return [res]
 
 class GadgetFinder:
