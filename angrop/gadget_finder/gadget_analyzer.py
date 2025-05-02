@@ -861,6 +861,7 @@ class GadgetAnalyzer:
             else:
                 addr_constant = final_state.solver.eval(a.addr.ast)
             mem_access.addr_constant = addr_constant
+            mem_access.stack_offset = addr_constant - init_state.regs.sp.concrete_value
             if not final_state.regs.sp.symbolic:
                 # check whether this is a pointer to a known mapping, these are not considered out-of-patch
                 if self.project.loader.find_object_containing(addr_constant):

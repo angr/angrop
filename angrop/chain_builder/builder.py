@@ -675,7 +675,7 @@ class Builder:
             if m.stack_offset is not None:
                 stack_offsets.append(m.stack_offset + self.project.arch.bytes)
         if stack_offsets:
-            shift_size = max(stack_offsets) + self.project.arch.bytes - min(stack_offsets)
+            shift_size = max(stack_offsets) - gadget.stack_change
         else:
             shift_size = self.project.arch.bytes
 

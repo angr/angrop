@@ -97,6 +97,24 @@ def test_normalized_block_effect():
     chain = rop.move_regs(r8='r14', rsi='r15')
     assert chain is not None
 
+def test_stack_offset_infinite_loop():
+    cache_path = os.path.join(CACHE_DIR, "libdevel-leak-perl-Leak.so")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "libdevel-leak-perl-Leak.so"), auto_load_libs=False, load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, only_check_near_rets=False, cond_br=True, max_bb_cnt=5)
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path, optimize=False)
+    else:
+        rop.find_gadgets(optimize=False)
+        rop.save_gadgets(cache_path)
+
+    addrs = [g.addr for g in rop._all_gadgets]
+    assert 0xf30 in addrs
+
+    # if stack_offset is not properly calculated, it may lead to infinite loops
+    # when handling 0xf30
+    rop.optimize()
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

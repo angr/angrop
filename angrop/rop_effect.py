@@ -21,6 +21,7 @@ class RopMemAccess:
         self.data_controllers = set()
         self.data_stack_controllers = set()
         self.addr_constant = None
+        self.stack_offset = None # addr_constant - init_sp
         self.data_constant = None
         self.addr_size = None
         self.data_size = None
@@ -48,12 +49,6 @@ class RopMemAccess:
     def addr_data_independent(self):
         return len(set(self.addr_controllers) & set(self.data_controllers)) == 0 and \
                 len(set(self.addr_stack_controllers) & set(self.data_stack_controllers)) == 0
-
-    @property
-    def stack_offset(self):
-        if self.addr_constant is None:
-            return None
-        return self.addr_constant - 0x7ffffffffff0000
 
     def __eq__(self, other):
         if type(other) != RopMemAccess:

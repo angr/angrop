@@ -252,7 +252,14 @@ class GadgetFinder:
                 pool.apply_async(func, args=(addr,), callback=on_success)
             pool.close()
 
-            while time.time() - sync_data[0] < ANALYZE_GADGET_TIMEOUT and sync_data[1] < len(tasks):
+            def should_continue():
+                if sync_data[1] == len(tasks):
+                    return False
+                if sync_data[1] > len(tasks)*0.8:
+                    return time.time() - sync_data[0] < ANALYZE_GADGET_TIMEOUT
+                return time.time() - sync_data[0] < ANALYZE_GADGET_TIMEOUT*5
+
+            while should_continue():
                 if timeout and time.time() - start > timeout:
                     break
                 time.sleep(0.1)
