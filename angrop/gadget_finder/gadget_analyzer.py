@@ -453,36 +453,42 @@ class GadgetAnalyzer:
 
         # conditional branch analysis
         if do_cond_branch:
-            # list all conditional branch dependencies
-            branch_guard_vars = set()
-            for guard in final_state.history.jump_guards:
-                if claripy.is_true(guard):
-                    continue
-                branch_guard_vars |= guard.variables
-            gadget.has_conditional_branch = bool(branch_guard_vars)
+            gadget = self._cond_branch_analysis(gadget, final_state)
+        return gadget
 
-            # if there is no conditional branch, good, we just finished the analysis
-            if not gadget.has_conditional_branch:
-                return gadget
+    def _cond_branch_analysis(self, gadget, final_state):
+        # list all conditional branch dependencies
+        branch_guard_vars = set()
+        for guard in final_state.history.jump_guards:
+            if claripy.is_true(guard):
+                continue
+            branch_guard_vars |= guard.variables
+        gadget.has_conditional_branch = bool(branch_guard_vars)
 
-            # now analyze the branch dependencies and filter out gadgets that we do not support yet
-            # TODO: support more guards such as existing flags
-            for var in branch_guard_vars:
-                if var.startswith("sreg_"):
-                    gadget.branch_dependencies.add(var.split('_', 1)[1].split('-', 1)[0])
-                elif var.startswith("symbolic_stack_"):
-                    # we definitely can control this, but remove it from reg_pops
-                    to_remove = set()
-                    for pop in gadget.reg_pops:
-                        reg = pop.reg
-                        reg_val = final_state.registers.load(reg)
-                        if var in reg_val.variables:
-                            to_remove.add(pop)
-                    gadget.reg_pops -= to_remove
-                else:
-                    l.debug("... branch dependenices not controlled by registers and stack")
-                    return None
+        # if there is no conditional branch, good, we just finished the analysis
+        if not gadget.has_conditional_branch:
+            return gadget
 
+        # now analyze the branch dependencies and filter out gadgets that we do not support yet
+        # TODO: support more guards such as existing flags
+        gadget.project = self.project
+        #gadget.pp()
+        #print(branch_guard_vars)
+        for var in branch_guard_vars:
+            if var.startswith("sreg_"):
+                gadget.branch_dependencies.add(var.split('_', 1)[1].split('-', 1)[0])
+            elif var.startswith("symbolic_stack_"):
+                # we definitely can control this, but remove it from reg_pops
+                to_remove = set()
+                for pop in gadget.reg_pops:
+                    reg = pop.reg
+                    reg_val = final_state.registers.load(reg)
+                    if var in reg_val.variables:
+                        to_remove.add(pop)
+                gadget.reg_pops -= to_remove
+            else:
+                l.debug("... branch dependenices not controlled by registers and stack")
+                return None
         return gadget
 
     def _create_gadget(self, addr, init_state, final_state, ctrl_type, do_cond_branch):

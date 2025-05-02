@@ -115,6 +115,22 @@ def test_stack_offset_infinite_loop():
     # when handling 0xf30
     rop.optimize()
 
+def test_normalized_block_effect2():
+    cache_path = os.path.join(CACHE_DIR, "riscv_autotalent-autotalent.so")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "autotalent-autotalent.so"), load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, only_check_near_rets=False, cond_br=True, max_bb_cnt=5)
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path, optimize=False)
+    else:
+        rop.find_gadgets(processes=16, optimize=False)
+        rop.save_gadgets(cache_path)
+
+    gs = rop.analyze_addr(0x4ae6)
+    g = gs[0]
+    rb = rop.chain_builder._reg_setter.normalize_gadget(g)
+    assert 'a0' not in rb.popped_regs
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

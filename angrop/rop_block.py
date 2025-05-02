@@ -60,6 +60,9 @@ class RopBlock(RopChain, RopEffect):
         project = init_state.project
         rb.isn_count = sum(project.factory.block(addr).instructions for addr in rb.bbl_addrs)
 
+        # conditional branch analysis
+        ga._cond_branch_analysis(rb, final_state)
+
     def sim_exec(self):
         project = self._p
         # this is different RopChain.exec because the execution needs to be symbolic
