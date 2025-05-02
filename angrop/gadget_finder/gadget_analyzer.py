@@ -458,12 +458,12 @@ class GadgetAnalyzer:
 
     def _cond_branch_analysis(self, gadget, final_state):
         # list all conditional branch dependencies
-        branch_guard_vars = set()
+        branch_guards = set()
         for guard in final_state.history.jump_guards:
             if claripy.is_true(guard):
                 continue
-            branch_guard_vars |= guard.variables
-        gadget.has_conditional_branch = bool(branch_guard_vars)
+            branch_guards.add(guard)
+        gadget.has_conditional_branch = bool(branch_guards)
 
         # if there is no conditional branch, good, we just finished the analysis
         if not gadget.has_conditional_branch:
@@ -471,10 +471,7 @@ class GadgetAnalyzer:
 
         # now analyze the branch dependencies and filter out gadgets that we do not support yet
         # TODO: support more guards such as existing flags
-        gadget.project = self.project
-        #gadget.pp()
-        #print(branch_guard_vars)
-        for var in branch_guard_vars:
+        def handle_constrained_var(var):
             if var.startswith("sreg_"):
                 gadget.branch_dependencies.add(var.split('_', 1)[1].split('-', 1)[0])
             elif var.startswith("symbolic_stack_"):
@@ -489,6 +486,22 @@ class GadgetAnalyzer:
             else:
                 l.debug("... branch dependenices not controlled by registers and stack")
                 return None
+
+        for guard in branch_guards:
+            if len(guard.variables) > 1:
+                for var in guard.variables:
+                    handle_constrained_var(var)
+            else:
+                var = list(guard.variables)[0]
+                arg0 = guard.args[0]
+                arg1 = guard.args[1]
+                ast = arg0 if arg0.symbolic else arg1
+                if rop_utils.loose_constrained_check(final_state, ast, extra_constraints=[guard]):
+                    if var.startswith("sreg_"):
+                        gadget.branch_dependencies.add(var.split('_', 1)[1].split('-', 1)[0])
+                    continue
+                handle_constrained_var(var)
+
         return gadget
 
     def _create_gadget(self, addr, init_state, final_state, ctrl_type, do_cond_branch):
