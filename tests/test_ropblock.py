@@ -131,6 +131,18 @@ def test_normalized_block_effect2():
     rb = rop.chain_builder._reg_setter.normalize_gadget(g)
     assert 'a0' not in rb.popped_regs
 
+def test_normalized_block_with_conditional_branch():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "aarch64", "libastring-ocaml-astring.cmxs"), load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, only_check_near_rets=False, cond_br=True, max_bb_cnt=5)
+
+    rop.analyze_addr(0x0000000000023d28)
+    rop.analyze_addr(0x00000000000189a4)
+    rop.analyze_addr(0x0000000000020880)
+
+    rop.chain_builder.optimize()
+    chain = rop.set_regs(x0=0x41414141, x5=0x42424242)
+    assert chain is not None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
