@@ -672,7 +672,6 @@ class RegSetter(Builder):
             try:
                 gadgets = self._expand_ropblocks(gadgets)
                 chain = self._build_reg_setting_chain(gadgets, registers)
-                chain._concretize_chain_values(timeout=len(chain._values)*3)
                 if self.verify(chain, preserve_regs, registers):
                     return chain
             except (RopException, SimUnsatError):

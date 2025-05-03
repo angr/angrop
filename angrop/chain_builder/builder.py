@@ -266,9 +266,12 @@ class Builder:
                 case "__and__" | "__or__":
                     arg0 = lhs.args[0]
                     arg1 = lhs.args[1]
-                    flag = check_func(arg0)
+                    flag0 = check_func(arg0)
+                    flag1 = check_func(arg1)
+                    if flag0 and flag1:
+                        raise RopException(f"cannot rebalance {lhs}")
                     op = lhs.op
-                    if flag:
+                    if flag0:
                         lhs = arg0
                         other = arg1
                     else:
