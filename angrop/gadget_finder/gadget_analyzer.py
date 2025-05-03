@@ -459,14 +459,25 @@ class GadgetAnalyzer:
     def _cond_branch_analysis(self, gadget, final_state):
         # list all conditional branch dependencies
         branch_guards = set()
+        branch_guard_vars = set()
         for guard in final_state.history.jump_guards:
             if claripy.is_true(guard):
                 continue
             branch_guards.add(guard)
-        gadget.has_conditional_branch = bool(branch_guards)
+            branch_guard_vars |= guard.variables
+
+        # make sure all guards are controllable by us
+        for var in branch_guard_vars:
+            if var.startswith('sreg_') or var.startswith('symbolic_stack_'):
+                continue
+            return None
+
+        # we do not consider a gadget having conditional branch if the branch guards can be set by itself
+        gadget.has_conditional_branch = any(not v.startswith('symbolic_stack_') for v in branch_guard_vars)
+        #gadget.has_conditional_branch = any(not v.startswith('symbolic_stack_') for v in branch_guard_vars)
 
         # if there is no conditional branch, good, we just finished the analysis
-        if not gadget.has_conditional_branch:
+        if not branch_guards:
             return gadget
 
         # now analyze the branch dependencies and filter out gadgets that we do not support yet
@@ -483,9 +494,6 @@ class GadgetAnalyzer:
                     if var in reg_val.variables:
                         to_remove.add(pop)
                 gadget.reg_pops -= to_remove
-            else:
-                l.debug("... branch dependenices not controlled by registers and stack")
-                return None
 
         for guard in branch_guards:
             if len(guard.variables) > 1:

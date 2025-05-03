@@ -324,6 +324,11 @@ def make_symbolic_state(project, reg_set, stack_gsize, extra_reg_set=None, symbo
         if reg in symbolic_state.arch.registers:
             symbolic_state.registers.store(reg, symbolic_state.solver.BVS("badreg_" + reg + "-", project.arch.bits))
 
+    # some arches have zero registers and they should be handle by pyvex.
+    # but just to be extra safe, we set it here as well
+    if hasattr(symbolic_state.regs, "zero"):
+        symbolic_state.regs.zero = 0
+
     # restore sp
     symbolic_state.regs.sp = input_state.regs.sp
 
