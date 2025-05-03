@@ -152,7 +152,6 @@ class RopChain:
         """
         project = self._p
         state = self._blank_state.copy()
-        state.solver.reload_solver([]) # remove constraints
         concrete_vals = self._concretize_chain_values(timeout=timeout, preserve_next_pc=True, append_shift=False)
 
         # when the chain data includes symbolic values, we need to replace the concrete values

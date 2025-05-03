@@ -480,6 +480,10 @@ class GadgetAnalyzer:
         if not branch_guards:
             return gadget
 
+        # if this is a RopBlock and we hit here, this is not a valid RopBlock
+        if isinstance(gadget, RopBlock):
+            return None
+
         # now analyze the branch dependencies and filter out gadgets that we do not support yet
         # TODO: support more guards such as existing flags
         def handle_constrained_var(var):

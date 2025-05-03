@@ -61,7 +61,9 @@ class RopBlock(RopChain, RopEffect):
         rb.isn_count = sum(project.factory.block(addr).instructions for addr in rb.bbl_addrs)
 
         # conditional branch analysis
-        ga._cond_branch_analysis(rb, final_state)
+        res = ga._cond_branch_analysis(rb, final_state)
+        if res is None:
+            raise RopException("RopBlock should not have conditional branches")
 
     def sim_exec(self):
         project = self._p
