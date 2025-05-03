@@ -1,6 +1,7 @@
 import re
 import math
 import struct
+import logging
 import itertools
 from abc import abstractmethod
 from functools import cmp_to_key
@@ -15,6 +16,8 @@ from ..rop_value import RopValue
 from ..rop_chain import RopChain
 from ..rop_block import RopBlock
 from ..gadget_finder.gadget_analyzer import GadgetAnalyzer
+
+l = logging.getLogger(__name__)
 
 class Builder:
     """
@@ -141,7 +144,9 @@ class Builder:
                 if data == null[:data_len] and not addr_is_used(addr):
                     self.__class__.used_writable_ptrs.append((addr, size))
                     return addr
-        return None
+
+        l.error("used up all possible writable ptrs")
+        raise RopException("used up all possible writable ptrs")
 
     def _get_ptr_to_null(self):
         # get all non-writable segments
@@ -152,7 +157,9 @@ class Builder:
             for addr in self.project.loader.memory.find(null, search_min=seg.min_addr, search_max=seg.max_addr):
                 if not self._word_contain_badbyte(addr):
                     return addr
-        return None
+
+        l.error("used up all possible ptrs to null")
+        raise RopException("used up all possible ptrs to null")
 
     @staticmethod
     def _ast_contains_stack_data(ast):
