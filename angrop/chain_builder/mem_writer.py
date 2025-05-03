@@ -23,7 +23,7 @@ class MemWriteChain:
         mem_write = self.gadget.mem_writes[0]
         self.addr_bv = claripy.BVS("addr", mem_write.addr_size)
         self.data_bv = claripy.BVS("data", mem_write.data_size)
-        self.state = builder.make_sim_state(gadget.addr, gadget.stack_change//self.project.arch.bytes)
+        self.state = builder.make_sim_state(gadget.addr, gadget.stack_change//self.project.arch.bytes+1)
         self.chain = self._build_chain()
 
     def _build_chain(self):
