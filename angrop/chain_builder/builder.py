@@ -106,6 +106,12 @@ class Builder:
                     plt_sec = sec
                     break
 
+        def addr_is_used(addr):
+            for a, s in used_writable_ptrs:
+                if a <= addr < a+s or a < addr+size <= a+s:
+                    return True
+            return False
+
         # enumerate through all address to find a good address
         for seg in segs:
             # we should use project.loader.memory.find API, but it is currently broken as reported here:
@@ -119,25 +125,22 @@ class Builder:
             for addr in range(seg.min_addr, max_addr):
                 if plt_sec and contains_plt and plt_sec.contains_addr(addr):
                     continue
-                # can't collide with used regions
-                collide = False
-                for a, s in used_writable_ptrs:
-                    if a <= addr < a+s or a < addr+size <= a+s:
-                        collide = True
-                        break
-                if collide:
+                if any(self._word_contain_badbyte(x) for x in range(addr, addr+size, self.project.arch.bytes)):
                     continue
-                if all(not self._word_contain_badbyte(x) for x in range(addr, addr+size, self.project.arch.bytes)):
-                    data_len = size
-                    if addr >= seg.max_addr:
-                        self.__class__.used_writable_ptrs.append((addr, size))
-                        return addr
-                    if addr+size > seg.max_addr:
-                        data_len = addr+size - seg.max_addr
+
+                data_len = size
+                if addr >= seg.max_addr and not addr_is_used(addr):
+                    self.__class__.used_writable_ptrs.append((addr, size))
+                    return addr
+                if addr+size > seg.max_addr:
+                    data_len = addr+size - seg.max_addr
+                try:
                     data = self.project.loader.memory.load(addr, data_len)
-                    if data == null[:data_len]:
-                        self.__class__.used_writable_ptrs.append((addr, size))
-                        return addr
+                except KeyError:
+                    continue
+                if data == null[:data_len] and not addr_is_used(addr):
+                    self.__class__.used_writable_ptrs.append((addr, size))
+                    return addr
         return None
 
     def _get_ptr_to_null(self):
@@ -238,6 +241,19 @@ class Builder:
         on stack so that users can eval on their own ropvalue and get the correct solves
         TODO: currently, we only support add/sub, Extract/ZeroExt
         """
+        # in some cases, we can just solve it
+        if mode == 'stack' and lhs.symbolic and not rhs.symbolic and len(lhs.variables) == 1 and lhs.depth > 1:
+            target_ast = None
+            for ast in lhs.children_asts():
+                if ast.op == 'BVS' and ast.args[0].startswith('symbolic_stack'):
+                    target_ast = ast
+                    break
+            assert target_ast is not None
+
+            solver = claripy.Solver()
+            solver.add(lhs == rhs)
+            return target_ast, claripy.BVV(solver.eval(target_ast, 1)[0], target_ast.size())
+
         if lhs.op == 'If':
             raise RopException("cannot handle conditional value atm")
 
