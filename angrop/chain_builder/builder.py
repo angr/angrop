@@ -647,11 +647,15 @@ class Builder:
         gadgets = chain._gadgets
         return gadgets
 
-    def _normalize_jmp_reg(self, gadget, pre_preserve=None):
+    def _normalize_jmp_reg(self, gadget, pre_preserve=None, to_set_regs=None):
         if pre_preserve is None:
             pre_preserve = set()
+        if to_set_regs is None:
+            to_set_regs = set()
         reg_setter = self.chain_builder._reg_setter
         if not reg_setter.can_set_reg(gadget.pc_reg):
+            return None
+        if gadget.pc_reg in pre_preserve or gadget.pc_reg in to_set_regs:
             return None
 
         # choose the best gadget to set the PC for this jmp_reg gadget
@@ -793,7 +797,7 @@ class Builder:
         except (RopException, IndexError):
             return None
 
-    def normalize_gadget(self, gadget, pre_preserve=None, post_preserve=None):
+    def normalize_gadget(self, gadget, pre_preserve=None, post_preserve=None, to_set_regs=None):
         """
         pre_preserve: what registers to preserve before executing the gadget
         post_preserve: what registers to preserve after executing the gadget
@@ -833,7 +837,7 @@ class Builder:
 
             # normalize transit_types
             if gadget.transit_type == 'jmp_reg':
-                tmp = self._normalize_jmp_reg(gadget, pre_preserve=pre_preserve)
+                tmp = self._normalize_jmp_reg(gadget, pre_preserve=pre_preserve, to_set_regs=to_set_regs)
                 if tmp is None:
                     return None
                 gadgets = tmp + gadgets

@@ -135,7 +135,7 @@ class RegSetter(Builder):
         1. normalize it and hope the from_reg to be set during normalization
         2. normalize it and make sure the from_reg won't be clobbered during normalization and then prepend it
         """
-        rb = self.normalize_gadget(gadget, post_preserve={new_move.to_reg})
+        rb = self.normalize_gadget(gadget, post_preserve={new_move.to_reg}, to_set_regs={new_move.from_reg})
         if rb is None: # if this does not exist, no need to try the more strict version
             return None
         if new_move.to_reg in rb.popped_regs:
