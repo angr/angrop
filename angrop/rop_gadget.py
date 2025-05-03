@@ -22,10 +22,6 @@ class RopGadget(RopEffect):
         self.pc_reg = None # for jmp_reg, which register it jumps to
         self.pc_target = None # for jmp_mem, where it jumps to
 
-        # Registers that affect path constraints
-        self.branch_dependencies = set()
-        self.has_conditional_branch: bool = None # type: ignore
-
     @property
     def self_contained(self):
         """

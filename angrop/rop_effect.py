@@ -138,6 +138,10 @@ class RopEffect:
 
         self.pop_equal_set = set() # like pop rax; mov rbx, rax; they must be the same
 
+        # Registers that affect path constraints
+        self.branch_dependencies = set()
+        self.has_conditional_branch: bool = None # type: ignore
+
     @property
     def oop(self):
         """
