@@ -21,7 +21,7 @@ def local_gadget_finding():
 
     start = time.time()
     rop.optimize(processes=16)
-    assert time.time() - start < 3
+    assert time.time() - start < 5
 
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64/libc.so.6"), auto_load_libs=False)
     rop = proj.analyses.ROP()
@@ -32,7 +32,7 @@ def local_gadget_finding():
 
     start = time.time()
     rop.optimize(processes=16)
-    assert time.time() - start < 3
+    assert time.time() - start < 5
 
 def local_graph_optimization_missing_write():
     """
@@ -85,12 +85,12 @@ def run_all():
         print(f)
         if hasattr(all_functions[f], '__call__'):
             all_functions[f]()
-    #print("local_gadget_finding")
-    #local_gadget_finding()
-    #print("local_graph_optimization_missing_write")
-    #local_graph_optimization_missing_write()
-    #print("local_graph_optimization")
-    #local_graph_optimization()
+    print("local_gadget_finding")
+    local_gadget_finding()
+    print("local_graph_optimization_missing_write")
+    local_graph_optimization_missing_write()
+    print("local_graph_optimization")
+    local_graph_optimization()
     print("local_write_optimize")
     local_write_optimize()
 

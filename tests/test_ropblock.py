@@ -143,6 +143,19 @@ def test_normalized_block_with_conditional_branch():
     chain = rop.set_regs(x0=0x41414141, x5=0x42424242)
     assert chain is not None
 
+def test_jmp_reg_normalize_fast_path():
+    cache_path = os.path.join(CACHE_DIR, "mipsel_btrfs-tools_btrfs-calc-size")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "mipsel", "btrfs-tools_btrfs-calc-size"), load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path, optimize=False)
+    else:
+        rop.find_gadgets(processes=16, optimize=False)
+        rop.save_gadgets(cache_path)
+
+    rop.optimize(processes=1)
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
