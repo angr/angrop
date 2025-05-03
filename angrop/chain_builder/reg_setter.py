@@ -147,7 +147,11 @@ class RegSetter(Builder):
         reg_setter = self._reg_setting_dict[new_move.from_reg][0]
         if isinstance(reg_setter, RopGadget):
             reg_setter = RopBlock.from_gadget(reg_setter, self)
-        rb = reg_setter + rb
+        try:
+            rb = reg_setter + rb
+        except RopException:
+            l.error("reg_setter + rb fail to execute, plz raise an issue")
+            return None
 
         return rb
 

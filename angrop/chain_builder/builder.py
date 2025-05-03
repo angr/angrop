@@ -266,7 +266,8 @@ class Builder:
 
         check_func = Builder._ast_contains_stack_data if mode == 'stack' else Builder._ast_contains_reg_data
 
-        assert check_func(lhs)
+        if not check_func(lhs):
+            raise RopException(f"cannot rebalance the constraint {lhs} == {rhs}")
         while lhs.depth != 1:
             match lhs.op:
                 case "__add__" | "__sub__":
