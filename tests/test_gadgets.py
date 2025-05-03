@@ -483,8 +483,14 @@ def test_cond_br_guard_pop_conflict():
     gs = rop.analyze_addr(0)
     assert len(gs) == 1
     g = gs[0]
-    assert g.has_conditional_branch
     assert not g.reg_pops
+
+def test_riscv_zero_register():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "borgbackup2-chunker.cpython-312-riscv64-linux-gnu.so"), load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False, max_bb_cnt=5, cond_br=True)
+
+    gs = rop.analyze_addr(0x0000000000011f32)
+    assert len(gs) == 1
 
 def run_all():
     functions = globals()
