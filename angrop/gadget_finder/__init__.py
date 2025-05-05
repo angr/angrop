@@ -428,6 +428,8 @@ class GadgetFinder:
                     cache[h] = {addr}
                 else:
                     cache[h].add(addr)
+            elif jumpkind.startswith("Ijk_Sys_"):
+                h = analyzer.block_hash(bl)
             else:
                 s = ''
                 for insn in bl.capstone2.insns:

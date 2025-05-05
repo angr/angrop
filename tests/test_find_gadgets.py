@@ -341,6 +341,14 @@ def test_exit_target():
     g = rop.analyze_gadget(0x400000)
     assert not g.popped_regs
 
+def test_syscall_block_hash():
+    proj = angr.Project(os.path.join(tests_dir, "x86_64", "ALLSTAR_apcalc-dev_sample_many"), load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
+    rop.gadget_finder.gadget_analyzer
+    tasks = list(rop.gadget_finder._addresses_to_check_with_caching(show_progress=False))
+    for addr in [0x402de7, 0x425a00, 0x43e083, 0x4b146c]:
+        assert addr in tasks
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
