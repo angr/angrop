@@ -278,6 +278,8 @@ class GadgetAnalyzer:
         :param addr: the address to check
         :return: True or False
         """
+        if self.project.loader.find_object_containing(addr) != self.project.loader.main_object:
+            return False
         try:
             l.debug("... checking if block makes sense")
             block = self.project.factory.block(addr)
