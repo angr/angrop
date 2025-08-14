@@ -10,6 +10,7 @@ jobs:
     name: Create Release
     runs-on: ubuntu-24.04
     permissions:
+      contents: write
       id-token: write
     steps:
       - name: Checkout code
