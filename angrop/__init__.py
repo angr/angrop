@@ -1,4 +1,4 @@
-__version__ = "9.2.12.post2"
+__version__ = "9.2.12.post3"
 
 from . import rop
 
