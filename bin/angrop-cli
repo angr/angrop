@@ -1,0 +1,119 @@
+#!/home/kylebot/.virtualenvs/angr/bin/python
+
+"""
+developed within 30min at DEF CON 33 :P
+"""
+
+import os
+import hashlib
+from multiprocessing import cpu_count
+
+import angr
+import angrop
+from pwnlib.elf import ELF
+
+def find_gadgets(path, rop, optimize=False):
+    cache_path = get_cache_path(path)
+    if not os.path.exists(cache_path):
+        gadgets = rop.find_gadgets(processes=cpu_count(), optimize=optimize)
+        rop.save_gadgets(cache_path)
+    else:
+        rop.load_gadgets(cache_path, optimize=optimize)
+    return rop._all_gadgets
+
+def dump_gadgets(args):
+    proj = angr.Project(args.path, load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, only_check_near_rets=False)
+    gadgets = find_gadgets(args.path, rop)
+    records = [(g, g.dstr()) for g in gadgets]
+    records = sorted(records, key=lambda x: x[1])
+    for g, dstr in records:
+        contained = str(g.self_contained).lower()
+        print(f'{g.addr:#x}: {contained:6s}: {dstr}')
+
+def get_cache_path(binary):
+    # hash binary contents for rop cache name
+    binhash = hashlib.md5(open(binary, 'rb').read()).hexdigest()
+    return os.path.join("/tmp", "%s-%s-rop" % (os.path.basename(binary), binhash))
+
+def dump_chain(args):
+    e = ELF(args.path)
+    proj = angr.Project(args.path, load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, only_check_near_rets=False)
+    find_gadgets(args.path, rop, optimize=not args.fast)
+    match args.target:
+        case "execve":
+            execve_addr = None
+            if 'execve' in e.plt:
+                execve_addr = e.plt['execve']
+            if execve_addr is None and 'execve' in e.symbols:
+                execve_addr = e.symbols['execve']
+
+            if execve_addr is None:
+                print("this binary doesn't have execve function")
+                chain = rop.execve()
+                chain.print_payload_code()
+            else:
+                sh = next(e.search(b'/bin/sh\x00'))
+                chain = rop.func_call(execve, [sh, 0, 0], needs_return=False)
+                chain.print_payload_code()
+            import IPython; IPython.embed()
+        case "system":
+            system_addr = None
+            if 'system' in e.plt:
+                system_addr = e.plt['system']
+            if system_addr is None and 'system' in e.symbols:
+                system_addr = e.symbols['system']
+            if system_addr is None:
+                raise RuntimeError("this binary does not have system function")
+            sh = next(e.search(b'sh\x00'))
+            chain = rop.func_call(system_addr, [sh], needs_return=False)
+            chain.print_payload_code()
+            import IPython; IPython.embed()
+        case "arg1" | "arg2" | "arg3" | "arg4":
+            arg_cnt = int(args.target[3:])
+            args = [0x41414141]*arg_cnt
+            chain = rop.func_call(0xdeadbeef, args, needs_return=False)
+            chain.print_payload_code()
+            import IPython; IPython.embed()
+        case _:
+            raise NotImplementedError()
+
+if __name__ == '__main__':
+    import argparse
+
+
+    usage = '%(prog)s <command> [<options>] <path>'
+    parser = argparse.ArgumentParser(usage=usage)
+
+    subparsers = parser.add_subparsers(help='sub-command help')
+
+    # dumper
+    dumper_parser = subparsers.add_parser('dump', help='dump gadget module')
+    dumper_parser.add_argument('path', help="which binary to work on")
+    dumper_parser.set_defaults(module="dump")
+
+    # chainer
+    chainer_parser = subparsers.add_parser('chain', help='chain building module')
+    chainer_parser.add_argument('path', help="which binary to work on")
+    chainer_parser.add_argument('-t', '--target', type=str, help="target goal", choices=["execve", "system", "arg1", "arg2", "arg3", "arg4"])
+    chainer_parser.add_argument('-f', '--fast', action="store_true", help="whether to skip optimization")
+    chainer_parser.set_defaults(module="chain")
+
+    # parse arguments
+    args = parser.parse_args()
+    if "module" not in args:
+        parser.print_help()
+        sys.exit()
+    module = args.module
+
+    # handle each componet request
+    match module:
+        case "dump":
+            dump_gadgets(args)
+        case "chain":
+            dump_chain(args)
+        case _:
+            parser.print_help()
+            sys.exit()
+
