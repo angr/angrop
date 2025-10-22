@@ -1,4 +1,4 @@
-#!/home/kylebot/.virtualenvs/angr/bin/python
+#!/usr/bin/env python
 
 """
 developed within 30min at DEF CON 33 :P
@@ -80,6 +80,7 @@ def dump_chain(args):
             raise NotImplementedError()
 
 if __name__ == '__main__':
+    import sys
     import argparse
 
 
