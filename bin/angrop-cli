@@ -27,9 +27,12 @@ def dump_gadgets(args):
     gadgets = find_gadgets(args.path, rop)
     records = [(g, g.dstr()) for g in gadgets]
     records = sorted(records, key=lambda x: x[1])
+    max_addr = proj.loader.main_object.max_addr
+    max_addr_str_len = len(hex(max_addr))
     for g, dstr in records:
+        addr_str = hex(g.addr).rjust(max_addr_str_len, '0')
         contained = str(g.self_contained).lower()
-        print(f'{g.addr:#x}: {contained:6s}: {dstr}')
+        print(addr_str + f': {contained:6s}: {dstr}')
 
 def get_cache_path(binary):
     # hash binary contents for rop cache name
