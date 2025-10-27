@@ -57,7 +57,7 @@ def dump_chain(args):
                 sh = next(e.search(b'/bin/sh\x00'))
                 chain = rop.func_call(execve, [sh, 0, 0], needs_return=False)
                 chain.print_payload_code()
-            import IPython; IPython.embed()
+            #import IPython; IPython.embed()
         case "system":
             system_addr = None
             if 'system' in e.plt:
@@ -69,13 +69,13 @@ def dump_chain(args):
             sh = next(e.search(b'sh\x00'))
             chain = rop.func_call(system_addr, [sh], needs_return=False)
             chain.print_payload_code()
-            import IPython; IPython.embed()
+            #import IPython; IPython.embed()
         case "arg1" | "arg2" | "arg3" | "arg4":
             arg_cnt = int(args.target[3:])
             args = [0x41414141]*arg_cnt
             chain = rop.func_call(0xdeadbeef, args, needs_return=False)
             chain.print_payload_code()
-            import IPython; IPython.embed()
+            #import IPython; IPython.embed()
         case _:
             raise NotImplementedError()
 

@@ -24,4 +24,4 @@ copy . /angrop
 workdir /angrop
 run pip install -e .
 run pip install ailment==9.2.153
-
+copy bin/angrop-cli /usr/bin/angrop-cli
