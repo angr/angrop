@@ -7,7 +7,7 @@ run apt-get install -y make binutils-riscv64-linux-gnu git
 
 # setup python dependencies
 run pip install cffi pwntools unicorn==2.0.1.post1 protobuf==5.28.2
-run pip install --upgrade setuptools
+run pip install setuptools==79.0.1
 
 run git clone --depth 1 -b wip/riscv https://github.com/angr/archinfo /archinfo
 workdir /archinfo

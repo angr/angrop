@@ -58,7 +58,7 @@ def dump_chain(args):
                 chain.print_payload_code()
             else:
                 sh = next(e.search(b'/bin/sh\x00'))
-                chain = rop.func_call(execve, [sh, 0, 0], needs_return=False)
+                chain = rop.func_call("execve", [sh, 0, 0], needs_return=False)
                 chain.print_payload_code()
             #import IPython; IPython.embed()
         case "system":
