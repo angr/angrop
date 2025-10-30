@@ -57,8 +57,12 @@ def dump_chain(args):
                 chain = rop.execve()
                 chain.print_payload_code()
             else:
-                sh = next(e.search(b'/bin/sh\x00'))
-                chain = rop.func_call("execve", [sh, 0, 0], needs_return=False)
+                sh = next(e.search(b'/bin/sh\x00'), None)
+                if sh is None:
+                    sh = rop.chain_builder._reg_setter._get_ptr_to_writable(proj.arch.bytes)
+                    chain = rop.write_to_mem(sh, b'/bin/sh\x00') + rop.func_call("execve", [sh, 0, 0], needs_return=False)
+                else:
+                    chain = rop.func_call("execve", [sh, 0, 0], needs_return=False)
                 chain.print_payload_code()
             #import IPython; IPython.embed()
         case "system":
