@@ -7,6 +7,7 @@ from abc import abstractmethod
 from functools import cmp_to_key
 from collections import defaultdict
 
+import angr
 import claripy
 
 from .. import rop_utils
@@ -931,5 +932,5 @@ class Builder:
                 return rb
 
             return rb
-        except RopException:
+        except (RopException, angr.errors.SimSolverModeError):
             return None
