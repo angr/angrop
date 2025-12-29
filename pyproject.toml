@@ -1,21 +1,3 @@
-[project]
-name = "angrop-ng"
-version = "9.2.12.dev0"
-license = 'BSD-2-Clause'
-requires-python = ">=3.13"
-readme = "README.md"
-license-files = ["LICENSE"]
-description = "The rop chain builder based off of angr"
-dependencies = [
-    "angr",
-    "pwntools>=4.14.1",
-    "tqdm>=4.67.1",
-]
-
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
-
-[tool.uv.sources]
-angr = { git = "https://github.com/angr/angr", branch = "wip/riscv" }
-
