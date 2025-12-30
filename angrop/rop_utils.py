@@ -11,7 +11,7 @@ from .rop_value import RopValue
 
 def addr_to_asmstring(project, addr):
     block = project.factory.block(addr)
-    return "; ".join(["%s %s" %(i.mnemonic, i.op_str) for i in block.capstone2.insns])
+    return "; ".join(["%s %s" %(i.mnemonic, i.op_str) for i in block.capstone.insns])
 
 
 def get_ast_dependency(ast) -> set:

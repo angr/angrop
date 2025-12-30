@@ -13,7 +13,7 @@ from angr.errors import SimEngineError, SimMemoryError
 from angr.misc.loggers import CuteFormatter
 
 from . import gadget_analyzer
-from ..arch import get_arch, RISCV64
+from ..arch import get_arch
 from ..arch import ARM, X86, AMD64, AARCH64
 
 l = logging.getLogger(__name__)
@@ -413,7 +413,7 @@ class GadgetFinder:
             if not analyzer._block_make_sense_vex(bl) or not analyzer._block_make_sense_sym_access(bl) or not analyzer.arch.block_make_sense(bl):
                 do_update()
                 continue
-            if not bl.capstone.insns and not isinstance(analyzer.arch, RISCV64):
+            if not bl.capstone.insns:
                 do_update()
                 continue
 
@@ -432,7 +432,7 @@ class GadgetFinder:
                 h = analyzer.block_hash(bl)
             else:
                 s = ''
-                for insn in bl.capstone2.insns:
+                for insn in bl.capstone.insns:
                     s += insn.mnemonic + '\t' + insn.op_str + '\n'
                 h = hash(s)
             do_update()

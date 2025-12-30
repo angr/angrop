@@ -12,7 +12,7 @@ from angr.analyses.bindiff import UnmatchedStatementsException
 from angr.errors import SimEngineError, SimMemoryError
 
 from .. import rop_utils
-from ..arch import get_arch, X86, RISCV64
+from ..arch import get_arch, X86
 from ..rop_gadget import RopGadget, PivotGadget, SyscallGadget
 from ..rop_effect import RopMemAccess, RopRegMove, RopRegPop
 from ..rop_block import RopBlock
@@ -315,7 +315,7 @@ class GadgetAnalyzer:
         if not self.arch.block_make_sense(block):
             return False
 
-        if not block.capstone.insns and not isinstance(self.arch, RISCV64):
+        if not block.capstone.insns:
             return False
 
 
