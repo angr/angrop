@@ -157,7 +157,7 @@ class RopEffect:
         project = getattr(self, "project", None)
         if project is None:
             project = getattr(self, "_p", None)
-        res = self.stack_change - project.arch.bytes
+        res = self.stack_change - project.arch.bytes # type: ignore
         for m in self.mem_reads + self.mem_writes + self.mem_changes:
             if m.out_of_patch and m.stack_offset > res:
                 res = m.stack_offset
@@ -171,7 +171,7 @@ class RopEffect:
         """
         accesses = self.mem_reads + self.mem_writes + self.mem_changes
         res = len([x for x in accesses if x.is_symbolic_access()])
-        if hasattr(self, "transit_type") and self.transit_type == 'jmp_mem' and self.pc_target.symbolic:
+        if hasattr(self, "transit_type") and self.transit_type == 'jmp_mem' and self.pc_target.symbolic: # type: ignore
             assert res > 0
             res -= 1
         return res

@@ -232,7 +232,7 @@ class Builder:
                 reg_d[reg] = res[idx]
             elif name.startswith("symbolic_stack_"):
                 re_res = re.match(r"symbolic_stack_(\d+)_", name)
-                offset = int(re_res.group(1))
+                offset = int(re_res.group(1)) # type:ignore
                 val = res[idx]
                 if self.project.arch.memory_endness == "Iend_LE":
                     val = claripy.Reverse(claripy.BVV(val, self.project.arch.bits))
@@ -310,14 +310,14 @@ class Builder:
                     lhs = lhs.args[0]
                     rhs = claripy.Reverse(rhs)
                 case "ZeroExt":
-                    rhs_leading = claripy.Extract(rhs.length-1, rhs.length-lhs.args[0], rhs)
+                    rhs_leading: claripy.ast.bv.BV = claripy.Extract(rhs.length-1, rhs.length-lhs.args[0], rhs) # type: ignore
                     if not rhs_leading.symbolic and rhs_leading.concrete_value != 0:
                         raise RopException("rebalance unsat")
                     rhs = claripy.Extract(rhs.length-lhs.args[0]-1, 0, rhs)
                     lhs = lhs.args[1]
                 case "SignExt":
-                    rhs_leading = claripy.Extract(rhs.length-1, rhs.length-lhs.args[0], rhs)
-                    if not rhs_leading.symbolic and rhs_leading.concrete_value not in (0, (1<<rhs_leading.length)-1):
+                    rhs_leading: claripy.ast.bv.BV = claripy.Extract(rhs.length-1, rhs.length-lhs.args[0], rhs) # type: ignore
+                    if not rhs_leading.symbolic and rhs_leading.concrete_value not in (0, (1<<rhs_leading.length)-1): # type: ignore
                         raise RopException("rebalance unsat")
                     rhs = claripy.Extract(rhs.length-lhs.args[0]-1, 0, rhs)
                     lhs = lhs.args[1]
@@ -585,7 +585,7 @@ class Builder:
             # check if nothing is better than k1
             for k2 in bests|keys:
                 # if k2 is better than k1
-                if all(k2[i] <= k1[i] for i in range(len(key))):
+                if all(k2[i] <= k1[i] for i in range(len(key))): # type:ignore
                     break
             else:
                 bests.add(k1)
@@ -634,7 +634,7 @@ class Builder:
         raise NotImplementedError("each Builder class should have an `update` method!")
 
     @abstractmethod
-    def optimize(self):
+    def optimize(self, processes):
         """
         improve the capability of this builder using other builders
         """
@@ -762,7 +762,7 @@ class Builder:
             _, final_state = rb.sim_exec()
             try:
                 reg_solves, stack_solves = self._solve_ast_constraint(gadget.pc_target, ptr)
-            except claripy.errors.UnsatError:
+            except claripy.errors.UnsatError: # type: ignore
                 return None
             to_set_regs = {x:y for x,y in reg_solves.items() if x not in rb.popped_regs}
             preserve_regs = set(reg_solves.keys()) - set(to_set_regs.keys())

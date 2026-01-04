@@ -141,7 +141,7 @@ class RopBlock(RopChain, RopEffect):
                 for offset in range(0, g.stack_change, arch_bytes):
                     tmp = final_state.memory.load(final_state.regs.sp+offset, arch_bytes, endness=project.arch.memory_endness)
                     new_vals.append(rop_utils.cast_rop_value(tmp, project))
-                rb._values[rb.next_pc_idx()] = rop_utils.cast_rop_value(g.addr, project)
+                rb._values[rb.next_pc_idx()] = rop_utils.cast_rop_value(g.addr, project) # type: ignore
 
                 final_state.solver.add(final_state.ip == g.addr)
                 final_state = rop_utils.step_to_unconstrained_successor(project, final_state)

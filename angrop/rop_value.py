@@ -4,6 +4,7 @@ class RopValue:
     """
     This class represents a value that needs to be concretized in a ROP chain
     Automatically handles rebase
+    TODO: the type situation is pretty bad here
     """
     def __init__(self, value, project):
         if not isinstance(value, (int, str, claripy.ast.bv.BV)):
@@ -18,7 +19,8 @@ class RopValue:
 
         self._value = value # when rebase is needed, value here holds the offset
         self._project = project
-        self._rebase = None # rebase needs to be either specified or inferred
+        # rebase needs to be either specified or inferred
+        self._rebase: bool = None # type: ignore
         self._code_base = None
 
         self._project_update()
@@ -34,9 +36,9 @@ class RopValue:
     def __add__(self, other):
         cp = self.copy()
         if type(other) is int:
-            cp._value += other
+            cp._value += other # type: ignore
         elif isinstance(other, RopValue):
-            cp._value += other._value
+            cp._value += other._value # type: ignore
             cp._rebase |= other._rebase
         else:
             raise ValueError(f"Can't add {other} to RopValue!")
@@ -49,7 +51,7 @@ class RopValue:
     def rebase_ptr(self):
         pie = self._project.loader.main_object.pic
         if pie:
-            self._value -= self._code_base
+            self._value -= self._code_base # type: ignore
             self._rebase = True
 
     def rebase_analysis(self, chain=None):
@@ -64,7 +66,7 @@ class RopValue:
         # if fully symbolic, we don't know whether it should be rebased or not
         if self.symbolic:
             if chain is None or not self.determined(chain):
-                self._rebase = None
+                self._rebase = None # type: ignore
                 return
             concreted = chain._blank_state.solver.eval(self._value)
         else:
@@ -87,12 +89,12 @@ class RopValue:
         return
 
     @property
-    def symbolic(self):
-        return self._value.symbolic
+    def symbolic(self) -> bool:
+        return self._value.symbolic # type: ignore
 
     @property
-    def ast(self):
-        assert self._value.symbolic
+    def ast(self) -> claripy.ast.bv.BV:
+        assert self._value.symbolic # type: ignore
         return self.data
 
     @property
@@ -101,16 +103,16 @@ class RopValue:
 
     @property
     def concreted(self):
-        assert not self._value.symbolic
+        assert not self._value.symbolic # type: ignore
         if self.rebase:
-            return (self._code_base + self._value).concrete_value
-        return self._value.concrete_value
+            return (self._code_base + self._value).concrete_value # type: ignore
+        return self._value.concrete_value # type: ignore
 
     @property
-    def data(self):
+    def data(self) -> claripy.ast.bv.BV:
         if self.rebase:
-            return self._code_base + self._value
-        return self._value
+            return self._code_base + self._value # type: ignore
+        return self._value # type: ignore
 
     @property
     def rebase(self):

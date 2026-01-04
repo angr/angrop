@@ -7,6 +7,7 @@ import angr
 from .builder import Builder
 from .. import rop_utils
 from ..rop_block import RopBlock
+from ..rop_gadget import RopGadget
 from ..errors import RopException
 
 l = logging.getLogger(__name__)
@@ -17,8 +18,8 @@ class MemChanger(Builder):
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
-        self._mem_change_gadgets = None
-        self._mem_add_gadgets = None
+        self._mem_change_gadgets: list[RopGadget] = None # type: ignore
+        self._mem_add_gadgets: list[RopGadget] = None # type: ignore
 
     def bootstrap(self):
         self._mem_change_gadgets = self._get_all_mem_change_gadgets(self.chain_builder.gadgets)

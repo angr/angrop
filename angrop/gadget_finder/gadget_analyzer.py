@@ -561,7 +561,7 @@ class GadgetAnalyzer:
         if not isinstance(exit_action, angr.state_plugins.sim_action.SimActionExit):
             raise RopException("unexpected SimAction")
 
-        exit_target = exit_action.target.ast
+        exit_target = exit_action.target.ast # type: ignore
 
         stack_change = gadget.stack_change if type(gadget) == RopGadget else None
 

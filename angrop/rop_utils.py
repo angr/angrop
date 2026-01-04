@@ -72,7 +72,7 @@ def get_ast_controllers(state, ast, reg_deps) -> set:
     if len(strip_ast.variables) == 1 and strip_ast.op == "BVS":
         assert len(reg_deps) == 1
         # return that one register as the controller
-        return list(reg_deps)
+        return set(reg_deps)
 
     for reg in reg_deps:
         test_ast = ast
@@ -259,7 +259,7 @@ def fast_uninitialized_filler(_, addr, size, state):
     return state.solver.BVS("uninitialized_" + hex(addr), size, explicit_name=True)
 
 
-class SpecialMem(angr.storage.memory_mixins.SpecialFillerMixin, angr.storage.DefaultMemory):
+class SpecialMem(angr.storage.memory_mixins.SpecialFillerMixin, angr.storage.DefaultMemory): # type: ignore
     """
     class to use angr's SpecialFillerMixin to replace uninitialized memory
     """
@@ -298,7 +298,7 @@ def make_initial_state(project, stack_gsize):
         initial_state.regs.bp = initial_state.regs.sp + 20*initial_state.arch.bytes
     initial_state.solver._solver.timeout = 1000  # only solve for a second at most
 
-    angr.SimState.register_default("sym_memory", angr.storage.DefaultMemory)
+    angr.SimState.register_default("sym_memory", angr.storage.DefaultMemory) # type: ignore
 
     return initial_state
 
@@ -476,6 +476,7 @@ def timeout(seconds_before_timeout):
     def decorate(f):
         def new_f(*args, **kwargs):
             old = signal.getsignal(signal.SIGALRM)
+            old_time_left = 0
             if old == handler:
                 old = signal.signal(signal.SIGALRM, handler)
                 old_time_left = signal.alarm(seconds_before_timeout)

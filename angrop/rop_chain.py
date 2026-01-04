@@ -24,8 +24,8 @@ class RopChain:
         self._pie = self._p.loader.main_object.pic
         self._builder = builder
 
-        self._gadgets = [] # gadgets in the order of execution
-        self._values = [] # values on the stack
+        self._gadgets: list[RopGadget] = [] # gadgets in the order of execution
+        self._values: list[RopValue] = [] # values on the stack
 
         # use self.payload_len in presentation layer, use self._payload in internal stuff
         # because next_pc is an internal mechanism, we don't expose it to users
@@ -183,7 +183,7 @@ class RopChain:
             if stop_at_pivot and self._pivoted:
                 states = simgr.active + simgr.unconstrained
                 assert len(states) == 1
-                states[0].inspect.remove_breakpoint('reg_write', bp)
+                states[0].inspect.remove_breakpoint('reg_write', bp) # type: ignore
                 return states[0]
             if len(simgr.active + simgr.unconstrained) != 1:
                 code = self.payload_code(print_instructions=True)
@@ -241,7 +241,7 @@ class RopChain:
         concrete_vals = []
         for value in self._values:
             # make sure it does not have badbytes in it
-            ast = value.data
+            ast = value.data 
             constraints = []
             # for each byte, it should not be equal to any bad bytes
             # TODO: we should do the badbyte verification when adding values

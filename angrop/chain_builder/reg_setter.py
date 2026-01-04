@@ -389,7 +389,7 @@ class RegSetter(Builder):
             objects = sorted(objects, key=cmp_to_key(giga_graph_gadget_compare))[:5]
             graph.get_edge_data(*edge)['objects'] = objects
 
-    def find_candidate_chains_giga_graph_search(self, modifiable_memory_range, registers, preserve_regs, warn):
+    def find_candidate_chains_giga_graph_search(self, modifiable_memory_range, registers, preserve_regs, warn) -> list[list[RopGadget|RopBlock]]:
         if preserve_regs is None:
             preserve_regs = set()
         else:
@@ -517,7 +517,7 @@ class RegSetter(Builder):
                 path_chains = sorted(path_chains, key=lambda c: sum(g.stack_change for g in c))[:5]
                 chains += path_chains
             chains = list(chains)
-        except nx.exception.NetworkXNoPath:
+        except nx.exception.NetworkXNoPath: # type: ignore
             return []
 
         # then sort them by stack_change
@@ -555,7 +555,7 @@ class RegSetter(Builder):
                     gadgets.add(g)
         return gadgets
 
-    def _handle_hard_regs(self, gadgets, registers, preserve_regs):
+    def _handle_hard_regs(self, gadgets, registers, preserve_regs) -> list[RopGadget|RopBlock]:
         # handle register set that contains bad byte (so it can't be popped)
         # and cannot be directly set using concrete values
         hard_regs = [reg for reg, val in registers.items() if self._word_contain_badbyte(val)]
@@ -563,9 +563,9 @@ class RegSetter(Builder):
             l.error("too many registers contain bad bytes! bail out! %s", registers)
             raise RopException("too many registers contain bad bytes")
         if not hard_regs:
-            return
+            return []
         if registers[hard_regs[0]].symbolic:
-            return
+            return []
 
         # if hard_regs exists, try to use concrete values to craft the value
         hard_chain = []

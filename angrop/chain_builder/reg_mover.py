@@ -8,6 +8,7 @@ from angr.errors import SimUnsatError
 
 from .builder import Builder
 from .. import rop_utils
+from ..rop_gadget import RopGadget
 from ..rop_chain import RopChain
 from ..rop_block import RopBlock
 from ..errors import RopException
@@ -15,7 +16,7 @@ from ..rop_effect import RopRegMove
 
 l = logging.getLogger(__name__)
 
-_global_reg_mover = None
+_global_reg_mover = None # type: ignore
 def _set_global_reg_mover(reg_mover, ptr_list):
     global _global_reg_mover# pylint: disable=global-statement
     _global_reg_mover = reg_mover
@@ -23,10 +24,12 @@ def _set_global_reg_mover(reg_mover, ptr_list):
 
 def worker_func(t):
     new_move, gadget = t
-    gadget.project = _global_reg_mover.project
+    gadget.project = _global_reg_mover.project # type: ignore
     pre_preserve = {new_move.from_reg}
     post_preserve = {new_move.to_reg}
-    rb = _global_reg_mover.normalize_gadget(gadget, pre_preserve=pre_preserve, post_preserve=post_preserve)
+    rb = _global_reg_mover.normalize_gadget(gadget, # type: ignore
+                                            pre_preserve=pre_preserve,
+                                            post_preserve=post_preserve)
     solver = None
     if rb is not None:
         solver = rb._blank_state.solver
@@ -38,8 +41,9 @@ class RegMover(Builder):
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
-        self._reg_moving_gadgets = None
-        self._reg_moving_blocks: set[RopBlock] = None # type: ignore
+        self._reg_moving_gadgets: list[RopGadget] = None # type: ignore
+        # TODO: clean up the mess of RopGadget and RopBlock
+        self._reg_moving_blocks: set[RopGadget|RopBlock] = None # type: ignore
         self._graph: nx.Graph = None # type: ignore
         self._normalize_todos = {}
 
@@ -335,7 +339,7 @@ class RegMover(Builder):
                     chain = self._build_reg_setting_chain(gs, {})
                     rb = RopBlock.from_chain(chain)
                     rop_blocks.add(rb)
-            except nx.exception.NetworkXNoPath:
+            except nx.exception.NetworkXNoPath: # type: ignore
                 raise RopException(f"There is no chain can move {move.from_reg} to {move.to_reg}")
         return rop_blocks
 

@@ -29,7 +29,7 @@ class FuncCaller(Builder):
         self._cc = angr.default_cc(
                             self.project.arch.name,
                             platform=self.project.simos.name if self.project.simos is not None else None,
-                        )(self.project.arch)
+                            )(self.project.arch) # type:ignore
 
     def bootstrap(self):
         cc = self._cc
@@ -225,7 +225,7 @@ class FuncCaller(Builder):
         ptr_to_func = self._find_function_pointer(address)
         hard_regs = [x for x in registers if not self.chain_builder._reg_setter.can_set_reg(x)]
         if ptr_to_func is not None:
-            for g in self._func_jmp_gadgets:
+            for g in self._func_jmp_gadgets: # type:ignore
                 if g.popped_regs.intersection(reg_names):
                     l.warning("do not support func_jmp_gadgets that have pops: %s", g.dstr())
                     continue

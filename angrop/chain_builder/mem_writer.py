@@ -109,8 +109,8 @@ class MemWriteChain:
                                           old=self.data_bv,
                                           new=var)
                 arch_bits = self.project.arch.bits
-                if len(test_ast) < arch_bits:
-                    test_ast = claripy.ZeroExt(arch_bits-len(test_ast), test_ast)
+                if len(test_ast) < arch_bits: # type: ignore
+                    test_ast = claripy.ZeroExt(arch_bits-len(test_ast), test_ast) # type: ignore
                 # since this is data, we assume it should not be rebased
                 val = RopValue(test_ast, self.project)
                 val._rebase = False
@@ -138,8 +138,8 @@ class MemWriter(Builder):
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
-        self._mem_write_gadgets: set = None # type: ignore
-        self._good_mem_write_gadgets = None # type: ignore
+        self._mem_write_gadgets: set[RopGadget] = None # type: ignore
+        self._good_mem_write_gadgets: dict = None # type: ignore
         self._mem_write_chain_cache = defaultdict(list)
 
     def bootstrap(self):

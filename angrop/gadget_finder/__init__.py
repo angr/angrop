@@ -21,7 +21,7 @@ l = logging.getLogger(__name__)
 logging.getLogger('pyvex.lifting').setLevel("ERROR")
 
 ANALYZE_GADGET_TIMEOUT = 3
-_global_gadget_analyzer = None
+_global_gadget_analyzer: gadget_analyzer.GadgetAnalyzer = None # type: ignore
 _global_skip_cache = None
 _global_cache = None
 _global_init_rss = None

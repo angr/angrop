@@ -37,7 +37,7 @@ class ROPArch:
         reg_list.append(bp_reg)
         return reg_list
 
-    def block_make_sense(self, block):
+    def block_make_sense(self, block) -> bool:
         return True
 
 class X86(ROPArch):

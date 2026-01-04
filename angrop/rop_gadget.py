@@ -17,10 +17,12 @@ class RopGadget(RopEffect):
         # 2. jmp_reg:   jmp reg <- requires reg setting before using it (call falls here as well)
         # 3. jmp_mem:   jmp [reg+X] <- requires mem setting before using it (call falls here as well)
         self.transit_type: str = None # type: ignore
-
-        self.pc_offset = None # for pop_pc, ret is basically pc_offset == stack_change - arch.bytes
-        self.pc_reg = None # for jmp_reg, which register it jumps to
-        self.pc_target = None # for jmp_mem, where it jumps to
+        # for pop_pc, ret is basically pc_offset == stack_change - arch.bytes
+        self.pc_offset: int = None # type: ignore
+        # for jmp_reg, which register it jumps to
+        self.pc_reg: str = None # type: ignore
+        # for jmp_mem, where it jumps to
+        self.pc_target: int = None # type: ignore
 
     @property
     def self_contained(self):
@@ -31,7 +33,7 @@ class RopGadget(RopEffect):
         """
         return (not self.has_conditional_branch) and self.transit_type == 'pop_pc' and not self.oop
 
-    def dstr(self):
+    def dstr(self) -> str:
         return "; ".join(addr_to_asmstring(self.project, addr) for addr in self.bbl_addrs)
 
     def pp(self):
@@ -90,7 +92,7 @@ class RopGadget(RopEffect):
             s += str(list(mem_access.data_dependencies)) + "\n"
         return s
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "<Gadget %#x>" % self.addr
 
     def copy(self):
@@ -101,7 +103,7 @@ class RopGadget(RopEffect):
         out.transit_type = self.transit_type
         out.pc_offset = self.pc_offset
         out.pc_reg = self.pc_reg
-        out.pc_target = self.pc_rtarget
+        out.pc_target = self.pc_target
         out.branch_dependencies = set(self.branch_dependencies)
         out.has_conditional_branch = self.has_conditional_branch
         return out
@@ -121,8 +123,8 @@ class PivotGadget(RopGadget):
     """
     def __init__(self, addr):
         super().__init__(addr)
-        self.stack_change_before_pivot = None
-        self.stack_change_after_pivot = None
+        self.stack_change_before_pivot: int = None # type: ignore
+        self.stack_change_after_pivot: int = None # type: ignore
         # TODO: sp_controllers can be registers, payload on stack, and symbolic read data
         # but we do not handle symbolic read data, yet
         self.sp_reg_controllers = set()
