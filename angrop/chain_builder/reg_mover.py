@@ -126,8 +126,9 @@ class RegMover(Builder):
 
     def normalize_multiprocessing(self, processes):
         with mp.Manager() as manager:
-            # HACK: ideally, used_ptrs should be a resource of each ropblock that can be reassigned when conflict happens
-            # but currently, I'm being lazy and just make sure every pointer is different
+            # HACK: ideally, used_ptrs should be a resource of each ropblock that can be reassigned
+            # when conflict happens. but currently, I'm being lazy and just make sure every pointer
+            # is different
             ptr_list = manager.list(Builder.used_writable_ptrs)
             initargs = (self, ptr_list)
             with mp.Pool(processes=processes, initializer=_set_global_reg_mover, initargs=initargs) as pool:
@@ -157,15 +158,17 @@ class RegMover(Builder):
                     todo_new_moves.remove(m)
             # now we have this new_move, remove it from the todo list
             for m in rb.reg_moves:
-                for addr in self._normalize_todos:
-                    new_moves = self._normalize_todos[addr][1]
+                for addr, tup in self._normalize_todos.items():
+                    new_moves = tup[1]
                     if m in new_moves:
                         new_moves.remove(m)
             # we already normalized it, just use it as much as we can
             if rb.popped_regs:
                 self.chain_builder._reg_setter._insert_to_reg_dict([rb])
             if not any(m == new_move for m in rb.reg_moves):
-                l.warning("normalizing \n%s does not yield any wanted new reg moving capability: %s", rb.dstr(), new_move)
+                l.warning("normalizing \n%s does not yield any wanted new reg moving capability: %s",
+                          rb.dstr(),
+                          new_move)
                 continue
             res = True
             for move in rb.reg_moves:
@@ -339,8 +342,8 @@ class RegMover(Builder):
                     chain = self._build_reg_setting_chain(gs, {})
                     rb = RopBlock.from_chain(chain)
                     rop_blocks.add(rb)
-            except nx.exception.NetworkXNoPath: # type: ignore
-                raise RopException(f"There is no chain can move {move.from_reg} to {move.to_reg}")
+            except nx.exception.NetworkXNoPath as e: # type: ignore
+                raise RopException(f"There is no chain can move {move.from_reg} to {move.to_reg}") from e
         return rop_blocks
 
     def filter_gadgets(self, gadgets):

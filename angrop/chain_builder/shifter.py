@@ -92,7 +92,9 @@ class Shifter(Builder):
                     if idx != next_pc_idx:
                         tmp = claripy.BVS(f"symbolic_stack_{idx}", self.project.arch.bits)
                         state.memory.store(state.regs.sp+idx*arch_bytes+arch_bytes, tmp)
-                        val = state.memory.load(state.regs.sp+idx*arch_bytes+arch_bytes, self.project.arch.bytes, endness=self.project.arch.memory_endness)
+                        val = state.memory.load(state.regs.sp+idx*arch_bytes+arch_bytes,
+                                                self.project.arch.bytes,
+                                                endness=self.project.arch.memory_endness)
                         chain.add_value(val)
                     else:
                         next_pc_val = rop_utils.cast_rop_value(

@@ -99,8 +99,10 @@ def test_normalized_block_effect():
 
 def test_stack_offset_infinite_loop():
     cache_path = os.path.join(CACHE_DIR, "libdevel-leak-perl-Leak.so")
-    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "libdevel-leak-perl-Leak.so"), auto_load_libs=False, load_options={'main_opts':{'base_addr': 0}})
-    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, only_check_near_rets=False, cond_br=True, max_bb_cnt=5)
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "libdevel-leak-perl-Leak.so"),
+                        auto_load_libs=False, load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1,
+                            only_check_near_rets=False, cond_br=True, max_bb_cnt=5)
 
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
@@ -117,8 +119,10 @@ def test_stack_offset_infinite_loop():
 
 def test_normalized_block_effect2():
     cache_path = os.path.join(CACHE_DIR, "riscv_autotalent-autotalent.so")
-    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "autotalent-autotalent.so"), load_options={'main_opts':{'base_addr': 0}})
-    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, only_check_near_rets=False, cond_br=True, max_bb_cnt=5)
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "autotalent-autotalent.so"),
+                        load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1,
+                            only_check_near_rets=False, cond_br=True, max_bb_cnt=5)
 
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
@@ -132,8 +136,11 @@ def test_normalized_block_effect2():
     assert 'a0' not in rb.popped_regs
 
 def test_normalized_block_with_conditional_branch():
-    proj = angr.Project(os.path.join(BIN_DIR, "tests", "aarch64", "libastring-ocaml-astring.cmxs"), load_options={'main_opts':{'base_addr': 0}})
-    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, only_check_near_rets=False, cond_br=True, max_bb_cnt=5)
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "aarch64",
+                                     "libastring-ocaml-astring.cmxs"),
+                        load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1,
+                            only_check_near_rets=False, cond_br=True, max_bb_cnt=5)
 
     rop.analyze_addr(0x0000000000023d28)
     rop.analyze_addr(0x00000000000189a4)
@@ -145,7 +152,8 @@ def test_normalized_block_with_conditional_branch():
 
 def test_jmp_reg_normalize_fast_path():
     cache_path = os.path.join(CACHE_DIR, "mipsel_btrfs-tools_btrfs-calc-size")
-    proj = angr.Project(os.path.join(BIN_DIR, "tests", "mipsel", "btrfs-tools_btrfs-calc-size"), load_options={'main_opts':{'base_addr': 0}})
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "mipsel", "btrfs-tools_btrfs-calc-size"),
+                        load_options={'main_opts':{'base_addr': 0}})
     rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
 
     if os.path.exists(cache_path):

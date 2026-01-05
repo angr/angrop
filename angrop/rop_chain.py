@@ -150,6 +150,7 @@ class RopChain:
         """
         symbolically execute the ROP chain and return the final state
         """
+        # pylint: disable=possibly-used-before-assignment
         project = self._p
         state = self._blank_state.copy()
         concrete_vals = self._concretize_chain_values(timeout=timeout, preserve_next_pc=True, append_shift=False)
@@ -241,12 +242,12 @@ class RopChain:
         concrete_vals = []
         for value in self._values:
             # make sure it does not have badbytes in it
-            ast = value.data 
+            ast = value.data
             constraints = []
             # for each byte, it should not be equal to any bad bytes
             # TODO: we should do the badbyte verification when adding values
             # not when concretizing them
-            for idx in range(ast.length//8):
+            for idx in range(ast.length//8): # type: ignore
                 b = ast.get_byte(idx)
                 constraints += [ b != c for c in self.badbytes]
             # apply the constraints

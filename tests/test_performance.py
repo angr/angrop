@@ -4,7 +4,6 @@ import logging
 
 import angr
 import angrop # pylint: disable=unused-import
-from angrop.rop_gadget import RopGadget, PivotGadget, SyscallGadget
 
 logging.getLogger("cle").setLevel("ERROR")
 
@@ -96,7 +95,6 @@ def run_all():
 
 if __name__ == "__main__":
     import sys
-    import logging
 
     logging.getLogger("angrop.rop").setLevel(logging.DEBUG)
     #logging.getLogger("angrop.gadget_analyzer").setLevel(logging.DEBUG)

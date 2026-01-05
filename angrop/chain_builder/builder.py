@@ -223,8 +223,8 @@ class Builder:
         assert res
         res = res[0]
 
-        reg_d = dict()
-        stack_d = dict()
+        reg_d = {}
+        stack_d = {}
         for idx, v in enumerate(variables):
             name = v.args[0]
             if name.startswith("sreg_"):
@@ -304,20 +304,23 @@ class Builder:
                         other = arg0
                     if op == "__and__":
                         rhs = rhs & other
-                    else:
-                        rhs = rhs
                 case "Reverse":
                     lhs = lhs.args[0]
                     rhs = claripy.Reverse(rhs)
                 case "ZeroExt":
-                    rhs_leading: claripy.ast.bv.BV = claripy.Extract(rhs.length-1, rhs.length-lhs.args[0], rhs) # type: ignore
+                    rhs_leading: claripy.ast.bv.BV = claripy.Extract(rhs.length-1, # type: ignore
+                                                                     rhs.length-lhs.args[0],
+                                                                     rhs)
                     if not rhs_leading.symbolic and rhs_leading.concrete_value != 0:
                         raise RopException("rebalance unsat")
                     rhs = claripy.Extract(rhs.length-lhs.args[0]-1, 0, rhs)
                     lhs = lhs.args[1]
                 case "SignExt":
-                    rhs_leading: claripy.ast.bv.BV = claripy.Extract(rhs.length-1, rhs.length-lhs.args[0], rhs) # type: ignore
-                    if not rhs_leading.symbolic and rhs_leading.concrete_value not in (0, (1<<rhs_leading.length)-1): # type: ignore
+                    rhs_leading: claripy.ast.bv.BV = claripy.Extract(rhs.length-1, # type: ignore
+                                                                     rhs.length-lhs.args[0],
+                                                                     rhs)
+                    if not rhs_leading.symbolic and \
+                            rhs_leading.concrete_value not in (0, (1<<rhs_leading.length)-1): # type: ignore
                         raise RopException("rebalance unsat")
                     rhs = claripy.Extract(rhs.length-lhs.args[0]-1, 0, rhs)
                     lhs = lhs.args[1]
@@ -403,9 +406,10 @@ class Builder:
                     state.memory.store(state.regs.sp+idx*arch_bytes, val.data, endness=self.project.arch.memory_endness)
                     stack_patchs.append((state.regs.sp+idx*arch_bytes, val.data))
                 state.solver.add(*st.solver.constraints)
-                # when we import constraints, it is possible some of the constraints are associated with initial register value
-                # now stitch them together, only the ones being used though
-                used_regs = {x.split('-')[0].split('_')[-1] for x in st.solver._solver.variables if x.startswith('sreg_')}
+                # when we import constraints, it is possible some of the constraints are associated with initial
+                # register value now stitch them together, only the ones being used though
+                st_vars = st.solver._solver.variables
+                used_regs = {x.split('-')[0].split('_')[-1] for x in st_vars if x.startswith('sreg_')}
                 for reg in used_regs:
                     state.solver.add(state.registers.load(reg) == st.registers.load(reg))
             else:
@@ -469,7 +473,8 @@ class Builder:
             if action.type == action.MEM and action.addr.symbolic:
                 if len(state.solver.eval_to_ast(action.addr, 2)) == 1:
                     continue
-                if len(action.addr.ast.variables) == 1 and set(action.addr.ast.variables).pop().startswith("symbolic_stack"):
+                addr_vars = action.addr.ast.variables
+                if len(addr_vars) == 1 and set(addr_vars).pop().startswith("symbolic_stack"):
                     if constrained_addrs is not None:
                         ptr_bv = constrained_addrs[0]
                         constrained_addrs = constrained_addrs[1:]
@@ -682,7 +687,7 @@ class Builder:
                 # TODO: technically, we should support chains like:
                 # pop rax; add eax, 0x1000; ret + <useful stuff>; call rax;
                 # but I'm too lazy to implement it atm
-                init_state, final_state = rb.sim_exec()
+                _, final_state = rb.sim_exec()
                 if final_state.ip.depth > 1:
                     continue
                 assert rb.stack_change == total_sc
@@ -791,10 +796,12 @@ class Builder:
                 else:
                     # FIXME: currently, the endness handling is a mess. Need to rewrite this part in a uniformed way
                     # the following code is a compromise to the mess
-                    idx = (rb.stack_change + offset)//self.project.arch.bytes
+                    arch_bytes = self.project.arch.bytes
+                    idx = (rb.stack_change + offset)//arch_bytes
                     data = claripy.BVS(f"symbolic_stack_{idx}", self.project.arch.bits)
                     state.memory.store(state.regs.sp+rb.stack_change+offset, data)
-                    val = state.memory.load(state.regs.sp+rb.stack_change+offset, self.project.arch.bytes, endness=self.project.arch.memory_endness)
+                    addr = state.regs.sp+rb.stack_change+offset
+                    val = state.memory.load(addr, arch_bytes, endness=self.project.arch.memory_endness)
                 rb2.add_value(val)
             rb2.set_gadgets([gadget])
             for offset, val in stack_solves.items():
@@ -832,7 +839,8 @@ class Builder:
             # at this point, we know for sure all gadget symbolic accesses should be normalized
             # because they can't be jmp_mem gadgets
             if gadget.has_symbolic_access():
-                sim_accesses = [x for x in gadget.mem_reads + gadget.mem_writes + gadget.mem_changes if x.is_symbolic_access()]
+                mem_accesses = gadget.mem_reads + gadget.mem_writes + gadget.mem_changes
+                sim_accesses = [x for x in mem_accesses if x.is_symbolic_access()]
                 assert len(sim_accesses) == 1, hex(gadget.addr)
                 m = sim_accesses[0]
                 pre_preserve = pre_preserve.union(m.addr_controllers)

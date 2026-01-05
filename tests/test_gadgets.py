@@ -340,6 +340,7 @@ def test_oop_access():
         assert g and g.oop
 
 def test_negative_stack_change():
+    # pylint: disable=pointless-string-statement
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
 
@@ -376,11 +377,12 @@ def test_num_mem_access():
     assert len(g.mem_changes) == 2
 
 def test_pac():
+    # pylint: disable=pointless-string-statement
     """
     add sp, sp, #0xc0
     autiasp
     ret
-    """,
+    """
     proj = angr.load_shellcode(
         b'\xffC\x01\x91\xbf#\x03\xd5\xc0\x03_\xd6',
         "aarch64",
@@ -486,7 +488,9 @@ def test_cond_br_guard_pop_conflict():
     assert not g.reg_pops
 
 def test_riscv_zero_register():
-    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "borgbackup2-chunker.cpython-312-riscv64-linux-gnu.so"), load_options={'main_opts':{'base_addr': 0}})
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv",
+                                     "borgbackup2-chunker.cpython-312-riscv64-linux-gnu.so"),
+                        load_options={'main_opts':{'base_addr': 0}})
     rop = proj.analyses.ROP(fast_mode=False, max_bb_cnt=5, cond_br=True)
 
     gs = rop.analyze_addr(0x0000000000011f32)

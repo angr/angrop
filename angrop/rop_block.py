@@ -1,5 +1,4 @@
 import logging
-from collections import defaultdict
 
 from .rop_chain import RopChain
 from .rop_value import RopValue
@@ -139,7 +138,9 @@ class RopBlock(RopChain, RopEffect):
                 init_state, final_state = rb.sim_exec()
                 new_vals = []
                 for offset in range(0, g.stack_change, arch_bytes):
-                    tmp = final_state.memory.load(final_state.regs.sp+offset, arch_bytes, endness=project.arch.memory_endness)
+                    tmp = final_state.memory.load(final_state.regs.sp+offset,
+                                                  arch_bytes,
+                                                  endness=project.arch.memory_endness)
                     new_vals.append(rop_utils.cast_rop_value(tmp, project))
                 rb._values[rb.next_pc_idx()] = rop_utils.cast_rop_value(g.addr, project) # type: ignore
 

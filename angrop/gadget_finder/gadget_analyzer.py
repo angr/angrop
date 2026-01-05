@@ -186,7 +186,8 @@ class GadgetAnalyzer:
         if self._change_arch_state(init_state, final_state):
             return False
         # stack change is too large
-        if not final_state.regs.sp.symbolic and final_state.regs.sp.concrete_value - self._concrete_sp > self._stack_bsize:
+        if not final_state.regs.sp.symbolic and \
+                final_state.regs.sp.concrete_value - self._concrete_sp > self._stack_bsize:
             return False
         return True
 
@@ -458,7 +459,8 @@ class GadgetAnalyzer:
             gadget = self._cond_branch_analysis(gadget, final_state)
         return gadget
 
-    def _cond_branch_analysis(self, gadget, final_state):
+    @staticmethod
+    def _cond_branch_analysis(gadget, final_state):
         # list all conditional branch dependencies
         branch_guards = set()
         branch_guard_vars = set()
@@ -550,7 +552,7 @@ class GadgetAnalyzer:
                 continue
             gadget.concrete_regs[reg] = final_state.solver.eval(val)
 
-    def _check_reg_changes(self, final_state, init_state, gadget):
+    def _check_reg_changes(self, final_state, _, gadget):
         """
         Checks which registers were changed and which ones were popped
         :param final_state: the stepped path, init_state is an ancestor of it.
@@ -725,7 +727,8 @@ class GadgetAnalyzer:
 
         return True
 
-    def _check_if_stack_controls_ast(self, ast, final_state, gadget_stack_change=None):
+    @staticmethod
+    def _check_if_stack_controls_ast(ast, final_state, gadget_stack_change=None):
         if gadget_stack_change is not None and gadget_stack_change <= 0:
             return False
 
@@ -833,8 +836,7 @@ class GadgetAnalyzer:
                 if act.type == 'mem' and not act.addr.ast.symbolic:
                     end = act.addr.ast.concrete_value + act.size//8
                     sc = end - self._concrete_sp
-                    if sc > max_prev_pivot_sc:
-                        max_prev_pivot_sc = sc
+                    max_prev_pivot_sc = max(max_prev_pivot_sc, sc)
                 if act.type == 'reg' and act.action == 'write' and act.size == bits and \
                             act.storage == self.arch.stack_pointer:
                     if not act.data.ast.symbolic:
@@ -869,9 +871,11 @@ class GadgetAnalyzer:
             gadget.stack_change_after_pivot = sols[0]
             gadget.sp_reg_controllers = set(self._get_reg_controllers(init_state, final_state, 'sp', dependencies))
             gadget.sp_stack_controllers = {x for x in final_state.regs.sp.variables if x.startswith("symbolic_stack_")}
-            if gadget.stack_change_before_pivot % self.project.arch.bytes != 0 or abs(gadget.stack_change_before_pivot) > 0x1000:
+            if gadget.stack_change_before_pivot % self.project.arch.bytes != 0 or \
+                    abs(gadget.stack_change_before_pivot) > 0x1000:
                 raise RopException("bad SP")
-            if gadget.stack_change_after_pivot % self.project.arch.bytes != 0 or abs(gadget.stack_change_after_pivot) > 0x1000:
+            if gadget.stack_change_after_pivot % self.project.arch.bytes != 0 or \
+                    abs(gadget.stack_change_after_pivot) > 0x1000:
                 raise RopException("bad SP")
         else:
             raise NotImplementedError(f"Unknown gadget type {type(gadget)}")
@@ -895,7 +899,7 @@ class GadgetAnalyzer:
                 # check whether this is a pointer to a known mapping, these are not considered out-of-patch
                 if self.project.loader.find_object_containing(addr_constant):
                     pass
-                elif not (init_state.regs.sp.concrete_value <= addr_constant < final_state.regs.sp.concrete_value):
+                elif not init_state.regs.sp.concrete_value <= addr_constant < final_state.regs.sp.concrete_value:
                     mem_access.out_of_patch = True
         # case 2: the symbolic address comes from registers
         elif all(x.startswith("sreg_") for x in a.addr.ast.variables):

@@ -11,10 +11,15 @@ from ..errors import RopException
 from ..rop_chain import RopChain
 from ..rop_value import RopValue
 from ..rop_block import RopBlock
+from ..rop_gadget import RopGadget
 
 l = logging.getLogger(__name__)
 
 class MemWriteChain:
+    """
+    cached memory writing chain, we only need to concretize the variables in the chain to
+    generate a new chain
+    """
     def __init__(self, builder, gadget, preserve_regs):
         self.project = builder.project
         self.builder = builder
@@ -73,7 +78,7 @@ class MemWriteChain:
             return chain
         addr_ast = constrained_addrs[0]
         addr_ast_vars = addr_ast.variables
-        for idx, val in enumerate(chain._values):
+        for _, val in enumerate(chain._values):
             if not val.symbolic:
                 continue
             if not addr_ast_vars.intersection(val.ast.variables):
@@ -89,6 +94,8 @@ class MemWriteChain:
     def concretize(self, addr_val, data):
         chain = self.chain.copy()
         fmt = self.project.arch.struct_fmt()
+        arch_bytes = self.project.arch.bytes
+        arch_bits = self.project.arch.bits
         # replace addr and data
         for idx, val in enumerate(chain._values):
             if not val.symbolic or not val.ast.variables:
@@ -104,11 +111,10 @@ class MemWriteChain:
                 chain._values[idx] = new
                 continue
             if list(val.ast.variables)[0].startswith('data_'):
-                var = claripy.BVV(struct.unpack(fmt, data.ljust(self.project.arch.bytes, b'\x00'))[0], len(self.data_bv))
+                var = claripy.BVV(struct.unpack(fmt, data.ljust(arch_bytes, b'\x00'))[0], len(self.data_bv))
                 test_ast = claripy.algorithm.replace(expr=val.ast,
                                           old=self.data_bv,
                                           new=var)
-                arch_bits = self.project.arch.bits
                 if len(test_ast) < arch_bits: # type: ignore
                     test_ast = claripy.ZeroExt(arch_bits-len(test_ast), test_ast) # type: ignore
                 # since this is data, we assume it should not be rebased
@@ -118,7 +124,7 @@ class MemWriteChain:
                 continue
             if list(val.ast.variables)[0].startswith('symbolic_stack_'):
                 # FIXME: my lazy implementation, the endness mess really needs to be rewritten
-                tmp = claripy.BVS(f"symbolic_stack_{idx}", self.project.arch.bits)
+                tmp = claripy.BVS(f"symbolic_stack_{idx}", arch_bits)
                 if self.project.arch.memory_endness == 'Iend_LE':
                     tmp = claripy.Reverse(tmp)
                 chain._values[idx] = RopValue(tmp, self.project)
@@ -166,7 +172,7 @@ class MemWriter(Builder):
                     possible_gadgets.add(g)
         return possible_gadgets
 
-    def _better_than(self, g1, g2):
+    def _better_than(self, g1, g2): # pylint: disable=no-self-use
         if g1.stack_change > g2.stack_change:
             return False
         if g1.num_sym_mem_access > g2.num_sym_mem_access:
@@ -284,7 +290,8 @@ class MemWriter(Builder):
 
     def _write_to_mem_with_gadget_with_cache(self, gadget, addr_val, data, preserve_regs):
         mem_write = gadget.mem_writes[0]
-        if len(mem_write.addr_dependencies) <= 1 and len(mem_write.data_dependencies) <= 1 and mem_write.data_size in (32, 64):
+        if len(mem_write.addr_dependencies) <= 1 and len(mem_write.data_dependencies) <= 1 and \
+                mem_write.data_size in (32, 64):
             if not self._mem_write_chain_cache[gadget]:
                 try:
                     cache_chain = MemWriteChain(self, gadget, preserve_regs)
@@ -375,7 +382,8 @@ class MemWriter(Builder):
         chain = RopBlock.from_chain(chain)
         chain = self._build_reg_setting_chain([chain, gadget], {}, constrained_addrs=constrained_addrs)
         for idx, val in enumerate(chain._values):
-            if not val.symbolic and new_addr_val is not None and not new_addr_val.symbolic and val.concreted == new_addr_val.concreted:
+            if not val.symbolic and new_addr_val is not None and not new_addr_val.symbolic and \
+                    val.concreted == new_addr_val.concreted:
                 chain._values[idx] = new_addr_val
                 break
 

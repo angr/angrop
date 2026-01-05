@@ -51,7 +51,7 @@ def get_ast_controllers(state, ast, reg_deps) -> set:
     for var in ast.variables:
         if not var.startswith("sreg_"):
             return controllers
-        reg = (var[5:].split("-")[0])
+        reg = var[5:].split("-")[0]
         var_names[reg] = var
 
     # strip operations that dont affect control
@@ -79,7 +79,7 @@ def get_ast_controllers(state, ast, reg_deps) -> set:
         for r in [a for a in reg_deps if a != reg]:
             # for bp and registers that might be set
             if not state.registers.load(r).symbolic:
-                 continue
+                continue
             reg_sym_val = state.registers.load(r)
             test_ast = claripy.algorithm.replace(expr=test_ast,
                                       old=reg_sym_val,
@@ -135,20 +135,23 @@ def loose_constrained_check(state, ast, extra_constraints=None):
         cnt += 1
     if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_1]):
         cnt += 1
-    if cnt > 1: return False
+    if cnt > 1:
+        return False
     if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_2]):
         cnt += 1
-    if cnt > 1: return False
+    if cnt > 1:
+        return False
     if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_3]):
         cnt += 1
-    if cnt > 1: return False
+    if cnt > 1:
+        return False
     if not state.solver.satisfiable(extra_constraints= extra + [ast == test_val_4]):
         cnt += 1
     if cnt > 1:
         return False
     return True
 
-def unconstrained_check(state, ast, extra_constraints=None):
+def unconstrained_check(state, ast):
     """
     Attempts to check if an ast is completely unconstrained
     :param state: the state to use
@@ -275,7 +278,8 @@ def make_initial_state(project, stack_gsize):
     angr.SimState.register_default("sym_memory", SpecialMem)
 
     #angr.options.NO_SYMBOLIC_JUMP_RESOLUTION
-    remove_set = angr.options.resilience | angr.options.simplification | {angr.options.AVOID_MULTIVALUED_READS, angr.options.SUPPORT_FLOATING_POINT}
+    remove_set = angr.options.resilience | angr.options.simplification | \
+                 {angr.options.AVOID_MULTIVALUED_READS, angr.options.SUPPORT_FLOATING_POINT}
     add_set = {angr.options.CONSERVATIVE_READ_STRATEGY, angr.options.AVOID_MULTIVALUED_WRITES,
                angr.options.NO_SYMBOLIC_JUMP_RESOLUTION, angr.options.CGC_NO_SYMBOLIC_RECEIVE_LENGTH,
                angr.options.NO_SYMBOLIC_SYSCALL_RESOLUTION, angr.options.TRACK_ACTION_HISTORY,
@@ -428,7 +432,8 @@ def step_to_unconstrained_successor(project, state, max_steps=2, allow_simproced
         raise RopException("Does not get to a single unconstrained successor") from e
 
 def at_syscall(state):
-    return state.project.factory.block(state.addr, num_inst=1).vex.jumpkind.startswith("Ijk_Sys") or is_kernel_addr(state.project, state.addr)
+    return state.project.factory.block(state.addr, num_inst=1).vex.jumpkind.startswith("Ijk_Sys") or \
+            is_kernel_addr(state.project, state.addr)
 
 def step_to_syscall(state):
     """

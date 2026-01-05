@@ -95,6 +95,9 @@ class RopRegMove:
         return f"RegMove: {self.to_reg} <= {self.from_reg} ({self.bits} bits)"
 
 class RopRegPop:
+    """
+    a class to represent register pop effect
+    """
     def __init__(self, reg, bits):
         assert type(reg) is str
         self.reg = reg
@@ -112,6 +115,9 @@ class RopRegPop:
         return f"<RegPop {self.reg}-{self.bits}bits>"
 
 class RopEffect:
+    """
+    the overall effect of a gadget/rop_block
+    """
     def __init__(self):
 
         self.stack_change: int = None # type: ignore
@@ -169,6 +175,7 @@ class RopEffect:
         by definition, jmp_mem gadgets have one symbolic memory access, which is its PC
         we take into account that
         """
+        # pylint: disable=no-member
         accesses = self.mem_reads + self.mem_writes + self.mem_changes
         res = len([x for x in accesses if x.is_symbolic_access()])
         if hasattr(self, "transit_type") and self.transit_type == 'jmp_mem' and self.pc_target.symbolic: # type: ignore

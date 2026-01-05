@@ -43,18 +43,18 @@ def _set_global_gadget_analyzer(rop_gadget_analyzer):
     process = psutil.Process()
     _global_init_rss = process.memory_info().rss
 
-def handler(signum, frame):
+def alarm_handler(signum, frame): # pylint: disable=unused-argument
     l.warning("[angrop] worker_func2 times out, exit the worker process!")
     os._exit(0)
 
-def worker_func1(slice):
+def worker_func1(cslice):
     analyzer = _global_gadget_analyzer
-    res = list(GadgetFinder._addresses_from_slice(analyzer, slice, _global_skip_cache, _global_cache, None))
-    return (slice[1]-slice[0]+1, res)
+    res = list(GadgetFinder._addresses_from_slice(analyzer, cslice, _global_skip_cache, _global_cache, None))
+    return (cslice[1]-cslice[0]+1, res)
 
 def worker_func2(addr, cond_br=None):
     analyzer = _global_gadget_analyzer
-    signal.signal(signal.SIGALRM, handler)
+    signal.signal(signal.SIGALRM, alarm_handler)
 
     signal.alarm(ANALYZE_GADGET_TIMEOUT)
     if cond_br is None:
@@ -161,7 +161,8 @@ class GadgetFinder:
                num_to_check, self.arch.max_block_size)
 
         self._gadget_analyzer = gadget_analyzer.GadgetAnalyzer(self.project, self.fast_mode, arch=self.arch,
-                                                               kernel_mode=self.kernel_mode, stack_gsize=self.stack_gsize,
+                                                               kernel_mode=self.kernel_mode,
+                                                               stack_gsize=self.stack_gsize,
                                                                cond_br=self.cond_br, max_bb_cnt=self.max_bb_cnt)
 
     def analyze_gadget(self, addr, allow_conditional_branches=None):
@@ -174,16 +175,16 @@ class GadgetFinder:
         return g
 
     def _truncated_slices(self):
-        for slice in self._slices_to_check():
-            size = slice[1] - slice[0] + 1
+        for cslice in self._slices_to_check():
+            size = cslice[1] - cslice[0] + 1
             if size <= 0x100:
-                yield slice
+                yield cslice
                 continue
-            while slice[1] - slice[0] + 1 > 0x100:
-                new = (slice[0], slice[0]+0xff)
-                slice = (slice[0]+0x100, slice[1])
+            while cslice[1] - cslice[0] + 1 > 0x100:
+                new = (cslice[0], cslice[0]+0xff)
+                cslice = (cslice[0]+0x100, cslice[1])
                 yield new
-            yield slice
+            yield cslice
 
     def _multiprocess_static_analysis(self, processes, show_progress, timeout):
         """
@@ -327,7 +328,7 @@ class GadgetFinder:
         return False
 
     @staticmethod
-    def _addresses_from_slice(analyzer, slice, skip_cache, cache, it):
+    def _addresses_from_slice(analyzer, cslice, skip_cache, cache, it):
         offset = 1 if isinstance(analyzer.arch, ARM) and analyzer.arch.is_thumb else 0
         alignment = analyzer.arch.alignment
         max_block_size = analyzer.arch.max_block_size
@@ -338,7 +339,7 @@ class GadgetFinder:
 
         skip_addrs = set()
         simple_cache = set()
-        for addr in range(slice[0], slice[1]+1, alignment):
+        for addr in range(cslice[0], cslice[1]+1, alignment):
             # when loading from memory, use loc
             # when calling block, use addr
             loc = addr
@@ -360,9 +361,9 @@ class GadgetFinder:
             # check size
             if bl.size > max_block_size:
                 for ins_addr in bl.instruction_addrs:
-                     size = bl.size-(ins_addr-addr)
-                     if size > max_block_size:
-                         skip_addrs.add(ins_addr)
+                    size = bl.size-(ins_addr-addr)
+                    if size > max_block_size:
+                        skip_addrs.add(ins_addr)
                 do_update()
                 continue
             # check jumpkind
@@ -377,7 +378,8 @@ class GadgetFinder:
                     skip_addrs.add(ins_addr)
                 do_update()
                 continue
-            if analyzer._fast_mode and jumpkind not in ("Ijk_Ret", "Ijk_Boring") and not jumpkind.startswith('Ijk_Sys_'):
+            if analyzer._fast_mode and jumpkind not in ("Ijk_Ret", "Ijk_Boring") and \
+                    not jumpkind.startswith('Ijk_Sys_'):
                 for ins_addr in bl.instruction_addrs:
                     bad = bl.bytes[ins_addr-addr:]
                     skip_cache.add(bad)
@@ -410,7 +412,8 @@ class GadgetFinder:
                 continue
 
             ####### use vex ########
-            if not analyzer._block_make_sense_vex(bl) or not analyzer._block_make_sense_sym_access(bl) or not analyzer.arch.block_make_sense(bl):
+            if not analyzer._block_make_sense_vex(bl) or not analyzer._block_make_sense_sym_access(bl) or \
+                    not analyzer.arch.block_make_sense(bl):
                 do_update()
                 continue
             if not bl.capstone.insns:
@@ -452,8 +455,8 @@ class GadgetFinder:
                            desc="ROP", maxinterval=0.5, dynamic_ncols=True)
         self._cache = {}
         skip_cache = set() # bytes to skip
-        for slice in self._slices_to_check():
-            for addr, _ in self._addresses_from_slice(self.gadget_analyzer, slice, skip_cache, self._cache, it):
+        for cslice in self._slices_to_check():
+            for addr, _ in self._addresses_from_slice(self.gadget_analyzer, cslice, skip_cache, self._cache, it):
                 yield addr
 
     def block_hash(self, block):
@@ -586,8 +589,8 @@ class GadgetFinder:
 
     def _num_addresses_to_check(self):
         cnt = 0
-        for slice in self._slices_to_check(do_sort=False):
-            cnt += slice[1] - slice[0] + 1
+        for cslice in self._slices_to_check(do_sort=False):
+            cnt += cslice[1] - cslice[0] + 1
         return cnt
 
     #### identify ret/syscall locations ####
@@ -599,7 +602,8 @@ class GadgetFinder:
         if self.arch.ret_insts:
             return self._get_locations_by_strings(self.arch.ret_insts)
 
-        l.warning("Only have ret strings for i386/amd64/aarch64/riscv, now start the slow path for identifying gadgets end with 'ret'")
+        l.warning("Only have ret strings for i386/amd64/aarch64/riscv")
+        l.warning("now start the slow path for identifying gadgets end with 'ret'")
 
         addrs = []
         seen = set()

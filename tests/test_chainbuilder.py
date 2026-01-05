@@ -633,7 +633,6 @@ def test_graph_search_reg_setter():
     assert state.ip.concrete_value == 0xdeadbeef
 
 def test_rebalance_ast():
-    cache_path = os.path.join(CACHE_DIR, "amd64_glibc_2.19")
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
     rop = proj.analyses.ROP()
 
@@ -768,13 +767,15 @@ def test_normalize_conditional():
     rop.find_gadgets_single_threaded(show_progress=False)
 
 def test_normalize_moves_in_reg_setter():
-    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "ALLSTAR_android-libzipfile-dev_liblog.so.0.21.0"), auto_load_libs=False)
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64",
+                                     "ALLSTAR_android-libzipfile-dev_liblog.so.0.21.0"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
     rop.analyze_gadget(0x0000000000403765) # pop rax; ret
     rop.analyze_gadget(0x000000000040236e) # pop rsi; ret
     rop.analyze_gadget(0x0000000000401a50) # pop rbp ; ret
     rop.analyze_gadget(0x0000000000404149) # mov dword ptr [rsi + 0x30], eax; xor eax, eax; pop rbx; ret
-    rop.analyze_gadget(0x0000000000402d7a) # mov edx, ebp; mov rsi, r12; mov edi, r13d; call 0x401790; jmp qword ptr [rip + 0x2058ca]
+    rop.analyze_gadget(0x0000000000402d7a) # mov edx, ebp; mov rsi, r12; mov edi, r13d;
+                                           # call 0x401790; jmp qword ptr [rip + 0x2058ca]
     rop.chain_builder.optimize()
 
     chain = rop.set_regs(rdx=0x41414141)
@@ -806,7 +807,8 @@ def test_normalize_symbolic_access():
     rop.set_regs(r9=0x41414141)
 
 def test_riscv():
-    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "server_eapp.eapp_riscv"), load_options={'main_opts':{'base_addr': 0}})
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "server_eapp.eapp_riscv"),
+                        load_options={'main_opts':{'base_addr': 0}})
     rop = proj.analyses.ROP(fast_mode=False)
     cache_path = os.path.join(CACHE_DIR, "riscv_server_eapp")
     if os.path.exists(cache_path):
@@ -827,10 +829,10 @@ def test_nested_optimization():
                         )
     rop = proj.analyses.ROP(fast_mode=False, cond_br=True, max_bb_cnt=5)
 
-    g1 = rop.analyze_addr(0x5f7a)[0]
-    g2 = rop.analyze_addr(0x77b0)[0]
-    g3 = rop.analyze_addr(0x77da)[0]
-    g4 = rop.analyze_addr(0x775e)[0]
+    rop.analyze_addr(0x5f7a)
+    rop.analyze_addr(0x77b0)
+    rop.analyze_addr(0x77da)
+    rop.analyze_addr(0x775e)
 
     rop.chain_builder.optimize()
 
@@ -962,7 +964,8 @@ def test_sim_exec_memory_write():
     assert state.solver.eval(state.memory.load(addr, 4)) == 0x41414141
 
 def local_conflict_address():
-    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "ALLSTAR_9base_dd"), load_options={'main_opts':{'base_addr': 0}})
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "ALLSTAR_9base_dd"),
+                        load_options={'main_opts':{'base_addr': 0}})
     rop = proj.analyses.ROP()
 
     rop.find_gadgets(processes=16)
@@ -976,7 +979,8 @@ def local_conflict_address():
     assert len(chain._values) <= 23
 
 def test_normalize_jmp_mem_with_oop_access():
-    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "ALLSTAR_aces3_xaces3"), load_options={'main_opts':{'base_addr': 0}})
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "ALLSTAR_aces3_xaces3"),
+                        load_options={'main_opts':{'base_addr': 0}})
     rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
 
     rop.analyze_gadget(0x0000000000a42cc2)
@@ -1023,11 +1027,16 @@ def test_partial_pop():
             auto_load_libs=False,
         )
         rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
-        g = rop.analyze_gadget(0x400000)
+        rop.analyze_gadget(0x400000)
         rop.find_gadgets_single_threaded(show_progress=False)
 
         value = RopValue(0x4141414141414141, proj)
-        chains = list(rop.chain_builder._reg_setter.find_candidate_chains_giga_graph_search(None, {'rbx': value}, {}, False))
+        chains = list(rop.chain_builder._reg_setter.find_candidate_chains_giga_graph_search(None,
+                                                                                            {'rbx': value},
+                                                                                            {},
+                                                                                            False))
+        assert chains
+
         chain = rop.set_regs(rbx=0x4141414141414141)
         assert chain is not None
 
@@ -1044,7 +1053,7 @@ def test_mem_write_with_cache():
         auto_load_libs=False,
     )
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
-    g = rop.analyze_gadget(0x400000)
+    rop.analyze_gadget(0x400000)
     rop.find_gadgets_single_threaded(show_progress=False)
 
     chain = rop.write_to_mem(0x41414141, b'BBBB')
@@ -1062,7 +1071,7 @@ def test_reg_setting_equal_set():
         auto_load_libs=False,
     )
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
-    g = rop.analyze_gadget(0x400000)
+    rop.analyze_gadget(0x400000)
     rop.find_gadgets_single_threaded(show_progress=False)
 
     chain = rop.set_regs(rax=0x41414141, rdi=0x42424242)
@@ -1106,7 +1115,8 @@ def test_pop_write():
 
 def test_riscv_oop_normalization():
     cache_path = os.path.join(CACHE_DIR, "riscv_asterisk-libasteriskpj.so.2")
-    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "asterisk-libasteriskpj.so.2"), load_options={'main_opts':{'base_addr': 0}})
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "asterisk-libasteriskpj.so.2"),
+                        load_options={'main_opts':{'base_addr': 0}})
     rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
 
     if os.path.exists(cache_path):

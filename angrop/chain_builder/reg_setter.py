@@ -11,7 +11,6 @@ from .. import rop_utils
 from ..rop_chain import RopChain
 from ..rop_block import RopBlock
 from ..rop_gadget import RopGadget
-from ..rop_effect import RopRegPop
 from ..errors import RopException
 
 l = logging.getLogger(__name__)
@@ -110,14 +109,20 @@ class RegSetter(Builder):
                 offset -= act.offset % self.project.arch.bytes
                 reg_name = self.project.arch.translate_register_name(offset)
                 if reg_name in preserve_regs:
-                    l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-1.\nregisters: %s\npreserve_regs: %s",
-                                chain_str, registers, preserve_regs)
+                    fmt = "Somehow angrop thinks\n%s\n"
+                    fmt += "can be used for the chain generation-1.\n"
+                    fmt += "registers: %s\n"
+                    fmt += "preserve_regs: %s\n"
+                    l.exception(fmt, chain_str, registers, preserve_regs)
                     return False
         for reg, val in registers.items():
             bv = getattr(state.regs, reg)
             if (val.symbolic != bv.symbolic) or state.solver.eval(bv != val.data):
-                l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-2.\nregisters: %s\npreserve_regs: %s",
-                            chain_str, registers, preserve_regs)
+                fmt = "Somehow angrop thinks\n%s\n"
+                fmt += "can be used for the chain generation-1.\n"
+                fmt += "registers: %s\n"
+                fmt += "preserve_regs: %s\n"
+                l.exception(fmt, chain_str, registers, preserve_regs)
                 return False
         # the next pc must be marked as the next_pc
         if len(state.regs.pc.variables) != 1:
@@ -181,6 +186,21 @@ class RegSetter(Builder):
                 return True
         return False
 
+    @staticmethod
+    def block_with_max_bit_moves(edge, edge_data):
+        blocks = edge_data['block']
+        edge_bits = edge_data['bits']
+        results = []
+        for block in blocks:
+            for m in block.reg_moves:
+                if m.from_reg == edge[0] and m.to_reg == edge[1]:
+                    break
+            else:
+                raise RuntimeError("????")
+            if m.bits == edge_bits:
+                results.append(block)
+        return results
+
     def _optimize_with_reg_moves(self):
         # basically, we are looking for situations like this:
         # 1) we can set register A to arbitrary value (in self._reg_setting_dict) AND
@@ -203,23 +223,11 @@ class RegSetter(Builder):
                 path_bits = self.project.arch.bits
                 for edge in edges:
                     edge_data = mover_graph.get_edge_data(edge[0], edge[1])
-                    edge_blocks = edge_data['block']
                     edge_bits = edge_data['bits']
-                    if edge_bits < path_bits:
-                        path_bits = edge_bits
+                    path_bits = min(path_bits, edge_bits)
                     # for each edge, take the shortest 5 blocks
-                    def block_with_max_bit_moves(blocks):
-                        results = []
-                        for block in blocks:
-                            for m in block.reg_moves:
-                                if m.from_reg == edge[0] and m.to_reg == edge[1]:
-                                    break
-                            else:
-                                raise RuntimeError("????")
-                            if m.bits == edge_bits:
-                                results.append(block)
-                        return results
-                    edge_blocks = sorted(block_with_max_bit_moves(edge_blocks), key=lambda g: g.stack_change)[:5]
+                    edge_blocks = sorted(RegSetter.block_with_max_bit_moves(edge, edge_data),
+                                         key=lambda g: g.stack_change)[:5]
                     path_chain.append(edge_blocks)
                 setter_chain = []
                 for setter in self._reg_setting_dict[src]:
@@ -285,7 +293,8 @@ class RegSetter(Builder):
             # check whether it introduces new capabilities
             rb = None
             new_pops = {x for x in gadget.popped_regs if not self._reg_setting_dict[x]}
-            new_moves = {x for x in gadget.reg_moves if not self._reg_setting_dict[x.to_reg] and self._reg_setting_dict[x.from_reg]}
+            new_moves = {x for x in gadget.reg_moves if not self._reg_setting_dict[x.to_reg] and \
+                                                            self._reg_setting_dict[x.from_reg]}
             if new_pops or new_moves:
                 if new_moves:
                     for new_move in new_moves:
@@ -298,7 +307,9 @@ class RegSetter(Builder):
                             if reg not in shortest or rb.stack_change < shortest[reg].stack_change:
                                 shortest[reg] = rb
                         else:
-                            l.warning("normalizing \n%s does not yield any wanted new reg setting capability: %s", rb.dstr(), new_move.to_reg)
+                            l.warning("normalizing \n%s does not yield any wanted new reg setting capability: %s",
+                                      rb.dstr(),
+                                      new_move.to_reg)
                 else:
                     rb = self.normalize_gadget(gadget, post_preserve=new_pops)
                     if rb is None:
@@ -309,7 +320,9 @@ class RegSetter(Builder):
                             if reg not in shortest or rb.stack_change < shortest[reg].stack_change:
                                 shortest[reg] = rb
                     else:
-                        l.warning("normalizing \n%s does not yield any wanted new reg setting capability: %s", rb.dstr(), new_pops)
+                        l.warning("normalizing \n%s does not yield any wanted new reg setting capability: %s",
+                                  rb.dstr(),
+                                  new_pops)
                         continue
 
             # this means we tried to normalize the gadget but failed,
@@ -326,10 +339,10 @@ class RegSetter(Builder):
                     # normalizing jmp_mem gadgets use a ton of gadgets, no need to even try
                     if gadget.transit_type == 'jmp_mem':
                         continue
-                    elif gadget.transit_type == 'pop_pc':
+                    if gadget.transit_type == 'pop_pc':
                         better = True
                         break
-                    elif gadget.transit_type == 'jmp_reg':
+                    if gadget.transit_type == 'jmp_reg':
                         if gadget.pc_reg not in shortest:
                             continue
                         tmp = shortest[gadget.pc_reg]
@@ -366,7 +379,7 @@ class RegSetter(Builder):
         return res
 
     #### The Graph Search Algorithm ####
-    def _reduce_graph(self, graph, regs):
+    def _reduce_graph(self, graph, regs): # pylint: disable=no-self-use
         """
         TODO: maybe make the reduction smarter instead of just 5 gadgets each edge
         """
@@ -389,7 +402,11 @@ class RegSetter(Builder):
             objects = sorted(objects, key=cmp_to_key(giga_graph_gadget_compare))[:5]
             graph.get_edge_data(*edge)['objects'] = objects
 
-    def find_candidate_chains_giga_graph_search(self, modifiable_memory_range, registers, preserve_regs, warn) -> list[list[RopGadget|RopBlock]]:
+    def find_candidate_chains_giga_graph_search(self,
+                                                modifiable_memory_range,
+                                                registers,
+                                                preserve_regs,
+                                                warn) -> list[list[RopGadget|RopBlock]]:
         if preserve_regs is None:
             preserve_regs = set()
         else:
@@ -488,7 +505,8 @@ class RegSetter(Builder):
         to_set_reg_set = set(registers.keys())
         if to_set_reg_set - total_reg_set:
             if warn:
-                l.warning("fail to cover all registers using giga_graph_search!\nregister covered: %s, registers to set: %s", total_reg_set, to_set_reg_set)
+                l.warning("fail to cover all registers using giga_graph_search!")
+                l.warning("register covered: %s, registers to set: %s", total_reg_set, to_set_reg_set)
             return []
 
         self._reduce_graph(graph, regs)
@@ -555,7 +573,7 @@ class RegSetter(Builder):
                     gadgets.add(g)
         return gadgets
 
-    def _handle_hard_regs(self, gadgets, registers, preserve_regs) -> list[RopGadget|RopBlock]:
+    def _handle_hard_regs(self, gadgets, registers, preserve_regs) -> list[RopGadget|RopBlock]: # pylint: disable=unused-argument
         # handle register set that contains bad byte (so it can't be popped)
         # and cannot be directly set using concrete values
         hard_regs = [reg for reg, val in registers.items() if self._word_contain_badbyte(val)]
@@ -635,7 +653,7 @@ class RegSetter(Builder):
         return (len(g.changed_regs-g.popped_regs), g.stack_change, g.num_sym_mem_access,
                    g.isn_count, int(g.has_conditional_branch is True))
 
-    def _same_effect(self, g1, g2):
+    def _same_effect(self, g1, g2): # pylint: disable=no-self-use
         if g1.popped_regs != g2.popped_regs:
             return False
         if g1.concrete_regs != g2.concrete_regs:
@@ -670,7 +688,10 @@ class RegSetter(Builder):
         for x in registers:
             registers[x] = rop_utils.cast_rop_value(registers[x], self.project)
 
-        for gadgets in self.find_candidate_chains_giga_graph_search(modifiable_memory_range, registers, preserve_regs, warn):
+        for gadgets in self.find_candidate_chains_giga_graph_search(modifiable_memory_range,
+                                                                    registers,
+                                                                    preserve_regs,
+                                                                    warn):
             chain_str = "\n".join(g.dstr() for g in gadgets)
             l.debug("building reg_setting chain with chain:\n%s", chain_str)
             try:

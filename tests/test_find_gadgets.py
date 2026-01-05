@@ -4,9 +4,6 @@ from io import BytesIO
 
 import angr
 import angrop  # pylint: disable=unused-import
-import archinfo
-
-from angr_platforms import risc_v
 
 l = logging.getLogger(__name__)
 
@@ -194,8 +191,8 @@ def local_multiprocess_analyze_gadget_list():
 def test_gadget_filtering():
     proj = angr.Project(os.path.join(tests_dir, "armel", "libc-2.31.so"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
-    g1 = rop.analyze_gadget(0x42bca5)
-    g2 = rop.analyze_gadget(0x42c3c1)
+    rop.analyze_gadget(0x42bca5)
+    rop.analyze_gadget(0x42c3c1)
     rop.chain_builder.bootstrap()
     values = list(rop.chain_builder._shifter.shift_gadgets.values())
     assert len(values) == 1 and len(values[0]) == 1
@@ -300,7 +297,8 @@ def test_syscall_when_ret_only():
     assert rop._all_gadgets
 
 def test_riscv():
-    proj = angr.Project(os.path.join(tests_dir, "riscv", "server_eapp.eapp_riscv"), load_options={'main_opts':{'base_addr': 0}})
+    proj = angr.Project(os.path.join(tests_dir, "riscv", "server_eapp.eapp_riscv"),
+                        load_options={'main_opts':{'base_addr': 0}})
     rop = proj.analyses.ROP(fast_mode=False)
     g = rop.analyze_gadget(0xA86C)
     assert g is not None
@@ -342,9 +340,11 @@ def test_exit_target():
     assert not g.popped_regs
 
 def test_syscall_block_hash():
-    proj = angr.Project(os.path.join(tests_dir, "x86_64", "ALLSTAR_apcalc-dev_sample_many"), load_options={'main_opts':{'base_addr': 0}})
+    proj = angr.Project(os.path.join(tests_dir, "x86_64", "ALLSTAR_apcalc-dev_sample_many"),
+                        load_options={'main_opts':{'base_addr': 0}})
     rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
-    rop.gadget_finder.gadget_analyzer
+    # the following line is necessary because it populates syscall_locations
+    rop.gadget_finder.gadget_analyzer # pylint: disable=pointless-statement
     tasks = list(rop.gadget_finder._addresses_to_check_with_caching(show_progress=False))
     for addr in [0x402de7, 0x425a00, 0x43e083, 0x4b146c]:
         assert addr in tasks

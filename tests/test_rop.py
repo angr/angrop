@@ -243,6 +243,7 @@ def test_roptest_x86_64():
     verify_execve_chain(c)
 
 def test_roptest_aarch64():
+    # pylint: disable=pointless-string-statement
     cache_path = os.path.join(test_data_location, "aarch64_glibc_2.19")
     proj = angr.Project(os.path.join(public_bin_location, "aarch64", "libc.so.6"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=True, only_check_near_rets=False)
@@ -304,7 +305,9 @@ def test_liblog():
     yet another system test
     the difficulty here is that it needs to be able to normalize a jmp_mem gadget that requries moves
     """
-    proj = angr.Project(os.path.join(public_bin_location, "x86_64", "ALLSTAR_android-libzipfile-dev_liblog.so.0.21.0"), auto_load_libs=False)
+    proj = angr.Project(os.path.join(public_bin_location, "x86_64",
+                                     "ALLSTAR_android-libzipfile-dev_liblog.so.0.21.0"),
+                        auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
     cache_path = os.path.join(test_data_location, "ALLSTAR_liblog")
 
