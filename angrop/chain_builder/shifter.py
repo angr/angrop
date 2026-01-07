@@ -1,9 +1,12 @@
 import logging
 from collections import defaultdict
 
+import claripy
+
 from .. import rop_utils
 from .builder import Builder
 from ..rop_chain import RopChain
+from ..rop_block import RopBlock
 from ..errors import RopException
 
 l = logging.getLogger(__name__)
@@ -82,11 +85,17 @@ class Shifter(Builder):
             if g.pc_offset != next_pc_idx*arch_bytes:
                 continue
             try:
-                chain = RopChain(self.project, self.chain_builder)
+                chain = RopBlock(self.project, self)
+                state = chain._blank_state
                 chain.add_gadget(g)
                 for idx in range(g_cnt):
                     if idx != next_pc_idx:
-                        chain.add_value(self._get_fill_val())
+                        tmp = claripy.BVS(f"symbolic_stack_{idx}", self.project.arch.bits)
+                        state.memory.store(state.regs.sp+idx*arch_bytes+arch_bytes, tmp)
+                        val = state.memory.load(state.regs.sp+idx*arch_bytes+arch_bytes,
+                                                self.project.arch.bytes,
+                                                endness=self.project.arch.memory_endness)
+                        chain.add_value(val)
                     else:
                         next_pc_val = rop_utils.cast_rop_value(
                             chain._blank_state.solver.BVS("next_pc", self.project.arch.bits),
@@ -120,23 +129,13 @@ class Shifter(Builder):
 
         raise RopException(f"Failed to create a ret-sled sp for {size:#x} bytes while preserving {preserve_regs}")
 
-    def _same_effect(self, g1, g2):
-        if g1.stack_change != g2.stack_change:
-            return False
-        if g1.transit_type != g2.transit_type:
-            return False
-        if g1.pc_offset != g2.pc_offset:
-            return False
-        return True
+    def _effect_tuple(self, g):
+        v1 = g.stack_change
+        v2 = g.pc_offset
+        return (v1, v2)
 
-    def _better_than(self, g1, g2):
-        if g1.num_sym_mem_access > g2.num_sym_mem_access:
-            return False
-        if not g1.changed_regs.issubset(g2.changed_regs):
-            return False
-        if g1.isn_count > g2.isn_count:
-            return False
-        return True
+    def _comparison_tuple(self, g):
+        return (len(g.changed_regs), g.stack_change, rop_utils.transit_num(g), g.isn_count)
 
     def filter_gadgets(self, gadgets):
         """

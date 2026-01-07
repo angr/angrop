@@ -6,6 +6,8 @@ import angr
 
 from .builder import Builder
 from .. import rop_utils
+from ..rop_block import RopBlock
+from ..rop_gadget import RopGadget
 from ..errors import RopException
 
 l = logging.getLogger(__name__)
@@ -16,8 +18,8 @@ class MemChanger(Builder):
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
-        self._mem_change_gadgets = None
-        self._mem_add_gadgets = None
+        self._mem_change_gadgets: list[RopGadget] = None # type: ignore
+        self._mem_add_gadgets: list[RopGadget] = None # type: ignore
 
     def bootstrap(self):
         self._mem_change_gadgets = self._get_all_mem_change_gadgets(self.chain_builder.gadgets)
@@ -40,39 +42,25 @@ class MemChanger(Builder):
         if not set(state.regs.pc.variables).pop().startswith("next_pc_"):
             raise RopException("memory add fails - 3")
 
-    def _set_regs(self, *args, **kwargs):
-        return self.chain_builder._reg_setter.run(*args, **kwargs)
+    def _effect_tuple(self, g):
+        change = g.mem_changes[0]
+        v1 = change.op
+        v2 = change.data_size
+        v3 = change.data_constant
+        v4 = tuple(sorted(change.addr_dependencies))
+        v5 = tuple(sorted(change.data_dependencies))
+        return (v1, v2, v3, v4, v5)
 
-    def _same_effect(self, g1, g2):
-        change1 = g1.mem_changes[0]
-        change2 = g2.mem_changes[0]
-
-        if change1.op != change2.op:
-            return False
-        if change1.data_size != change2.data_size:
-            return False
-        if change1.data_constant != change2.data_constant:
-            return False
-        if change1.addr_dependencies != change2.addr_dependencies:
-            return False
-        if change1.data_dependencies != change2.data_dependencies:
-            return False
-        return True
-
-    def _better_than(self, g1, g2):
-        if g1.isn_count <= g2.isn_count and \
-            g1.stack_change <= g2.stack_change and \
-            len(g1.changed_regs) <= len(g2.changed_regs) and \
-            g1.num_sym_mem_access <= g2.num_sym_mem_access:
-            return True
-        return False
+    def _comparison_tuple(self, g):
+        return (len(g.changed_regs), g.stack_change, g.num_sym_mem_access,
+                rop_utils.transit_num(g), g.isn_count)
 
     def _get_all_mem_change_gadgets(self, gadgets):
         possible_gadgets = set()
         for g in gadgets:
             if not g.self_contained:
                 continue
-            sym_rw = set(m for m in g.mem_reads + g.mem_writes if m.is_symbolic_access())
+            sym_rw = [m for m in g.mem_reads + g.mem_writes if m.is_symbolic_access()]
             if len(sym_rw) > 0 or len(g.mem_changes) != 1:
                 continue
             for m_access in g.mem_changes:
@@ -116,24 +104,8 @@ class MemChanger(Builder):
         if not possible_gadgets:
             raise RopException("Fail to find any gadget that can perform memory adding...")
 
-        # get the data from trying to set all the registers
-        registers = dict((reg, 0x41) for reg in self.chain_builder.arch.reg_set)
-        l.debug("getting reg data for mem adds")
-        _, _, reg_data = self.chain_builder._reg_setter.find_candidate_chains_graph_search(max_stack_change=0x50,
-                                                                                           **registers)
-        l.debug("trying mem_add gadgets")
-
-        # filter out gadgets that certainly cannot be used for add_mem
-        # e.g. we can't set needed registers
-        gadgets = set()
-        for t, _ in reg_data.items():
-            for g in possible_gadgets:
-                mem_change = g.mem_changes[0]
-                if (set(mem_change.addr_dependencies) | set(mem_change.data_dependencies)).issubset(set(t)):
-                    gadgets.add(g)
-
         # sort the gadgets with number of memory accesses and stack_change
-        gadgets = self._sort_gadgets(gadgets)
+        gadgets = self._sort_gadgets(possible_gadgets)
 
         if not gadgets:
             raise RopException("Couldnt set registers for any memory add gadget")
@@ -163,7 +135,8 @@ class MemChanger(Builder):
 
         # constrain the successor to be at the gadget
         # emulate 'pop pc'
-        test_state = self.make_sim_state(gadget.addr)
+        arch_bytes = self.project.arch.bytes
+        test_state = self.make_sim_state(gadget.addr, gadget.stack_change//arch_bytes)
 
         if difference is not None:
             test_state.memory.store(addr.concreted, claripy.BVV(~(difference.concreted), data_size)) # pylint:disable=invalid-unary-operand-type
@@ -209,13 +182,7 @@ class MemChanger(Builder):
         for reg in set(all_deps):
             reg_vals[reg] = test_state.solver.eval(test_state.registers.load(reg))
 
-        chain = self._set_regs(**reg_vals)
-        chain.add_gadget(gadget)
-
-        bytes_per_pop = self.project.arch.bytes
-        for offset in range(0, gadget.stack_change, bytes_per_pop):
-            if offset == gadget.pc_offset:
-                chain.add_value(claripy.BVS("next_pc", self.project.arch.bits))
-            else:
-                chain.add_value(self._get_fill_val())
+        chain = self.set_regs(**reg_vals)
+        chain = RopBlock.from_chain(chain)
+        chain = self._build_reg_setting_chain([chain, gadget], {})
         return chain

@@ -1,5 +1,6 @@
 import logging
 import itertools
+import multiprocessing as mp
 from collections import defaultdict
 
 import networkx as nx
@@ -7,12 +8,32 @@ from angr.errors import SimUnsatError
 
 from .builder import Builder
 from .. import rop_utils
+from ..rop_gadget import RopGadget
 from ..rop_chain import RopChain
 from ..rop_block import RopBlock
 from ..errors import RopException
-from ..rop_gadget import RopRegMove
+from ..rop_effect import RopRegMove
 
 l = logging.getLogger(__name__)
+
+_global_reg_mover = None # type: ignore
+def _set_global_reg_mover(reg_mover, ptr_list):
+    global _global_reg_mover# pylint: disable=global-statement
+    _global_reg_mover = reg_mover
+    Builder.used_writable_ptrs = ptr_list
+
+def worker_func(t):
+    new_move, gadget = t
+    gadget.project = _global_reg_mover.project # type: ignore
+    pre_preserve = {new_move.from_reg}
+    post_preserve = {new_move.to_reg}
+    rb = _global_reg_mover.normalize_gadget(gadget, # type: ignore
+                                            pre_preserve=pre_preserve,
+                                            post_preserve=post_preserve)
+    solver = None
+    if rb is not None:
+        solver = rb._blank_state.solver
+    return new_move, gadget.addr, solver, rb
 
 class RegMover(Builder):
     """
@@ -20,26 +41,166 @@ class RegMover(Builder):
     """
     def __init__(self, chain_builder):
         super().__init__(chain_builder)
-        self._reg_moving_blocks: set[RopBlock] = None # type: ignore
+        self._reg_moving_gadgets: list[RopGadget] = None # type: ignore
+        # TODO: clean up the mess of RopGadget and RopBlock
+        self._reg_moving_blocks: set[RopGadget|RopBlock] = None # type: ignore
         self._graph: nx.Graph = None # type: ignore
+        self._normalize_todos = {}
 
     def bootstrap(self):
-        reg_moving_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
-        self._reg_moving_blocks = {g for g in reg_moving_gadgets if g.self_contained}
+        self._reg_moving_gadgets = sorted(self.filter_gadgets(self.chain_builder.gadgets), key=lambda g:g.stack_change)
+        self._reg_moving_blocks = {g for g in self._reg_moving_gadgets if g.self_contained}
         self._build_move_graph()
+
+    def build_normalize_todos(self):
+        """
+        identify non-self-contained gadgets that can potentially improve
+        our register move graph
+        """
+        self._normalize_todos = {}
+        todos = {}
+        for gadget in self._reg_moving_gadgets:
+            if gadget.self_contained:
+                continue
+            # check whether the gadget brings new_moves:
+            # 1. the edge doesn't exist at all
+            # 2. it moves more bits than all existing ones
+            # TODO: 3. fewer clobbered registers?
+            new_moves = []
+            for m in gadget.reg_moves:
+                edge = (m.from_reg, m.to_reg)
+                if not self._graph.has_edge(*edge):
+                    new_moves.append(m)
+                    continue
+                edge_data = self._graph.get_edge_data(*edge)
+                if m.bits > edge_data['bits']:
+                    new_moves.append(m)
+                    continue
+            for new_move in new_moves:
+                if new_move in todos:
+                    todos[new_move].append(gadget)
+                else:
+                    todos[new_move] = [gadget]
+
+        # only normalize best ones
+        to_remove = []
+        for m1 in todos:
+            for m2 in todos:
+                if m1 == m2:
+                    continue
+                if m1.from_reg == m2.from_reg and m1.to_reg == m2.to_reg and m1.bits < m2.bits:
+                    to_remove.append(m1)
+        for m in to_remove:
+            del todos[m]
+
+        # we use address as key here instead of gadget because the gadget
+        # returned by multiprocessing may be different from the original one
+        for m, gadgets in todos.items():
+            for g in gadgets:
+                new_moves = [m for m in g.reg_moves if m in todos]
+                self._normalize_todos[g.addr] = (g, new_moves)
+
+    def normalize_todos(self):
+        addrs = sorted(self._normalize_todos.keys())
+        again = True
+        while again:
+            cnt = 0
+            for addr in addrs:
+                # take different gadgets to maximize performance
+                g, new_moves = self._normalize_todos[addr]
+                if new_moves:
+                    new_move = new_moves.pop()
+                    cnt += 1
+                    yield new_move, g
+            if cnt == 0:
+                again = False
+
+    def normalize_single_threaded(self):
+        for new_move, gadget in self.normalize_todos():
+            gadget.project = self.project
+            pre_preserve = {new_move.from_reg}
+            post_preserve = {new_move.to_reg}
+            rb = self.normalize_gadget(gadget, pre_preserve=pre_preserve, post_preserve=post_preserve)
+            if rb is not None:
+                yield new_move, gadget.addr, rb
+
+    def normalize_multiprocessing(self, processes):
+        with mp.Manager() as manager:
+            # HACK: ideally, used_ptrs should be a resource of each ropblock that can be reassigned
+            # when conflict happens. but currently, I'm being lazy and just make sure every pointer
+            # is different
+            ptr_list = manager.list(Builder.used_writable_ptrs)
+            initargs = (self, ptr_list)
+            with mp.Pool(processes=processes, initializer=_set_global_reg_mover, initargs=initargs) as pool:
+                for new_move, addr, solver, rb in pool.imap_unordered(worker_func, self.normalize_todos()):
+                    if rb is None:
+                        continue
+                    state = rop_utils.make_symbolic_state(self.project, self.arch.reg_list, 0)
+                    state.solver = solver
+                    rb.set_project(self.project)
+                    rb.set_builder(self)
+                    rb._blank_state = state
+                    yield new_move, addr, rb
+            Builder.used_writable_ptrs = list(ptr_list)
+
+    def optimize(self, processes):
+        res = False
+        self.build_normalize_todos()
+        if processes == 1:
+            iterable = self.normalize_single_threaded()
+        else:
+            iterable = self.normalize_multiprocessing(processes)
+        for new_move, addr, rb in iterable:
+            # if we happen to have normalized another move, don't do it again
+            for m in rb.reg_moves:
+                todo_new_moves = self._normalize_todos[addr][1]
+                if m in todo_new_moves:
+                    todo_new_moves.remove(m)
+            # now we have this new_move, remove it from the todo list
+            for m in rb.reg_moves:
+                for addr, tup in self._normalize_todos.items():
+                    new_moves = tup[1]
+                    if m in new_moves:
+                        new_moves.remove(m)
+            # we already normalized it, just use it as much as we can
+            if rb.popped_regs:
+                self.chain_builder._reg_setter._insert_to_reg_dict([rb])
+            if not any(m == new_move for m in rb.reg_moves):
+                l.warning("normalizing \n%s does not yield any wanted new reg moving capability: %s",
+                          rb.dstr(),
+                          new_move)
+                continue
+            res = True
+            for move in rb.reg_moves:
+                edge = (move.from_reg, move.to_reg)
+                if self._graph.has_edge(*edge):
+                    edge_data = self._graph.get_edge_data(*edge)
+                    edge_blocks = edge_data['block']
+                    edge_blocks.append(rb)
+                    edge_data['block'] = sorted(edge_blocks, key=lambda x: x.stack_change)
+                    if move.bits > edge_data['bits']:
+                        edge_data['bits'] = move.bits
+                else:
+                    self._graph.add_edge(*edge, block=[rb], bits=move.bits)
+        return res
 
     def _build_move_graph(self):
         self._graph = nx.DiGraph()
         graph = self._graph
         # each node is a register
-        graph.add_nodes_from(self.arch.reg_set)
+        graph.add_nodes_from(self.arch.reg_list)
         # an edge means there is a move from the src register to the dst register
-        objects = defaultdict(set)
+        objects = defaultdict(list)
+        max_bits_dict = defaultdict(int)
         for block in self._reg_moving_blocks:
             for move in block.reg_moves:
-                objects[(move.from_reg, move.to_reg)].add(block)
-        for key, val in objects.items():
-            graph.add_edge(key[0], key[1], block=val)
+                edge = (move.from_reg, move.to_reg)
+                objects[edge].append(block)
+                if move.bits > max_bits_dict[edge]:
+                    max_bits_dict[edge] = move.bits
+        for edge, val in objects.items():
+            val = sorted(val, key=lambda g:g.stack_change)
+            graph.add_edge(edge[0], edge[1], block=val, bits=max_bits_dict[edge])
 
     def verify(self, chain, preserve_regs, registers):
         """
@@ -57,7 +218,7 @@ class RegMover(Builder):
                 if act.type not in ("mem", "reg"):
                     continue
                 if act.type == 'mem':
-                    if act.addr.ast.variables:
+                    if act.addr.ast.variables and any(not x.startswith('sym_addr') for x in act.addr.ast.variables):
                         l.exception("memory access outside stackframe\n%s\n", chain_str)
                         return False
                 if act.type == 'reg' and act.action == 'write':
@@ -117,7 +278,7 @@ class RegMover(Builder):
 
         # sanity check
         preserve_regs = set(preserve_regs) if preserve_regs else set()
-        unknown_regs = set(registers.keys()).union(preserve_regs) - self.arch.reg_set
+        unknown_regs = set(registers.keys()).union(preserve_regs) - set(self.arch.reg_list)
         if unknown_regs:
             raise RopException("unknown registers: %s" % unknown_regs)
 
@@ -162,21 +323,27 @@ class RegMover(Builder):
         for move in target_moves:
             # only consider the shortest path
             # TODO: we should use longer paths if the shortest one does work
-            paths = nx.all_shortest_paths(graph, source=move.from_reg, target=move.to_reg)
-            block_gadgets = []
-            for path in paths:
-                edges = zip(path, path[1:])
-                edge_block_list = []
-                for edge in edges:
-                    edge_blocks = graph.get_edge_data(edge[0], edge[1])['block']
-                    edge_block_list.append(edge_blocks)
-                block_gadgets += list(itertools.product(*edge_block_list))
+            try:
+                paths = nx.all_shortest_paths(graph, source=move.from_reg, target=move.to_reg)
+                block_gadgets = []
+                for path in paths:
+                    edges = zip(path, path[1:])
+                    edge_block_list = []
+                    for edge in edges:
+                        edge_blocks = graph.get_edge_data(edge[0], edge[1])['block']
+                        edge_block_list.append(edge_blocks)
+                    block_gadgets += list(itertools.product(*edge_block_list))
 
-            # now turn them into blocks
-            for gs in block_gadgets:
-                assert gs
-                rb = RopBlock.from_gadget_list(gs, self)
-                rop_blocks.add(rb)
+                # now turn them into blocks
+                for gs in block_gadgets:
+                    assert gs
+                    # FIXME: we are using the _build_reg_setting_chain API to turn mixin lists to a RopBlock
+                    # which is pretty wrong
+                    chain = self._build_reg_setting_chain(gs, {})
+                    rb = RopBlock.from_chain(chain)
+                    rop_blocks.add(rb)
+            except nx.exception.NetworkXNoPath as e: # type: ignore
+                raise RopException(f"There is no chain can move {move.from_reg} to {move.to_reg}") from e
         return rop_blocks
 
     def filter_gadgets(self, gadgets):
@@ -184,24 +351,18 @@ class RegMover(Builder):
         filter gadgets having the same effect
         """
         # first: filter out gadgets that don't do register move
-        gadgets = {g for g in gadgets if g.reg_moves and not g.has_conditional_branch}
+        gadgets = {g for g in gadgets if g.reg_moves and not g.has_conditional_branch and not g.has_symbolic_access()}
         gadgets = self._filter_gadgets(gadgets)
         new_gadgets = set(x for x in gadgets if any(y.from_reg != y.to_reg for y in x.reg_moves))
         return new_gadgets
 
-    def _same_effect(self, g1, g2):
-        """
-        having the same register moving effect compared to the other gadget
-        """
-        if set(g1.reg_moves) != set(g2.reg_moves):
-            return False
-        if g1.reg_dependencies != g2.reg_dependencies:
-            return False
-        return True
+    def _effect_tuple(self, g):
+        v1 = tuple(sorted(g.reg_moves))
+        v2 = []
+        for x,y in g.reg_dependencies.items():
+            v2.append((x, tuple(sorted(y))))
+        v2 = tuple(sorted(v2))
+        return (v1, v2)
 
-    def _better_than(self, g1, g2):
-        if g1.stack_change <= g2.stack_change and \
-                g1.num_sym_mem_access <= g2.num_sym_mem_access and \
-                g1.isn_count <= g2.isn_count:
-            return True
-        return False
+    def _comparison_tuple(self, g):
+        return (g.stack_change, g.num_sym_mem_access, rop_utils.transit_num(g), g.isn_count)

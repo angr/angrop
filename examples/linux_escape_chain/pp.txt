@@ -1,0 +1,23 @@
+0xffffffff8189c0de: pop rdi; ret 
+                    0xffffffff8368b220
+0xffffffff8114d3a0: <commit_creds>
+0xffffffff8189c0de: pop rdi; ret 
+                    0x1
+0xffffffff8113fb50: <find_task_by_vpid>
+0xffffffff816ea64d: pop rdi; mov esi, 0x8948ffd2; ret 
+                    0xffffffff83600118
+0xffffffff818be4b4: pop rsi; ret 
+                    0xffffffff82504104
+0xffffffff810cd6f0: mov qword ptr [rdi], rsi; xor esi, esi; xor edi, edi; jmp 0xffffffff822a7e60; ret 
+0xffffffff818765a0: pop rbp; ret 
+                    0xffffffff836000d0
+0xffffffff81aca592: push rax; pop rdi; call qword ptr [rbp + 0x48]
+0xffffffff818be4b4: pop rsi; ret 
+                    0xffffffff8368ad00
+0xffffffff8114b250: <switch_task_namespaces>
+0xffffffff8110a370: <__x64_sys_fork>
+0xffffffff8189c0de: pop rdi; ret 
+                    0xffffffff
+0xffffffff81213580: <msleep>
+                    <BV64 next_pc_4629_64>
+

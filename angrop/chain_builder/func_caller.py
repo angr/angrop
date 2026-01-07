@@ -1,3 +1,4 @@
+import struct
 import logging
 
 import angr
@@ -28,7 +29,7 @@ class FuncCaller(Builder):
         self._cc = angr.default_cc(
                             self.project.arch.name,
                             platform=self.project.simos.name if self.project.simos is not None else None,
-                        )(self.project.arch)
+                            )(self.project.arch) # type:ignore
 
     def bootstrap(self):
         cc = self._cc
@@ -43,33 +44,6 @@ class FuncCaller(Builder):
                 if move.to_reg in cc.ARG_REGS:
                     self._func_jmp_gadgets.add(g)
                     break
-
-    def _is_valid_pointer(self, addr):
-        """
-        Validate if an address is a legitimate pointer in the binary
-        Checks:
-        1. Address is within memory ranges
-        2. Address points to readable memory
-        3. Address is aligned
-        """
-        arch_bytes = self.project.arch.bytes
-
-        # Check basic alignment
-        if addr % arch_bytes != 0:
-            return False
-
-        # Check against memory ranges
-        if (addr < self.project.loader.min_addr or
-                addr >= self.project.loader.max_addr):
-            return False
-
-        # Check readable writable sections
-        for section in self.project.loader.main_object.sections:
-            if (section.is_readable and
-                    section.min_addr <= addr < section.max_addr):
-                return True
-
-        return False
 
     def _find_function_pointer_in_got_plt(self, func_addr):
         """
@@ -105,23 +79,20 @@ class FuncCaller(Builder):
             return got_ptr
 
         # Broader search strategy
-        for obj in self.project.loader.all_objects:
-            for section in obj.sections:
-                if not section.is_readable:
-                    continue
+        func_ptr_bytes = struct.pack(self.project.arch.struct_fmt(), func_addr)
+        for seg in self.project.loader.main_object.segments:
+            if not seg.is_readable:
+                continue
+            if not seg.memsize:
+                continue
 
-                # Scan section for potential pointers
-                for offset in range(0, section.max_addr - section.min_addr, self.project.arch.bytes):
-                    potential_ptr = section.min_addr + offset
-                    try:
-                        ptr_value = self.project.loader.memory.unpack_word(potential_ptr)
-                        if (ptr_value == func_addr and
-                                self._is_valid_pointer(potential_ptr)):
-                            return potential_ptr
-                    except Exception: # pylint: disable=broad-exception-caught
-                        continue
-
-        raise RopException("Could not find mem pointing to func in binary memory")
+            # Scan segments for potential pointers
+            sec_data = self.project.loader.memory.load(seg.min_addr, seg.memsize)
+            offset = sec_data.find(func_ptr_bytes)
+            if offset == -1:
+                continue
+            return seg.min_addr + offset
+        return None
 
     def _func_call(self, func_gadget, cc, args, extra_regs=None, preserve_regs=None,
                    needs_return=True, jmp_mem_target=None, **kwargs):
@@ -252,29 +223,41 @@ class FuncCaller(Builder):
         registers = {self._cc.ARG_REGS[i]:register_args[i] for i in range(len(register_args))}
         reg_names = set(registers.keys())
         ptr_to_func = self._find_function_pointer(address)
-        for g in self._func_jmp_gadgets:
-            if g.popped_regs.intersection(reg_names):
-                raise NotImplementedError("do not support func_jmp_gadgets that have pops")
+        hard_regs = [x for x in registers if not self.chain_builder._reg_setter.can_set_reg(x)]
+        if ptr_to_func is not None:
+            for g in self._func_jmp_gadgets: # type:ignore
+                if g.popped_regs.intersection(reg_names):
+                    l.warning("do not support func_jmp_gadgets that have pops: %s", g.dstr())
+                    continue
 
-            # build the new target registers
-            registers = registers.copy()
-            for move in g.reg_moves:
-                if move.to_reg in registers.keys():
-                    val = registers[move.to_reg]
-                    assert move.from_reg not in registers, "oops, overlapped moves not handled atm"
-                    del registers[move.to_reg]
-                    registers[move.from_reg] = val
+                # build the new target registers
+                registers = registers.copy()
+                skip = False
+                for move in g.reg_moves:
+                    if move.from_reg in hard_regs or move.to_reg not in hard_regs:
+                        skip = True
+                        break
+                    if move.to_reg in registers.keys():
+                        val = registers[move.to_reg]
+                        if move.from_reg in registers:
+                            l.warning("oops, overlapped moves not handled atm: %s", g.dstr())
+                            skip = True
+                            break
+                        del registers[move.to_reg]
+                        registers[move.from_reg] = val
+                if skip:
+                    continue
 
-            if g.transit_type != 'jmp_mem':
-                raise NotImplementedError("currently only support jmp_mem type func_jmp_gadgets!")
-            #func_gadget.stack_change = self.project.arch.bytes
-            #func_gadget.pc_offset = 0
-            # try to invoke the function using the new target registers
-            try:
-                return self._func_call(g, self._cc, [], extra_regs=registers,
-                                       jmp_mem_target=ptr_to_func, **kwargs)
-            except RopException:
-                pass
+                if g.transit_type != 'jmp_mem':
+                    raise NotImplementedError("currently only support jmp_mem type func_jmp_gadgets!")
+                #func_gadget.stack_change = self.project.arch.bytes
+                #func_gadget.pc_offset = 0
+                # try to invoke the function using the new target registers
+                try:
+                    return self._func_call(g, self._cc, [], extra_regs=registers,
+                                           jmp_mem_target=ptr_to_func, **kwargs)
+                except RopException:
+                    pass
 
         s = symbol if symbol else hex(address)
         raise RopException(f"fail to invoke function: {s}")

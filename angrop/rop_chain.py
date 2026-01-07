@@ -1,5 +1,7 @@
 import logging
 
+import angr
+
 from . import rop_utils
 from .errors import RopException
 from .rop_gadget import RopGadget
@@ -22,17 +24,21 @@ class RopChain:
         self._pie = self._p.loader.main_object.pic
         self._builder = builder
 
-        self._gadgets = []
-        self._values = []
+        self._gadgets: list[RopGadget] = [] # gadgets in the order of execution
+        self._values: list[RopValue] = [] # values on the stack
+
         # use self.payload_len in presentation layer, use self._payload in internal stuff
         # because next_pc is an internal mechanism, we don't expose it to users
         self.payload_len = 0
 
         # blank state used for solving
-        self._blank_state = self._p.factory.blank_state() if state is None else state
+        self._blank_state = rop_utils.make_symbolic_state(self._p, builder.arch.reg_list, 0) if state is None else state
         self.badbytes = badbytes if badbytes else []
 
         self._timeout = self.cls_timeout
+
+        self._pivoted = False
+        self._init_sp = None
 
     def __add__(self, other):
         # need to add the values from the other's stack and the constraints to the result state
@@ -54,6 +60,13 @@ class RopChain:
             result.payload_len -= self._p.arch.bytes
         else:
             result._values.extend(other._values)
+
+        # FIXME: cannot handle cases where a rop_block is used twice and have different constraints
+        # because right now symbolic values go with rop_blocks
+        if self._blank_state.solver._solver.variables.intersection(other._blank_state.solver._solver.variables):
+            if not result._blank_state.satisfiable():
+                raise RopException("cannot use a rop_block with different constraints yet")
+
         return result
 
     def set_timeout(self, timeout):
@@ -115,13 +128,31 @@ class RopChain:
             return symbol.name
         return None
 
-    def exec(self, timeout=None):
+    def _check_pivot(self, s):
+        bits = self._p.arch.bits
+        for act in s.history.actions.hardcopy:
+            if act.type == 'reg' and act.action == 'write':
+                reg_name = self._p.arch.translate_register_name(act.offset)
+                if reg_name != self._builder.arch.stack_pointer:
+                    continue
+                diff = act.data.ast - self._init_sp
+                if diff.symbolic:
+                    self._pivoted = True
+                    return
+                value = diff.concrete_value
+                if value >> (bits-1): # if the MSB is 1, this value is negative
+                    value -= (1<<bits)
+                if value >= 0x1000 or value < -0x1000:
+                    self._pivoted = True
+                    return
+
+    def exec(self, timeout=None, stop_at_pivot=False):
         """
         symbolically execute the ROP chain and return the final state
         """
+        # pylint: disable=possibly-used-before-assignment
         project = self._p
         state = self._blank_state.copy()
-        state.solver.reload_solver([]) # remove constraints
         concrete_vals = self._concretize_chain_values(timeout=timeout, preserve_next_pc=True, append_shift=False)
 
         # when the chain data includes symbolic values, we need to replace the concrete values
@@ -140,10 +171,21 @@ class RopChain:
             state.memory.store(state.regs.sp+offset, val[0], project.arch.bytes, endness=project.arch.memory_endness)
         state.regs.pc = state.stack_pop()
 
-        # execute the chain using simgr
+        if stop_at_pivot:
+            self._pivoted = False
+            self._init_sp = state.regs.sp
+            bp = state.inspect.b('reg_write', when=angr.BP_AFTER, action=self._check_pivot)
+
         simgr = project.factory.simgr(state, save_unconstrained=True)
+
+        # execute the chain using simgr
         while simgr.active:
             simgr.step()
+            if stop_at_pivot and self._pivoted:
+                states = simgr.active + simgr.unconstrained
+                assert len(states) == 1
+                states[0].inspect.remove_breakpoint('reg_write', bp) # type: ignore
+                return states[0]
             if len(simgr.active + simgr.unconstrained) != 1:
                 code = self.payload_code(print_instructions=True)
                 l.error("The following chain fails to execute!")
@@ -164,7 +206,7 @@ class RopChain:
 
     def sim_exec_til_syscall(self):
         project = self._p
-        state = project.factory.blank_state()
+        state = self._blank_state.copy()
         for idx, val in enumerate(self._values):
             offset = idx*project.arch.bytes
             state.memory.store(state.regs.sp+offset, val.data, project.arch.bytes, endness=project.arch.memory_endness)
@@ -205,7 +247,7 @@ class RopChain:
             # for each byte, it should not be equal to any bad bytes
             # TODO: we should do the badbyte verification when adding values
             # not when concretizing them
-            for idx in range(ast.length//8):
+            for idx in range(ast.length//8): # type: ignore
                 b = ast.get_byte(idx)
                 constraints += [ b != c for c in self.badbytes]
             # apply the constraints
@@ -366,3 +408,23 @@ class RopChain:
 
     def pp(self):
         print(self.dstr())
+
+    def set_project(self, project):
+        self._p = project
+        for g in self._gadgets:
+            g.project = project
+        for val in self._values:
+            val._project = project
+
+    def set_builder(self, builder):
+        self._builder = builder
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state['_p'] = None
+        state['_builder'] = None
+        state['_blank_state'] = None
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)

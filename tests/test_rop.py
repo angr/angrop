@@ -90,9 +90,8 @@ def compare_gadgets(test_gadgets, known_gadgets):
             for test_gadget in test_gadget_dict[g.addr]
             if test_gadget.bbl_addrs == g.bbl_addrs
         ]
-        assert len(matching_gadgets) == 1
+        assert len(matching_gadgets) == 1, matching_gadgets
         assert_gadgets_equal(g, matching_gadgets[0])
-
 
 def execute_chain(project, chain):
     s = project.factory.blank_state()
@@ -244,12 +243,18 @@ def test_roptest_x86_64():
     verify_execve_chain(c)
 
 def test_roptest_aarch64():
+    # pylint: disable=pointless-string-statement
     cache_path = os.path.join(test_data_location, "aarch64_glibc_2.19")
     proj = angr.Project(os.path.join(public_bin_location, "aarch64", "libc.so.6"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=True, only_check_near_rets=False)
 
+    """
+    0x4b7ca8: ldp x19, x30, [sp]; add sp, sp, #0x20; ret
+    0x4ebad4: add x0, x19, #0x260; ldr x19, [sp, #0x10]; ldp x29, x30, [sp], #0x20; ret
+    """
     rop.analyze_gadget(0x4b7ca8)
     rop.analyze_gadget(0x4ebad4)
+    rop.chain_builder.optimize()
 
     data = claripy.BVS("data", 64)
     chain = rop.set_regs(x0=data)
@@ -268,6 +273,55 @@ def test_roptest_aarch64():
 
     chain = rop.execve(path=b'/bin/sh')
     verify_execve_chain(chain)
+
+def test_acct_sa():
+    """
+    just a system test
+    """
+    proj = angr.Project(os.path.join(public_bin_location, "x86_64", "ALLSTAR_acct_sa"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    cache_path = os.path.join(test_data_location, "ALLSTAR_acct_sa")
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    chain = rop.set_regs(rax=0x41414141)
+    assert chain is not None
+    state = chain.exec()
+    assert state.regs.rax.concrete_value == 0x41414141
+
+    chain = rop.func_call(0xdeadbeef, [0x41414141, 0x42424242, 0x43434343])
+    assert chain is not None
+    state = chain.concrete_exec_til_addr(0xdeadbeef)
+    assert state.regs.rdi.concrete_value == 0x41414141
+    assert state.regs.rsi.concrete_value == 0x42424242
+    assert state.regs.rdx.concrete_value == 0x43434343
+
+def test_liblog():
+    """
+    yet another system test
+    the difficulty here is that it needs to be able to normalize a jmp_mem gadget that requries moves
+    """
+    proj = angr.Project(os.path.join(public_bin_location, "x86_64",
+                                     "ALLSTAR_android-libzipfile-dev_liblog.so.0.21.0"),
+                        auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    cache_path = os.path.join(test_data_location, "ALLSTAR_liblog")
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    chain = rop.set_regs(rdx=0x41414141)
+    assert chain is not None
+
+    chain = rop.func_call(0xdeadbeef, [0x41414141, 0x42424242, 0x43434343])
+    assert chain is not None
 
 def run_all():
     functions = globals()

@@ -5,6 +5,7 @@ import claripy
 import angr
 import angrop # pylint: disable=unused-import
 from angrop.rop_value import RopValue
+from angrop.rop_block import RopBlock
 from angrop.errors import RopException
 
 BIN_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "binaries")
@@ -16,7 +17,7 @@ def test_symbolic_data():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -107,7 +108,7 @@ def test_x86_64_syscall():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -150,7 +151,7 @@ def test_i386_mem_write():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -167,7 +168,7 @@ def test_ropvalue():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -215,7 +216,7 @@ def test_set_regs():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -231,7 +232,7 @@ def test_add_to_mem():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -249,9 +250,9 @@ def test_add_to_mem():
 
     cache_path = os.path.join(CACHE_DIR, "armel_glibc_2.31")
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
-    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True, cond_br=False)
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -263,7 +264,7 @@ def test_add_to_mem():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -276,7 +277,7 @@ def test_pivot():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -297,7 +298,7 @@ def test_shifter():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -323,7 +324,7 @@ def test_shifter():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -338,7 +339,7 @@ def test_shifter():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -354,7 +355,7 @@ def test_shifter():
     rop = proj.analyses.ROP(fast_mode=True, only_check_near_rets=False)
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -371,7 +372,7 @@ def test_retsled():
     rop = proj.analyses.ROP()
 
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -398,7 +399,7 @@ def test_retsled():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
     if os.path.exists(cache_path):
-        rop.load_gadgets(cache_path)
+        rop.load_gadgets(cache_path, optimize=False)
     else:
         rop.find_gadgets()
         rop.save_gadgets(cache_path)
@@ -505,8 +506,15 @@ def test_aarch64_cond_branch():
         load_address=0x400000,
         auto_load_libs=False,
     )
-    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, cond_br=True)
     rop.find_gadgets_single_threaded(show_progress=False)
+    addrs = [x.addr for x in rop._all_gadgets]
+
+    assert addrs.count(0x40000c) == 2
+    assert addrs.count(0x400010) == 2
+    assert 0x400008 in addrs or 0x400020 in addrs
+    assert any(x in addrs for x in (0x400004, 0x40001c))
+
     chain = rop.set_regs(x2=0x41414141)
     state = chain.exec()
     assert state.regs.x2.concrete_value == 0x41414141
@@ -530,8 +538,7 @@ def test_aarch64_mem_access():
     assert state.regs.x0.concrete_value == 0x41414141
     for action in state.history.actions:
         if action.type == action.MEM and action.action == action.WRITE:
-            assert action.addr.ast.concrete_value >= 0x1000
-            assert action.addr.ast.concrete_value < 0x2000
+            assert 0x400000 <= action.addr.ast.concrete_value < 0x401000
 
 def test_mipstake():
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "mips", "mipstake"), auto_load_libs=True, arch="mips")
@@ -585,6 +592,547 @@ def test_unexploitable():
     assert state.regs.rsi.concrete_value == 0x4242424242424242
     assert state.regs.rdx.concrete_value == 0x4343434343434343
 
+def test_graph_search_reg_setter():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "arjsfxjr"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False)
+    cache_path = os.path.join(CACHE_DIR, "arjsfxjr")
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets()
+        rop.save_gadgets(cache_path)
+
+    # the easy peasy pop-only reg setter
+    chain = rop.set_regs(r15=0x41414141)
+    assert chain
+
+    # the ability to utilize concrete values
+    # 0x000000000040259e : xor eax, eax ; add rsp, 8 ; ret
+    chain = rop.set_regs(rax=0)
+    assert chain
+
+    # the ability to set a register and then move it to another
+    chain = rop.set_regs(rax=0x41414141)
+    assert chain
+    state = chain.exec()
+    assert state.regs.rax.concrete_value == 0x41414141
+
+    # the ability to write_to_mem
+    chain = rop.write_to_mem(0x41414141, b'BBBB')
+    assert chain
+    state = chain.exec()
+    assert state.solver.eval(state.memory.load(0x41414141, 4), cast_to=bytes) == b'BBBB'
+
+    # the ability to write_to_mem and utilize jmp_mem gadgets
+    chain = rop.func_call(0xdeadbeef, [0x41414141, 0x42424242, 0x43434343])
+    state = chain.concrete_exec_til_addr(0xdeadbeef)
+    assert state.regs.rdi.concrete_value == 0x41414141
+    assert state.regs.rsi.concrete_value == 0x42424242
+    assert state.regs.rdx.concrete_value == 0x43434343
+    assert state.ip.concrete_value == 0xdeadbeef
+
+def test_rebalance_ast():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    rop.analyze_gadget(0x512ecf) # pop rcx; ret
+    rop.analyze_gadget(0x533e24) # mov eax, dword ptr [rsp]; add rsp, 0x10; pop rbx; ret
+
+    chain = rop.set_regs(rax=0x41414142, rbx=0x42424243, rcx=0x43434344)
+    state = chain.exec()
+    assert state.regs.rax.concrete_value == 0x41414142
+    assert state.regs.rbx.concrete_value == 0x42424243
+    assert state.regs.rcx.concrete_value == 0x43434344
+
+def test_normalize_call():
+    proj = angr.load_shellcode(
+        """
+        pop rsi
+        ret
+        mov edx, ebx
+        mov r8, rax
+        call rsi
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.move_regs(r8="rax")
+    assert chain
+
+    proj = angr.load_shellcode(
+        """
+        pop rax
+        ret
+        lea rsp, [rsp + 8]
+        ret
+        add eax, 0x2f484c7
+        mov rdx, r12
+        mov r8, rbx
+        call rax
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    try:
+        chain = rop.move_regs(r8="rax")
+        assert chain is None
+    except RopException:
+        pass
+
+def test_normalize_jmp_mem():
+    proj = angr.load_shellcode(
+        """
+        pop rbx
+        pop r10
+        call qword ptr [rbp + 0x48]
+        pop rbp
+        ret
+        pop rax
+        pop rbx
+        ret
+        mov qword ptr [rbx], rax;
+        ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.set_regs(r10=0x41414141)
+    state = chain.exec()
+    assert state.regs.r10.concrete_value == 0x41414141
+
+    proj = angr.load_shellcode(
+        """
+        pop r9
+        pop rbp
+        call qword ptr [rbp + 0x48]
+        pop rbp
+        ret
+        pop rax
+        pop rbx
+        ret
+        mov qword ptr [rbx], rax;
+        ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.set_regs(r9=0x41414141)
+    state = chain.exec()
+    assert state.regs.r9.concrete_value == 0x41414141
+
+def test_jmp_mem_normalize_simple_target():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "armel", "libc-2.31.so"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
+    rop.analyze_gadget(0x004a9d67)
+    rop.analyze_gadget(0x004cbbb7)
+    rop.analyze_gadget(0x004c1317)
+    rop.chain_builder.optimize()
+    chain = rop.move_regs(r5="r1")
+    assert chain
+
+def test_normalize_conditional():
+    proj = angr.load_shellcode(
+        """
+        pop rbp
+        ret
+        cmp ebp, esp
+        pop rax
+        pop rdx
+        jne 0x4072a8
+        pop rbx
+        pop rbp
+        pop r12
+        ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+def test_normalize_moves_in_reg_setter():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64",
+                                     "ALLSTAR_android-libzipfile-dev_liblog.so.0.21.0"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.analyze_gadget(0x0000000000403765) # pop rax; ret
+    rop.analyze_gadget(0x000000000040236e) # pop rsi; ret
+    rop.analyze_gadget(0x0000000000401a50) # pop rbp ; ret
+    rop.analyze_gadget(0x0000000000404149) # mov dword ptr [rsi + 0x30], eax; xor eax, eax; pop rbx; ret
+    rop.analyze_gadget(0x0000000000402d7a) # mov edx, ebp; mov rsi, r12; mov edi, r13d;
+                                           # call 0x401790; jmp qword ptr [rip + 0x2058ca]
+    rop.chain_builder.optimize()
+
+    chain = rop.set_regs(rdx=0x41414141)
+    assert chain is not None
+
+def test_normalize_oop_jmp_mem():
+    proj = angr.load_shellcode(
+        """
+        mov rax, qword ptr [rsp + 8]; mov edx, ebp; mov esi, ebx; mov rdi, rax; call qword ptr [rax + 0x68]
+        pop rdi;
+        ret
+        pop rsi;
+        ret
+        mov qword ptr[rdi], rsi; ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+def test_normalize_symbolic_access():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "ALLSTAR_alex_alex"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.analyze_gadget(0x0000000000594254) # : pop r9 ; add byte ptr [rax - 9], cl ; ret
+    rop.analyze_gadget(0x000000000040fb98) # : pop rax ; ret
+    rop.chain_builder.optimize()
+    rop.set_regs(r9=0x41414141)
+
+def test_riscv():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "server_eapp.eapp_riscv"),
+                        load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False)
+    cache_path = os.path.join(CACHE_DIR, "riscv_server_eapp")
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path, optimize=False)
+    else:
+        rop.find_gadgets(optimize=False)
+        rop.save_gadgets(cache_path)
+
+    rop.optimize()
+    chain = rop.set_regs(a0=0x41414141, a1=0x42424242)
+    state = chain.exec()
+    assert state.regs.a0.concrete_value == 0x41414141
+    assert state.regs.a1.concrete_value == 0x42424242
+
+def test_nested_optimization():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "abgate-libabGateQt.so"),
+                        load_options={'main_opts':{'base_addr': 0}},
+                        )
+    rop = proj.analyses.ROP(fast_mode=False, cond_br=True, max_bb_cnt=5)
+
+    rop.analyze_addr(0x5f7a)
+    rop.analyze_addr(0x77b0)
+    rop.analyze_addr(0x77da)
+    rop.analyze_addr(0x775e)
+
+    rop.chain_builder.optimize()
+
+    chain = rop.func_call(0xdeadbeef, [0x40404040, 0x41414141, 0x42424242], needs_return=False)
+
+    assert chain is not None
+
+def test_normalize_jmp_reg():
+    proj = angr.load_shellcode(
+        """
+        pop rax; ret
+        mov rax, rdi; pop rbx; ret
+        mov eax, ebx; pop rbx; ret
+        pop rbx; ret
+        add rsp, 8; ret
+        mov edx, eax; mov esi, 1; call rbx
+        pop rdi; ret
+        mov dword ptr [rdx], edi; ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    rop.write_to_mem(0x41414141, b'BBBB')
+
+def test_normalize_oop_jmp_reg():
+    proj = angr.load_shellcode(
+        """
+        pop rdi; ret
+        mov rax, rdi; ret
+        pop rbx; ret
+        add rsp, 8; ret
+        add rsp, 0x18; ret
+        mov rdx, rax; mov rdi, qword ptr [rsp + 8]; call rbx
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.set_regs(rax=0x3b, rdi=0x41414141, rdx=0)
+    assert chain is not None
+
+def test_double_ropblock():
+    proj = angr.load_shellcode(
+        """
+        pop rax; mov byte ptr [rbx], 1; ret
+        mov rdi, rax; ret
+        pop rbx; ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.set_regs(rax=0x3b, rdi=0x41414141)
+    assert chain is not None
+
+def test_maximum_write_gadget():
+    proj = angr.load_shellcode(
+        """
+        pop rax; ret
+        pop rdi; ret
+        mov qword ptr [rax], rdi; add rsp, 0x3d8; ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, stack_gsize=200)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    rop.write_to_mem(0x41414141, b'BBBB')
+
+def test_normalize_jmp_mem_with_pop():
+    proj = angr.load_shellcode(
+        """
+        pop rax; pop rbx; ret
+        pop rdi; ret
+        pop r12; ret
+        pop r13; ret
+        pop rsi; ret
+        mov qword ptr [rax], rdi; ret
+        mov rdx, r13; mov rsi, r14; mov edi, r15d; call qword ptr [r12 + rbx*8]
+        syscall
+        """,
+        "amd64",
+        simos='linux',
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, stack_gsize=200)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.execve()
+    assert chain is not None
+
+def test_sim_exec_memory_write():
+    proj = angr.load_shellcode(
+        """
+        pop rax;
+        ret;
+        pop rbx;
+        mov qword ptr [rax+0x10], 0x41414141
+        ret
+        """,
+        "amd64",
+        simos='linux',
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.set_regs(rbx=1)
+    state = chain.exec()
+    addr = None
+    for act in state.history.actions:
+        if act.type != 'mem':
+            continue
+        if not act.data.ast.symbolic and act.data.ast.concrete_value == 0x41414141:
+            assert not act.addr.ast.symbolic
+            addr = act.addr.ast.concrete_value
+
+    rb = RopBlock.from_chain(chain)
+    _, state = rb.sim_exec()
+    assert state.solver.eval(state.memory.load(addr, 4)) == 0x41414141
+
+def local_conflict_address():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "ALLSTAR_9base_dd"),
+                        load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP()
+
+    rop.find_gadgets(processes=16)
+
+    chain = rop.execve()
+    chain.pp()
+    state = chain.sim_exec_til_syscall()
+    data = state.solver.eval(state.memory.load(state.regs.rdi, 8), cast_to=bytes)
+    assert data == b'/bin/sh\x00'
+
+    assert len(chain._values) <= 23
+
+def test_normalize_jmp_mem_with_oop_access():
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "ALLSTAR_aces3_xaces3"),
+                        load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
+
+    rop.analyze_gadget(0x0000000000a42cc2)
+    rop.analyze_gadget(0x0000000000a28b7e)
+    rop.analyze_gadget(0x00000000004ff8aa)
+    rop.analyze_gadget(0x00000000004ff46a)
+    rop.analyze_gadget(0x00000000004e91f7)
+    rop.analyze_gadget(0x000000000043b2fa) # : add rsp, 0x18 ; ret
+
+    rop.optimize()
+
+    chain = rop.set_regs(r10=0x41414141)
+    assert chain is not None
+
+def test_mem_write_with_stack_controller():
+    proj = angr.load_shellcode(
+        """
+        pop r8; mov qword ptr [r8 + 0x10], rax; ret
+        pop rax; ret
+        """,
+        "amd64",
+        simos='linux',
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.write_to_mem(0x41424344, b'BBBB')
+    assert chain is not None
+
+def test_partial_pop():
+    for _ in range(10):
+        proj = angr.load_shellcode(
+            """
+            pop rcx; mov eax, ecx; ret
+            pop rax; ret
+            mov rbx, rax; ret
+            mov ebx, eax; ret
+            """,
+            "amd64",
+            simos='linux',
+            load_address=0x400000,
+            auto_load_libs=False,
+        )
+        rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+        rop.analyze_gadget(0x400000)
+        rop.find_gadgets_single_threaded(show_progress=False)
+
+        value = RopValue(0x4141414141414141, proj)
+        chains = list(rop.chain_builder._reg_setter.find_candidate_chains_giga_graph_search(None,
+                                                                                            {'rbx': value},
+                                                                                            {},
+                                                                                            False))
+        assert chains
+
+        chain = rop.set_regs(rbx=0x4141414141414141)
+        assert chain is not None
+
+def test_mem_write_with_cache():
+    proj = angr.load_shellcode(
+        """
+        mov dword ptr [rax+0x10], ebx; ret
+        pop rax; ret
+        pop rbx; ret
+        """,
+        "amd64",
+        simos='linux',
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.analyze_gadget(0x400000)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.write_to_mem(0x41414141, b'BBBB')
+    assert chain is not None
+
+def test_reg_setting_equal_set():
+    proj = angr.load_shellcode(
+        """
+        pop rdi; ret
+        lea rax, [rdi + 2]; ret
+        """,
+        "amd64",
+        simos='linux',
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.analyze_gadget(0x400000)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.set_regs(rax=0x41414141, rdi=0x42424242)
+    assert chain is not None
+
+def test_short_write():
+    proj = angr.load_shellcode(
+        """
+        mov ecx, 0x480021c6; cwde ; mov qword ptr [rdx + rcx*8 - 8], rax; add rsp, 8; ret
+        pop rax; ret
+        pop rdx; ret
+        """,
+        "amd64",
+        simos='linux',
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.write_to_mem(0x41414141, b'BBBB')
+    assert chain is not None
+
+def test_pop_write():
+    proj = angr.load_shellcode(
+        """
+        push rax; pop qword ptr [rcx]; ret
+        pop rax; ret
+        pop rcx; ret
+        """,
+        "amd64",
+        simos='linux',
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.write_to_mem(0x41414141, b'BBBB')
+    assert chain is not None
+
+def test_riscv_oop_normalization():
+    cache_path = os.path.join(CACHE_DIR, "riscv_asterisk-libasteriskpj.so.2")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "riscv", "asterisk-libasteriskpj.so.2"),
+                        load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path, optimize=False)
+    else:
+        rop.find_gadgets(processes=16, optimize=False)
+        rop.save_gadgets(cache_path)
+
+    g = rop.analyze_gadget(0x00000000000407cc)
+    rb = rop.chain_builder._reg_setter.normalize_gadget(g)
+    assert rb is not None
+
+    g = rop.analyze_gadget(0x000000000007cc66)
+    rb = rop.chain_builder._reg_setter.normalize_gadget(g)
+    assert rb is not None
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
@@ -592,6 +1140,8 @@ def run_all():
         if hasattr(all_functions[f], '__call__'):
             print(f)
             all_functions[f]()
+    print("local_conflict_address")
+    local_conflict_address()
 
 if __name__ == "__main__":
     import sys

@@ -1,5 +1,6 @@
 import os
 import logging
+from io import BytesIO
 
 import angr
 import angrop  # pylint: disable=unused-import
@@ -37,7 +38,7 @@ def local_multiprocess_find_gadgets():
     proj = angr.Project(os.path.join(tests_dir, "i386", "bronze_ropchain"), auto_load_libs=False)
     rop = proj.analyses.ROP()
 
-    rop.find_gadgets(show_progress=False)
+    rop.find_gadgets(show_progress=True)
 
     assert all(gadget_exists(rop, x) for x in [0x080a9773, 0x08091cf5, 0x08092d80, 0x080920d3])
 
@@ -174,16 +175,6 @@ def test_i386_syscall():
     """
     assert all(not gadget_exists(rop, x) for x in [0x8049189])
 
-def test_gadget_timeout():
-    # pylint: disable=pointless-string-statement
-    proj = angr.Project(os.path.join(tests_dir, "x86_64", "datadep_test"), auto_load_libs=False)
-    rop = proj.analyses.ROP()
-    """
-    0x4005d5 ret    0xc148
-    """
-    gadget = rop.analyze_gadget(0x4005d5)
-    assert gadget
-
 def local_multiprocess_analyze_gadget_list():
     # pylint: disable=pointless-string-statement
     proj = angr.Project(os.path.join(tests_dir, "x86_64", "datadep_test"), auto_load_libs=False)
@@ -203,7 +194,8 @@ def test_gadget_filtering():
     rop.analyze_gadget(0x42bca5)
     rop.analyze_gadget(0x42c3c1)
     rop.chain_builder.bootstrap()
-    assert len(rop.chain_builder._reg_setter._reg_setting_gadgets) == 1
+    values = list(rop.chain_builder._shifter.shift_gadgets.values())
+    assert len(values) == 1 and len(values[0]) == 1
 
 def test_aarch64_svc():
     proj = angr.Project(os.path.join(tests_dir, "aarch64", "libc.so.6"), auto_load_libs=False)
@@ -226,12 +218,12 @@ def test_enter():
 def test_jmp_mem_gadget():
     proj = angr.Project(os.path.join(tests_dir, "x86_64", "libc.so.6"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
-    # 0x0000000000031f6d : jmp qword ptr [rax]
-    # 0x000000000004bec2 : call qword ptr [r11 + rax*8]
-    g = rop.analyze_gadget(0x0000000000431f6d)
+    # 0x00000000001a2bd9 : xchg edx, esi ; jmp qword ptr [rax]
+    # 0x00000000001905a1 : xor ebp, edx ; call qword ptr [rdx]
+    g = rop.analyze_gadget(0x5a2bd9)
     assert g is not None
     assert g.transit_type == 'jmp_mem'
-    g = rop.analyze_gadget(0x000000000044bec2)
+    g = rop.analyze_gadget(0x5905a1)
     assert g is not None
     assert g.transit_type == 'jmp_mem'
 
@@ -252,14 +244,122 @@ def test_syscall_next_block():
     chain = rop.do_syscall(2, [1, 0x41414141, 0x42424242, 0], preserve_regs={'eax'}, needs_return=True)
     assert chain
 
+def test_rex_pop_r10():
+    f = BytesIO()
+    f.write(b"OZ\xc3")
+    proj = angr.Project(
+        BytesIO(b"OZ\xc3"),
+        main_opts={
+            "backend": "blob",
+            "arch": "amd64",
+            "entry_point": 0,
+            "base_addr": 0,
+        })
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    g = rop.analyze_gadget(0)
+    assert g is not None
+
+def test_max_stack_change():
+    proj = angr.load_shellcode("""
+            xchg ebp, eax
+            ret 0xd020
+        """,
+        "amd64",
+    )
+
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    g = rop.analyze_gadget(0)
+    assert g is None
+
+def test_symbolized_got():
+    proj = angr.Project(os.path.join(tests_dir, "x86_64", "ALLSTAR_acct_sa"), auto_load_libs=False)
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    g = rop.analyze_gadget(0x40156A)
+    assert g is not None
+
+    # this will be considered pop, but it is not pop
+    # pop rax; add al, 0; add al, al; ret
+    g = rop.analyze_gadget(0x406850)
+    assert g is None or 'rax' not in g.popped_regs
+
+def test_syscall_when_ret_only():
+    proj = angr.load_shellcode(
+        """
+        syscall
+        """,
+        "amd64",
+        load_address=0x400000,
+        simos='linux',
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=True)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    assert rop._all_gadgets
+
+def test_riscv():
+    proj = angr.Project(os.path.join(tests_dir, "riscv", "server_eapp.eapp_riscv"),
+                        load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False)
+    g = rop.analyze_gadget(0xA86C)
+    assert g is not None
+
+    proj = angr.Project(os.path.join(tests_dir, "riscv", "abgate-libabGateQt.so"),
+                        load_options={'main_opts':{'base_addr': 0}},
+                        )
+    rop = proj.analyses.ROP(fast_mode=False, cond_br=True, max_bb_cnt=5)
+    g = rop.analyze_addr(0x77da)
+    assert g
+
+def test_jmp_mem_num_mem_access():
+    proj = angr.load_shellcode(
+        """
+        mov edx, ebp;
+        mov rsi, r14;
+        mov edi, r15d;
+        call qword ptr [r12 + rbx*8]
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
+    g = rop.analyze_gadget(0x400000)
+    assert g is not None
+
+def test_exit_target():
+    proj = angr.load_shellcode(
+        """
+        mov eax, dword ptr [rsp]; ret
+        """,
+        "amd64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
+    g = rop.analyze_gadget(0x400000)
+    assert not g.popped_regs
+
+def test_syscall_block_hash():
+    proj = angr.Project(os.path.join(tests_dir, "x86_64", "ALLSTAR_apcalc-dev_sample_many"),
+                        load_options={'main_opts':{'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
+    # the following line is necessary because it populates syscall_locations
+    rop.gadget_finder.gadget_analyzer # pylint: disable=pointless-statement
+    tasks = list(rop.gadget_finder._addresses_to_check_with_caching(show_progress=False))
+    for addr in [0x402de7, 0x425a00, 0x43e083, 0x4b146c]:
+        assert addr in tasks
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
     for f in sorted(all_functions.keys()):
+        print(f)
         if hasattr(all_functions[f], '__call__'):
             all_functions[f]()
-    local_multiprocess_find_gadgets()
+    print("local_multiprocess_analyze_gadget_list")
     local_multiprocess_analyze_gadget_list()
+    print("local_multiprocess_find_gadgets")
+    local_multiprocess_find_gadgets()
 
 if __name__ == "__main__":
     logging.getLogger("angrop.rop").setLevel(logging.DEBUG)

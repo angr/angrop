@@ -56,7 +56,14 @@ class SysCaller(FuncCaller):
         for reg in preserve_regs:
             if reg in registers:
                 del registers[reg]
-        state = chain.sim_exec_til_syscall()
+        try:
+            state = chain.sim_exec_til_syscall()
+        except RuntimeError:
+            chain_str = chain.dstr()
+            l.exception("Somehow angrop thinks\n%s\ncan be used for syscall chain generation-1.\nregisters: %s",
+                        chain_str, registers)
+            return False
+
         if state is None:
             return False
 
@@ -64,7 +71,7 @@ class SysCaller(FuncCaller):
             bv = getattr(state.regs, reg)
             if (val.symbolic != bv.symbolic) or state.solver.eval(bv != val.data):
                 chain_str = chain.dstr()
-                l.exception("Somehow angrop thinks\n%s\ncan be used for the chain generation-2.\nregisters: %s",
+                l.exception("Somehow angrop thinks\n%s\ncan be used for syscall chain generation-2.\nregisters: %s",
                             chain_str, registers)
                 return False
 
@@ -86,24 +93,15 @@ class SysCaller(FuncCaller):
             ptr = nullptr
 
         try:
-            return self.do_syscall(execve_syscall, [path_addr, ptr, ptr],
-                                 use_partial_controllers=False, needs_return=False)
-        except RopException:
-            pass
-
-        # Try to use partial controllers
-        l.warning("Trying to use partial controllers for syscall")
-        try:
-            return self.do_syscall(execve_syscall, [path_addr, 0, 0],
-                                     use_partial_controllers=True, needs_return=False)
+            return self.do_syscall(execve_syscall, [path_addr, ptr, ptr], needs_return=False)
         except RopException:
             pass
 
         raise RopException("Fail to invoke execve!")
 
     def execve(self, path=None, path_addr=None):
-        if "unix" not in self.project.loader.main_object.os.lower():
-            raise RopException("unknown unix platform")
+        if self.project.simos.name != 'Linux':
+            raise RopException(f"{self.project.simos.name} is not supported!")
         if not self.syscall_gadgets:
             raise RopException("target does not contain syscall gadget!")
 
@@ -170,7 +168,7 @@ class SysCaller(FuncCaller):
         def key_func(g):
             good_sets = set()
             for reg, val in g.prologue.concrete_regs.items():
-                if target_regs[reg] == val:
+                if reg in target_regs and target_regs[reg] == val:
                     good_sets.add(reg)
             return len(good_sets)
         gadgets = sorted(gadgets, reverse=True, key=key_func)

@@ -22,7 +22,9 @@ class ROP(Analysis):
     """
 
     def __init__(self, only_check_near_rets=True, max_block_size=None, max_sym_mem_access=None,
-                 fast_mode=None, rebase=None, is_thumb=False, kernel_mode=False, stack_gsize=80):
+                 fast_mode=None, rebase=None, is_thumb=False, kernel_mode=False, stack_gsize=80,
+                 cond_br=False, max_bb_cnt=2
+                 ):
         """
         Initializes the rop gadget finder
         :param only_check_near_rets: If true we skip blocks that are not near rets
@@ -34,7 +36,9 @@ class ROP(Analysis):
         :param is_thumb:  execute ROP chain in thumb mode. Only makes difference on ARM architecture.
                           angrop does not switch mode within a rop chain
         :param kernel_mode: find kernel mode gadgets
-        :param stack_gsize: change the maximum allowable stack change for gadgets
+        :param stack_gsize: change the maximum allowable stack change for gadgets, where
+                            the max stack_change = stack_gsize * arch.bytes
+        :param cond_br: whether to support conditional branches, this option impacts gadget finding speed significantly
         :return:
         """
 
@@ -55,7 +59,8 @@ class ROP(Analysis):
         # gadget finder configurations
         self.gadget_finder = GadgetFinder(self.project, fast_mode=fast_mode, only_check_near_rets=only_check_near_rets,
                                           max_block_size=max_block_size, max_sym_mem_access=max_sym_mem_access,
-                                          is_thumb=is_thumb, kernel_mode=kernel_mode, stack_gsize=stack_gsize)
+                                          is_thumb=is_thumb, kernel_mode=kernel_mode, stack_gsize=stack_gsize,
+                                          cond_br=cond_br, max_bb_cnt=max_bb_cnt)
         self.arch = self.gadget_finder.arch
 
         # chain builder
@@ -122,7 +127,7 @@ class ROP(Analysis):
         self._screen_gadgets()
         return g
 
-    def analyze_gadget_list(self, addr_list, processes=4, show_progress=True):
+    def analyze_gadget_list(self, addr_list, processes=4, show_progress=True, optimize=True):
         """
         Analyzes a list of addresses to identify ROP gadgets.
         Saves rop gadgets in self.rop_gadgets
@@ -135,22 +140,28 @@ class ROP(Analysis):
         self._all_gadgets = self.gadget_finder.analyze_gadget_list(
             addr_list, processes=processes, show_progress=show_progress)
         self._screen_gadgets()
+        if optimize:
+            self.chain_builder.optimize(processes=processes)
         return self.rop_gadgets
 
-    def find_gadgets(self, processes=4, show_progress=True):
+    def find_gadgets(self, optimize=True, **kwargs):
         """
         Finds all the gadgets in the binary by calling analyze_gadget on every address near a ret.
         Saves rop gadgets in self.rop_gadgets
         Saves syscall gadgets in self.syscall_gadgets
         Saves stack pivots in self.stack_pivots
         :param processes: number of processes to use
+        :param optimize: whether to run chain_builder.optimize(), this may take some time,
+                         but makes the chain builder more powerful
         """
-        self._all_gadgets, self._duplicates = self.gadget_finder.find_gadgets(processes=processes,
-                                                                              show_progress=show_progress)
+        self._all_gadgets, self._duplicates = self.gadget_finder.find_gadgets(**kwargs)
         self._screen_gadgets()
+        if optimize:
+            processes = kwargs.get('processes', 4)
+            self.chain_builder.optimize(processes=processes)
         return self.rop_gadgets
 
-    def find_gadgets_single_threaded(self, show_progress=True):
+    def find_gadgets_single_threaded(self, show_progress=True, optimize=True):
         """
         Finds all the gadgets in the binary by calling analyze_gadget on every address near a ret
         Saves rop gadgets in self.rop_gadgets
@@ -160,6 +171,8 @@ class ROP(Analysis):
         self._all_gadgets, self._duplicates = self.gadget_finder.find_gadgets_single_threaded(
                                                                  show_progress=show_progress)
         self._screen_gadgets()
+        if optimize:
+            self.chain_builder.optimize(processes=1)
         return self.rop_gadgets
 
     def _get_cache_tuple(self):
@@ -185,7 +198,7 @@ class ROP(Analysis):
         for g in self._all_gadgets:
             g.project = self.project
 
-    def load_gadgets(self, path):
+    def load_gadgets(self, path, optimize=True):
         """
         Loads gadgets from a file.
         :param path: A path for a file where the gadgets are loaded
@@ -193,6 +206,8 @@ class ROP(Analysis):
         with open(path, "rb") as f:
             cache_tuple = pickle.load(f)
             self._load_cache_tuple(cache_tuple)
+        if optimize:
+            self.chain_builder.optimize()
 
     def set_badbytes(self, badbytes):
         """
