@@ -86,11 +86,7 @@ def dump_chain(args):
         case _:
             raise NotImplementedError()
 
-if __name__ == '__main__':
-    import sys
-    import argparse
-
-
+def main():
     usage = '%(prog)s <command> [<options>] <path>'
     parser = argparse.ArgumentParser(usage=usage)
 
@@ -124,4 +120,9 @@ if __name__ == '__main__':
         case _:
             parser.print_help()
             sys.exit()
+
+if __name__ == '__main__':
+    import sys
+    import argparse
+    main()
 
