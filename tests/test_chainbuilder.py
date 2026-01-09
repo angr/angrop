@@ -1133,6 +1133,28 @@ def test_riscv_oop_normalization():
     rb = rop.chain_builder._reg_setter.normalize_gadget(g)
     assert rb is not None
 
+def test_concrete_value_crafting():
+    proj = angr.load_shellcode(
+        """
+        pop ebx; xor eax, eax; pop esi; pop ebp; ret
+        add eax, 0x5a5d80cd; pop ecx; ret
+        xor al, 0x5b; pop esi; pop edi; pop ebp; ret
+        """,
+        "i386",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP()
+    rop.find_gadgets_single_threaded(show_progress=False)
+
+    chain = rop.set_regs(eax=0x5b)
+    state = chain.exec()
+    assert state.regs.eax.concrete_value == 0x5b
+
+    chain = rop.set_regs(eax=0x5a5d80cd)
+    state = chain.exec()
+    assert state.regs.eax.concrete_value == 0x5a5d80cd
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
