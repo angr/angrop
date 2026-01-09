@@ -606,10 +606,16 @@ class RegSetter(Builder):
                 hard_chain = self._find_add_chain(gadgets, reg, val)
             if hard_chain:
                 self.hard_chain_cache[key] = hard_chain # we cache the result even if it fails
-        if not hard_chain:
+
+        # FIXME: technically, we should always raise when we cannot find chains for a hard
+        # register. But there is an edge case: if a gadget can set a register providing a
+        # `modifiable_memory_range`, then it will not appear in _reg_setting_dict but the chain
+        # generation process will work. In this case, we proceed to the graph search.
+        if not hard_chain and self._word_contain_badbyte(registers[reg]):
             l.error("Fail to set register: %s to: %#x", reg, val)
             raise RopException("Fail to set hard registers")
-        registers.pop(reg)
+        if hard_chain:
+            registers.pop(reg)
         return hard_chain
 
     @staticmethod
