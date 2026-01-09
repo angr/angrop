@@ -574,20 +574,21 @@ class RegSetter(Builder):
         return gadgets
 
     def _handle_hard_regs(self, gadgets, registers, preserve_regs) -> list[RopGadget|RopBlock]: # pylint: disable=unused-argument
-        # handle register set that contains bad byte (so it can't be popped)
+        # handle register set cannot be popped or set using concrete values directly
         # and cannot be directly set using concrete values
-        hard_regs = [reg for reg, val in registers.items() if self._word_contain_badbyte(val)]
+        hard_regs = {reg for reg in registers if not self._reg_setting_dict[reg]}
         if len(hard_regs) > 1:
             l.error("too many registers contain bad bytes! bail out! %s", registers)
             raise RopException("too many registers contain bad bytes")
         if not hard_regs:
             return []
-        if registers[hard_regs[0]].symbolic:
+        hard_reg = hard_regs.pop()
+        if registers[hard_reg].symbolic:
             return []
 
         # if hard_regs exists, try to use concrete values to craft the value
         hard_chain = []
-        reg = hard_regs[0]
+        reg = hard_reg
         val = registers[reg].concreted
         key = (reg, val)
         if key in self.hard_chain_cache:
