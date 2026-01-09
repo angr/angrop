@@ -627,7 +627,7 @@ class RegSetter(Builder):
                     chains.append([g])
         return chains
 
-    def _find_add_chain(self, gadgets, reg, val):
+    def _find_add_chain(self, gadgets, reg, val) -> list[RopGadget|RopBlock]:
         """
         find one chain to set one single register to a specific value using concrete values only through add/dec
         """
@@ -647,7 +647,7 @@ class RegSetter(Builder):
                         return [g1, g2]
                 except Exception:# pylint:disable=broad-except
                     pass
-        return None
+        return []
 
     #### Gadget Filtering ####
 
