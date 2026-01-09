@@ -5,7 +5,9 @@ developed within 30min at DEF CON 33 :P
 """
 
 import os
+import sys
 import hashlib
+import argparse
 from multiprocessing import cpu_count
 
 import angr
@@ -122,7 +124,5 @@ def main():
             sys.exit()
 
 if __name__ == '__main__':
-    import sys
-    import argparse
     main()
 
