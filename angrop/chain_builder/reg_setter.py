@@ -574,20 +574,26 @@ class RegSetter(Builder):
         return gadgets
 
     def _handle_hard_regs(self, gadgets, registers, preserve_regs) -> list[RopGadget|RopBlock]: # pylint: disable=unused-argument
-        # handle register set that contains bad byte (so it can't be popped)
-        # and cannot be directly set using concrete values
-        hard_regs = [reg for reg, val in registers.items() if self._word_contain_badbyte(val)]
+        """
+        handle register that cannot be popped or set using concrete values directly
+        there are two reasons why a register cannot be popped:
+        1. there is no gadget that can pop it
+        2. the value to set has badbyte
+        """
+        hard_regs = {reg for reg in registers if not self._reg_setting_dict[reg]}
+        hard_regs |= {reg for reg, val in registers.items() if self._word_contain_badbyte(val)}
         if len(hard_regs) > 1:
             l.error("too many registers contain bad bytes! bail out! %s", registers)
             raise RopException("too many registers contain bad bytes")
         if not hard_regs:
             return []
-        if registers[hard_regs[0]].symbolic:
+        hard_reg = hard_regs.pop()
+        if registers[hard_reg].symbolic:
             return []
 
         # if hard_regs exists, try to use concrete values to craft the value
         hard_chain = []
-        reg = hard_regs[0]
+        reg = hard_reg
         val = registers[reg].concreted
         key = (reg, val)
         if key in self.hard_chain_cache:
@@ -600,10 +606,16 @@ class RegSetter(Builder):
                 hard_chain = self._find_add_chain(gadgets, reg, val)
             if hard_chain:
                 self.hard_chain_cache[key] = hard_chain # we cache the result even if it fails
-        if not hard_chain:
+
+        # FIXME: technically, we should always raise when we cannot find chains for a hard
+        # register. But there is an edge case: if a gadget can set a register providing a
+        # `modifiable_memory_range`, then it will not appear in _reg_setting_dict but the chain
+        # generation process will work. In this case, we proceed to the graph search.
+        if not hard_chain and self._word_contain_badbyte(registers[reg]):
             l.error("Fail to set register: %s to: %#x", reg, val)
             raise RopException("Fail to set hard registers")
-        registers.pop(reg)
+        if hard_chain:
+            registers.pop(reg)
         return hard_chain
 
     @staticmethod
@@ -615,7 +627,7 @@ class RegSetter(Builder):
                     chains.append([g])
         return chains
 
-    def _find_add_chain(self, gadgets, reg, val):
+    def _find_add_chain(self, gadgets, reg, val) -> list[RopGadget|RopBlock]:
         """
         find one chain to set one single register to a specific value using concrete values only through add/dec
         """
@@ -635,7 +647,7 @@ class RegSetter(Builder):
                         return [g1, g2]
                 except Exception:# pylint:disable=broad-except
                     pass
-        return None
+        return []
 
     #### Gadget Filtering ####
 
