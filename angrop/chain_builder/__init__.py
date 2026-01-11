@@ -87,6 +87,18 @@ class ChainBuilder:
         value = rop_utils.cast_rop_value(value, self.project)
         return self._mem_changer.add_to_mem(addr, value, data_size=data_size)
 
+    def xor_mem(self, addr, value, data_size=None, preserve_regs=None):
+        """
+        :param addr: the address to xor
+        :param value: the value to xor with
+        :param data_size: the size of the data for the xor (defaults to project.arch.bits)
+        :param preserve_regs: set of registers to preserve, e.g. ('rax', 'rbx')
+        :return: A chain which will do [addr] ^= value
+        """
+        addr = rop_utils.cast_rop_value(addr, self.project)
+        value = rop_utils.cast_rop_value(value, self.project)
+        return self._mem_changer.xor_mem(addr, value, data_size=data_size, preserve_regs=preserve_regs)
+
     def write_to_mem(self, addr, data, fill_byte=b"\xff"):
         """
         :param addr: address to store the string
