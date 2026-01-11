@@ -448,7 +448,45 @@ class MemWriter(Builder):
             if len(elem) != 1 or ord(elem) not in self.badbytes:
                 chain += self._write_to_mem(ptr, elem, preserve_regs=preserve_regs, fill_byte=fill_byte)
                 offset += len(elem)
-            else:
+                continue
+
+            # len(elem) == 1 and it is a bad byte; try XOR fixup
+            xor_gadgets = getattr(self.chain_builder._mem_changer, "_mem_xor_gadgets", None)
+            xor_sizes = sorted({g.mem_changes[0].data_size for g in xor_gadgets}) if xor_gadgets else []
+
+            def _find_safe_byte(default_byte: int) -> int:
+                if default_byte not in self.badbytes:
+                    return default_byte
+                for b in range(0x100):
+                    if b not in self.badbytes:
+                        return b
+                raise RopException("cannot find a safe byte to write")
+
+            success = False
+            target = ord(elem)
+            if not xor_sizes:
+                # fallback to legacy path (likely to fail) for visibility
                 chain += self._write_to_mem(ptr, elem, preserve_regs=preserve_regs, fill_byte=fill_byte)
                 offset += 1
+                continue
+
+            for size in xor_sizes:
+                base_byte = _find_safe_byte(ord(fill_byte))
+                xor_mask = (base_byte ^ target) & ((1 << size) - 1)
+                tmp_chain = RopChain(self.project, self, badbytes=self.badbytes)
+                try:
+                    tmp_chain += self._write_to_mem(ptr, bytes([base_byte]), preserve_regs=preserve_regs,
+                                                    fill_byte=fill_byte)
+                    tmp_chain += self.chain_builder.xor_mem(ptr, xor_mask, data_size=size,
+                                                           preserve_regs=preserve_regs)
+                    chain += tmp_chain
+                    offset += 1
+                    success = True
+                    break
+                except RopException:
+                    # try next gadget size
+                    continue
+
+            if not success:
+                raise RopException(f"Fail to write bad byte {elem!r} using xor gadgets")
         return chain

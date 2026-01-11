@@ -20,10 +20,12 @@ class MemChanger(Builder):
         super().__init__(chain_builder)
         self._mem_change_gadgets: list[RopGadget] = None # type: ignore
         self._mem_add_gadgets: list[RopGadget] = None # type: ignore
+        self._mem_xor_gadgets: list[RopGadget] = None # type: ignore
 
     def bootstrap(self):
         self._mem_change_gadgets = self._get_all_mem_change_gadgets(self.chain_builder.gadgets)
         self._mem_add_gadgets = self._get_all_mem_add_gadgets()
+        self._mem_xor_gadgets = self._get_all_mem_xor_gadgets()
 
     def verify(self, chain, addr, value, _):
         arch_bytes = self.project.arch.bytes
@@ -72,6 +74,9 @@ class MemChanger(Builder):
 
     def _get_all_mem_add_gadgets(self):
         return [x for x in self._mem_change_gadgets if x.mem_changes[0].op in ('__add__', '__sub__')]
+
+    def _get_all_mem_xor_gadgets(self):
+        return [x for x in self._mem_change_gadgets if x.mem_changes[0].op == '__xor__']
 
     @staticmethod
     def _sort_gadgets(gadgets):
@@ -122,6 +127,43 @@ class MemChanger(Builder):
                 pass
 
         raise RopException("Fail to perform add_to_mem!")
+
+    def xor_mem(self, addr, value, data_size=None, preserve_regs=None):
+        """
+        Apply XOR to a memory location: [addr] ^= value.
+        """
+
+        if preserve_regs is None:
+            preserve_regs = set()
+
+        if data_size is None:
+            data_size = self.project.arch.bits
+
+        possible_gadgets = [x for x in self._mem_xor_gadgets if x.mem_changes[0].data_size == data_size]
+        if not possible_gadgets:
+            raise RopException("Fail to find any gadget that can perform memory xor...")
+
+        gadgets = self._sort_gadgets(possible_gadgets)
+
+        if not gadgets:
+            raise RopException("Couldnt set registers for any memory xor gadget")
+
+        l.debug("Now building the mem xor chain")
+
+        for g in gadgets:
+            if g.changed_regs.intersection(preserve_regs):
+                continue
+            mem_change = g.mem_changes[0]
+            if (mem_change.addr_dependencies | mem_change.data_dependencies).intersection(preserve_regs):
+                continue
+            try:
+                chain = self._xor_mem_with_gadget(g, addr, data_size, value=value, preserve_regs=preserve_regs)
+                self.verify_xor(chain, addr, value, data_size)
+                return chain
+            except RopException:
+                pass
+
+        raise RopException("Fail to perform xor_mem!")
 
     def _add_mem_with_gadget(self, gadget, addr, data_size, final_val=None, difference=None):
         # sanity check for simple gadget
@@ -186,3 +228,71 @@ class MemChanger(Builder):
         chain = RopBlock.from_chain(chain)
         chain = self._build_reg_setting_chain([chain, gadget], {})
         return chain
+
+    def _xor_mem_with_gadget(self, gadget, addr, data_size, value=None, preserve_regs=None):
+        if len(gadget.mem_writes) + len(gadget.mem_changes) != 1 or len(gadget.mem_reads) != 0:
+            raise RopException("too many memory accesses for my lazy implementation")
+
+        if value is None:
+            raise RopException("must specify xor mask")
+
+        arch_endness = self.project.arch.memory_endness
+        arch_bytes = self.project.arch.bytes
+
+        test_state = self.make_sim_state(gadget.addr, gadget.stack_change//arch_bytes)
+
+        mask = (1 << data_size) - 1
+        init_val = (~value.concreted) & mask # try to avoid trivial zero
+        test_state.memory.store(addr.concreted, claripy.BVV(init_val, data_size))
+
+        pre_gadget_state = test_state
+        state = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
+
+        mem_change = gadget.mem_changes[0]
+        the_action = None
+        for a in state.history.actions.hardcopy:
+            if a.type != "mem" or a.action != "write":
+                continue
+            if set(rop_utils.get_ast_dependency(a.addr.ast)) == set(mem_change.addr_dependencies):
+                the_action = a
+                break
+
+        if the_action is None:
+            raise RopException("Couldn't find the matching action")
+
+        test_state.add_constraints(the_action.addr.ast == addr.concreted)
+        pre_gadget_state.add_constraints(the_action.addr.ast == addr.concreted)
+        pre_gadget_state.options.discard(angr.options.AVOID_MULTIVALUED_WRITES)
+        pre_gadget_state.options.discard(angr.options.AVOID_MULTIVALUED_READS)
+        state = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
+
+        pre_mem = test_state.memory.load(addr.concreted, data_size//8, endness=arch_endness)
+        post_mem = state.memory.load(addr.concreted, data_size//8, endness=arch_endness)
+        test_state.add_constraints(post_mem == (pre_mem ^ claripy.BVV(value.concreted & mask, data_size)))
+
+        all_deps = list(mem_change.addr_dependencies) + list(mem_change.data_dependencies)
+        reg_vals = {}
+        for reg in set(all_deps):
+            reg_vals[reg] = test_state.solver.eval(test_state.registers.load(reg))
+
+        chain = self.set_regs(**reg_vals, preserve_regs=preserve_regs)
+        chain = RopBlock.from_chain(chain)
+        chain = self._build_reg_setting_chain([chain, gadget], {})
+        return chain
+
+    def verify_xor(self, chain, addr, value, data_size):
+        arch_endness = self.project.arch.memory_endness
+        mask = (1 << data_size) - 1
+
+        chain2 = chain.copy()
+        base = 0x41424344 & mask
+        chain2._blank_state.memory.store(addr.data, claripy.BVV(base, data_size), data_size//8, endness=arch_endness)
+        state = chain2.exec()
+        sim_data = state.memory.load(addr.data, data_size//8, endness=arch_endness)
+        expected = base ^ (value.concreted & mask)
+        if not state.solver.eval(sim_data == expected):
+            raise RopException("memory xor fails - 1")
+        if len(state.regs.pc.variables) != 1:
+            raise RopException("memory xor fails - 2")
+        if not set(state.regs.pc.variables).pop().startswith("next_pc_"):
+            raise RopException("memory xor fails - 3")
