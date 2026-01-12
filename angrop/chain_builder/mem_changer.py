@@ -1,7 +1,5 @@
 import logging
-from functools import cmp_to_key
 
-import claripy
 import angr
 
 from .builder import Builder
@@ -98,7 +96,7 @@ class MemChanger(Builder):
                 # assume we need intersection of addr_dependencies and data_dependencies to be 0
                 if m_access.addr_controllable() and m_access.data_controllable() and m_access.addr_data_independent():
                     possible_gadgets.add(g)
-        gadgets = self._filter_gadgets(possible_gadgets)
+        gadgets = list(self._filter_gadgets(possible_gadgets))
         return gadgets
 
     def _get_mem_change_gadgets(self, ops):
@@ -198,7 +196,7 @@ class MemChanger(Builder):
             raise RopException(f"Fail to find any gadget that can perform {data_size//8}-byte memory {op}")
 
         # sort the gadgets with number of memory accesses and stack_change
-        gadgets = sorted(gadgets, key=lambda g: self._comparison_tuple(g))
+        gadgets = sorted(gadgets, key=self._comparison_tuple)
 
         l.debug("Now build the mem %s chain", op)
 
