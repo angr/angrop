@@ -1,7 +1,5 @@
 import logging
-from functools import cmp_to_key
 
-import claripy
 import angr
 
 from .builder import Builder
@@ -20,31 +18,62 @@ class MemChanger(Builder):
         super().__init__(chain_builder)
         self._mem_change_gadgets: list[RopGadget] = None # type: ignore
         self._mem_add_gadgets: list[RopGadget] = None # type: ignore
+        self._mem_xor_gadgets: list[RopGadget] = None # type: ignore
+        self._mem_or_gadgets: list[RopGadget] = None # type: ignore
+        self._mem_and_gadgets: list[RopGadget] = None # type: ignore
 
     def bootstrap(self):
         self._mem_change_gadgets = self._get_all_mem_change_gadgets(self.chain_builder.gadgets)
-        self._mem_add_gadgets = self._get_all_mem_add_gadgets()
+        self._mem_add_gadgets = self._get_mem_change_gadgets(('__add__', '__sub__'))
+        self._mem_xor_gadgets = self._get_mem_change_gadgets(('__xor__'))
+        self._mem_or_gadgets = self._get_mem_change_gadgets(('__or__'))
+        self._mem_and_gadgets = self._get_mem_change_gadgets(('__and__'))
 
-    def verify(self, chain, addr, value, _):
-        arch_bytes = self.project.arch.bytes
+    def verify(self, op, chain, addr, value, data_size):
         endness = self.project.arch.memory_endness
+        arch_bytes = self.project.arch.bytes
+        data_bytes = data_size//8
 
-        # verify the chain actually works
+        # make sure the chain actually works
         chain2 = chain.copy()
-        chain2._blank_state.memory.store(addr.data, 0x41424344, arch_bytes, endness=endness)
+        init_val = 0x4142434445464748
+        chain2._blank_state.memory.store(addr.data, init_val, arch_bytes, endness=endness)
+        init_bv = chain2._blank_state.memory.load(addr.data, data_bytes, endness=endness)
         state = chain2.exec()
-        sim_data = state.memory.load(addr.data, arch_bytes, endness=endness)
-        if not state.solver.eval(sim_data == 0x41424344 + value.data):
-            raise RopException("memory add fails - 1")
+        final_bv = state.memory.load(addr.data, data_bytes, endness=endness)
+
+        init = init_bv.concrete_value
+        final = final_bv.concrete_value
+        value = value.concreted
+
+        # check data effect correctness
+        correct: int = 0
+        match op:
+            case 'add':
+                correct = init + value
+                mask = (1<<data_size)-1
+                correct &= mask
+            case 'xor':
+                correct = init ^ value
+            case 'or':
+                correct = init | value
+            case 'and':
+                correct = init & value
+            case _:
+                raise RopException(f"unknown memory changing operation: {op}")
+        if correct != final:
+            raise RopException("memory change fails - 1")
+
         # the next pc must come from the stack
         if len(state.regs.pc.variables) != 1:
-            raise RopException("memory add fails - 2")
+            raise RopException("memory change fails - 2")
         if not set(state.regs.pc.variables).pop().startswith("next_pc_"):
-            raise RopException("memory add fails - 3")
+            raise RopException("memory change fails - 3")
 
     def _effect_tuple(self, g):
         change = g.mem_changes[0]
-        v1 = change.op
+        # add and sub should be considered as the same class
+        v1 = change.op if change.op not in ('__add__', '__sub__') else '__add__'
         v2 = change.data_size
         v3 = change.data_constant
         v4 = tuple(sorted(change.addr_dependencies))
@@ -67,81 +96,28 @@ class MemChanger(Builder):
                 # assume we need intersection of addr_dependencies and data_dependencies to be 0
                 if m_access.addr_controllable() and m_access.data_controllable() and m_access.addr_data_independent():
                     possible_gadgets.add(g)
-        gadgets = self._filter_gadgets(possible_gadgets)
-        return sorted(gadgets, key=lambda x: x.stack_change)
+        gadgets = list(self._filter_gadgets(possible_gadgets))
+        return gadgets
 
-    def _get_all_mem_add_gadgets(self):
-        return [x for x in self._mem_change_gadgets if x.mem_changes[0].op in ('__add__', '__sub__')]
+    def _get_mem_change_gadgets(self, ops):
+        gadgets = [x for x in self._mem_change_gadgets if x.mem_changes[0].op in ops]
+        return sorted(gadgets,
+                      key=lambda g: (g.mem_changes[0].data_size, -len(g.changed_regs)),
+                      reverse=True)
 
-    @staticmethod
-    def _sort_gadgets(gadgets):
-        def cmp_func(g1, g2):
-            # prefer gadget with fewer memory accesses
-            if g1.num_sym_mem_access > g2.num_sym_mem_access:
-                return 1
-            if g1.num_sym_mem_access < g2.num_sym_mem_access:
-                return -1
-            # prefer gadget taking less space
-            if g1.stack_change > g2.stack_change:
-                return 1
-            elif g1.stack_change < g2.stack_change:
-                return -1
-            # prefer shorter gadget
-            if g1.isn_count > g2.isn_count:
-                return 1
-            elif g1.isn_count < g2.isn_count:
-                return -1
-            return 0
-        return sorted(gadgets, key=cmp_to_key(cmp_func))
-
-    def add_to_mem(self, addr, value, data_size=None):
-        # TODO could allow mem_reads as long as we control the address?
-
-        if data_size is None:
-            data_size = self.project.arch.bits
-
-        possible_gadgets = [x for x in self._mem_add_gadgets if x.mem_changes[0].data_size == data_size]
-        if not possible_gadgets:
-            raise RopException("Fail to find any gadget that can perform memory adding...")
-
-        # sort the gadgets with number of memory accesses and stack_change
-        gadgets = self._sort_gadgets(possible_gadgets)
-
-        if not gadgets:
-            raise RopException("Couldnt set registers for any memory add gadget")
-
-        l.debug("Now building the mem add chain")
-
-        # try to build the chain
-        for g in gadgets:
-            try:
-                chain = self._add_mem_with_gadget(g, addr, data_size, difference=value)
-                self.verify(chain, addr, value, data_size)
-                return chain
-            except RopException:
-                pass
-
-        raise RopException("Fail to perform add_to_mem!")
-
-    def _add_mem_with_gadget(self, gadget, addr, data_size, final_val=None, difference=None):
-        # sanity check for simple gadget
-        if len(gadget.mem_writes) + len(gadget.mem_changes) != 1 or len(gadget.mem_reads) != 0:
-            raise RopException("too many memory accesses for my lazy implementation")
-
-        if (final_val is not None and difference is not None) or (final_val is None and difference is None):
-            raise RopException("must specify difference or final value and not both")
-
+    def _change_mem_with_gadget(self, op, gadget, addr, value, data_size):
         arch_endness = self.project.arch.memory_endness
-
-        # constrain the successor to be at the gadget
-        # emulate 'pop pc'
         arch_bytes = self.project.arch.bytes
-        test_state = self.make_sim_state(gadget.addr, gadget.stack_change//arch_bytes)
 
-        if difference is not None:
-            test_state.memory.store(addr.concreted, claripy.BVV(~(difference.concreted), data_size)) # pylint:disable=invalid-unary-operand-type
-        if final_val is not None:
-            test_state.memory.store(addr.concreted, claripy.BVV(~final_val, data_size)) # pylint:disable=invalid-unary-operand-type
+        # create an initial state with a random initial value
+        test_state = self.make_sim_state(gadget.addr, gadget.stack_change//arch_bytes)
+        init_val = 0x4142434445464748
+        match op:
+            case 'or':
+                init_val = 0
+            case 'and':
+                init_val = (1 << 64)-1
+        test_state.memory.store(addr.concreted, init_val, data_size, endness=arch_bytes)
 
         # step the gadget
         pre_gadget_state = test_state
@@ -168,13 +144,21 @@ class MemChanger(Builder):
         state = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
 
         # constrain the data
-        if final_val is not None:
-            test_state.add_constraints(state.memory.load(addr.concreted, data_size//8, endness=arch_endness) ==
-                                       claripy.BVV(final_val, data_size))
-        if difference is not None:
-            test_state.add_constraints(state.memory.load(addr.concreted, data_size//8, endness=arch_endness) -
-                                       test_state.memory.load(addr.concreted, data_size//8, endness=arch_endness) ==
-                                       claripy.BVV(difference.concreted, data_size))
+        final_bv = state.memory.load(addr.concreted, data_size//8, endness=arch_endness)
+        init_bv = test_state.memory.load(addr.concreted, data_size//8, endness=arch_endness)
+        match op:
+            case 'add':
+                const = (init_bv + value.concreted) == final_bv
+            case 'xor':
+                const = (init_bv ^ value.concreted) == final_bv
+            case 'and':
+                const = (init_bv & value.concreted) == final_bv
+            case 'or':
+                const = (init_bv | value.concreted) == final_bv
+            case _:
+                raise RopException(f"unknown memory changing operation: {op}")
+
+        test_state.add_constraints(const)
 
         # get the actual register values
         all_deps = list(mem_change.addr_dependencies) + list(mem_change.data_dependencies)
@@ -186,3 +170,59 @@ class MemChanger(Builder):
         chain = RopBlock.from_chain(chain)
         chain = self._build_reg_setting_chain([chain, gadget], {})
         return chain
+
+    def _mem_change(self, op, addr, value, size=None):
+        """
+        size: number of bytes
+        change memory with exactly the same data_size. It should be the user
+        that handles different data_sizes
+        # TODO could allow mem_reads as long as we control the address?
+        """
+        # sanity check the inputs
+        if size is None:
+            size = self.project.arch.bytes
+        if size not in (1, 2, 4, 8):
+            raise RopException(f"does not support finding raw chain that {op} {size} bytes of memory")
+        data_size = 8*size
+        if value.concreted >> data_size:
+            raise RopException(f"{value.concreted:#x} cannot be represented by {size}-byte")
+
+        # find the correct gadget list
+        gadgets = getattr(self, f"_mem_{op}_gadgets")
+
+        # find gadget matching the data_size
+        gadgets = [x for x in gadgets if x.mem_changes[0].data_size == data_size]
+        if not gadgets:
+            raise RopException(f"Fail to find any gadget that can perform {data_size//8}-byte memory {op}")
+
+        # sort the gadgets with number of memory accesses and stack_change
+        gadgets = sorted(gadgets, key=self._comparison_tuple)
+
+        l.debug("Now build the mem %s chain", op)
+
+        # try to build the chain
+        for g in gadgets:
+            try:
+                chain = self._change_mem_with_gadget(op, g, addr, value, data_size)
+                self.verify(op, chain, addr, value, data_size)
+                return chain
+            except RopException:
+                pass
+
+        raise RopException(f"Fail to perform _mem_change for {op} operation!")
+
+    def add_to_mem(self, addr, value, size=None):
+        l.warning("add_to_mem is deprecated, please use mem_add!")
+        return self._mem_change('add', addr, value, size=size)
+
+    def mem_xor(self, addr, value, size=None):
+        return self._mem_change('xor', addr, value, size=size)
+
+    def mem_add(self, addr, value, size=None):
+        return self._mem_change('add', addr, value, size=size)
+
+    def mem_or(self, addr, value, size=None):
+        return self._mem_change('or', addr, value, size=size)
+
+    def mem_and(self, addr, value, size=None):
+        return self._mem_change('and', addr, value, size=size)
