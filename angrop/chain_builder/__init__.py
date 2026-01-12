@@ -85,7 +85,29 @@ class ChainBuilder:
         """
         addr = rop_utils.cast_rop_value(addr, self.project)
         value = rop_utils.cast_rop_value(value, self.project)
-        return self._mem_changer.add_to_mem(addr, value, data_size=data_size)
+        if data_size:
+            data_size = data_size//8
+        return self._mem_changer.add_to_mem(addr, value, size=data_size)
+
+    def mem_xor(self, addr, value, size=None):
+        addr = rop_utils.cast_rop_value(addr, self.project)
+        value = rop_utils.cast_rop_value(value, self.project)
+        return self._mem_changer.mem_xor(addr, value, size=size)
+
+    def mem_add(self, addr, value, size=None):
+        addr = rop_utils.cast_rop_value(addr, self.project)
+        value = rop_utils.cast_rop_value(value, self.project)
+        return self._mem_changer.mem_add(addr, value, size=size)
+
+    def mem_or(self, addr, value, size=None):
+        addr = rop_utils.cast_rop_value(addr, self.project)
+        value = rop_utils.cast_rop_value(value, self.project)
+        return self._mem_changer.mem_or(addr, value, size=size)
+
+    def mem_and(self, addr, value, size=None):
+        addr = rop_utils.cast_rop_value(addr, self.project)
+        value = rop_utils.cast_rop_value(value, self.project)
+        return self._mem_changer.mem_and(addr, value, size=size)
 
     def write_to_mem(self, addr, data, fill_byte=b"\xff"):
         """

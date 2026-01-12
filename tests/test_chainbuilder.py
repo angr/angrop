@@ -1155,6 +1155,48 @@ def test_concrete_value_crafting():
     state = chain.exec()
     assert state.regs.eax.concrete_value == 0x5a5d80cd
 
+def test_mem_changer():
+    cache_path = os.path.join(CACHE_DIR, "amd64_glibc_2.19")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path, optimize=False)
+    else:
+        rop.find_gadgets()
+
+    # xor
+    chain = rop.write_to_mem(0xdeadbeef, b'\x63')
+    chain += rop.mem_xor(0xdeadbeef, 0x42, size=1)
+    state = chain.exec()
+    assert state.memory.load(0xdeadbeef, 1).concrete_value == 0x21
+
+    # or
+    chain = rop.write_to_mem(0xdeadbeef, b'\x21')
+    chain += rop.mem_or(0xdeadbeef, 0x42, size=1)
+    state = chain.exec()
+    assert state.memory.load(0xdeadbeef, 1).concrete_value == 0x63
+
+    # 64-bit or
+    chain = rop.write_to_mem(0xdeadbeef, b'\x41\x42\x43\x44\x45\x46\x47\x48')
+    chain += rop.mem_or(0xdeadbeef, 0x1234567812345678, size=8)
+    state = chain.exec()
+    assert state.memory.load(0xdeadbeef, 8, endness=proj.arch.memory_endness).concrete_value == 0x5a77567d56775679
+
+    # and
+    chain = rop.write_to_mem(0xdeadbeef, b'\x41')
+    chain += rop.mem_and(0xdeadbeef, 0x24, size=1)
+    state = chain.exec()
+    assert state.memory.load(0xdeadbeef, 1).concrete_value == 0
+
+    # 32-bit and
+    chain = rop.write_to_mem(0xdeadbeef, b'\x41\x42\x43\x44')
+    chain += rop.mem_and(0xdeadbeef, 0x12345678, size=4)
+    state = chain.exec()
+    assert state.memory.load(0xdeadbeef, 4, endness=proj.arch.memory_endness).concrete_value == 0x4240
+
+    # add is tested test_add_to_mem
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

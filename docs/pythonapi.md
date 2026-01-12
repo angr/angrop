@@ -35,8 +35,11 @@ chain = rop.set_regs(rax=0x1337, rbx=0x56565656)
 # moving registers
 chain = rop.move_regs(rax='rdx')
 
-# adding values to memory
-chain = rop.add_to_mem(0x804f124, 0x41414141)
+# changing memory content
+chain = rop.mem_add(0x804f124, 0x41414141)
+chain = rop.mem_xor(0x804f124, 0x41414141)
+chain = rop.mem_or(0x804f124, 0x41414141)
+chain = rop.mem_and(0x804f124, 0x41414141)
 
 # writing to memory 
 # writes "/bin/sh\0" to address 0x61b100
