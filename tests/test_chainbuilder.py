@@ -1,9 +1,11 @@
 import os
+from unittest import mock
 
 import claripy
 
 import angr
 import angrop # pylint: disable=unused-import
+from angr.storage.memory_mixins.simple_interface_mixin import SimpleInterfaceMixin
 from angrop.rop_value import RopValue
 from angrop.rop_block import RopBlock
 from angrop.errors import RopException
@@ -1247,6 +1249,71 @@ def test_push_pop_move():
     rop.find_gadgets_single_threaded(show_progress=False)
     chain = rop.move_regs(rdi='rax')
     assert chain
+
+def test_write_to_mem_badbyte_transform():
+    cache_path = os.path.join(CACHE_DIR, "amd64_glibc_2.19")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path, optimize=False)
+    else:
+        rop.find_gadgets()
+
+    rop.set_badbytes([0x00, 0x0A])
+    chain = rop.write_to_mem(0xdeadbeef, b"\x00", fill_byte=b"A")
+    state = chain.exec()
+    assert state.memory.load(0xdeadbeef, 1).concrete_value == 0
+
+    payload = chain.payload_str()
+    assert b"\x00" not in payload
+    assert b"\x0A" not in payload
+
+def test_write_to_mem_badbyte_multibyte():
+    cache_path = os.path.join(CACHE_DIR, "amd64_glibc_2.19")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path, optimize=False)
+    else:
+        rop.find_gadgets()
+
+    rop.set_badbytes([0x00, 0x0A])
+    target = b"\x00\x41\x00\x42"
+    chain = rop.write_to_mem(0xdeadbf00, target, fill_byte=b"\xff")
+    state = chain.exec()
+    assert state.memory.load(0xdeadbf00, len(target), endness=proj.arch.memory_endness).concrete_value == int.from_bytes(target, proj.arch.memory_endness)
+
+    payload = chain.payload_str()
+    assert b"\x00" not in payload
+    assert b"\x0A" not in payload
+
+def test_mem_changer_store_size_and_endness():
+    cache_path = os.path.join(CACHE_DIR, "amd64_glibc_2.19")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path, optimize=False)
+    else:
+        rop.find_gadgets()
+
+    target = 0xdeadbef0
+    calls = []
+    original_store = SimpleInterfaceMixin.store
+
+    def recording_store(self, addr, data, size=None, **kwargs):
+        if isinstance(addr, int) and addr == target:
+            calls.append((size, kwargs.get("endness")))
+        return original_store(self, addr, data, size=size, **kwargs)
+
+    with mock.patch.object(SimpleInterfaceMixin, "store", recording_store):
+        rop.mem_or(target, 0x12, size=1)
+
+    assert calls, "mem_or should perform a store to the target address during chain construction"
+    assert all(size == 1 for size, _ in calls)
+    assert all(endness == proj.arch.memory_endness for _, endness in calls)
 
 def run_all():
     functions = globals()
