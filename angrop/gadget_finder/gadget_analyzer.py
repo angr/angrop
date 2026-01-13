@@ -921,6 +921,7 @@ class GadgetAnalyzer:
                 mem_access.data_dependencies = rop_utils.get_ast_dependency(a.data.ast)
                 mem_access.data_controllers = rop_utils.get_ast_controllers(init_state, a.data.ast,
                                                                             mem_access.data_dependencies)
+                mem_access.data_depth = a.data.ast.depth
             else:
                 mem_access.data_constant = init_state.solver.eval(a.data.ast)
         elif a.action == "read":
@@ -1001,6 +1002,7 @@ class GadgetAnalyzer:
         mem_change.op = write_action.data.ast.op
         mem_change.data_dependencies = data_dependencies
         mem_change.data_stack_controllers = data_stack_controllers
+        mem_change.data_depth = sym_data.depth
         mem_change.data_controllers = data_controllers
         mem_change.data_size = write_action.data.ast.size()
         mem_change.addr_size = write_action.addr.ast.size()

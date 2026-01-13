@@ -496,6 +496,39 @@ def test_riscv_zero_register():
     gs = rop.analyze_addr(0x0000000000011f32)
     assert len(gs) == 1
 
+def test_stack_writes():
+    proj = angr.load_shellcode(
+        """
+        push rax; jmp rsi
+        """,
+        "x86_64",
+        load_address=0,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP()
+    g = rop.analyze_gadget(0)
+
+    assert g
+    assert g.stack_writes
+    assert 0 in g.stack_writes
+    assert g.stack_writes[0] == 'rax'
+
+    proj = angr.load_shellcode(
+        """
+        push rax; call rsi
+        """,
+        "x86_64",
+        load_address=0,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP()
+    g = rop.analyze_gadget(0)
+
+    assert g
+    assert g.stack_writes
+    assert 8 in g.stack_writes
+    assert g.stack_writes[8] == 'rax'
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

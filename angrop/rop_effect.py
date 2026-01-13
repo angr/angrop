@@ -20,6 +20,7 @@ class RopMemAccess:
         self.data_dependencies = set()
         self.data_controllers = set()
         self.data_stack_controllers = set()
+        self.data_depth = None
         self.addr_constant = None
         self.stack_offset = None # addr_constant - init_sp
         self.data_constant = None
@@ -182,6 +183,20 @@ class RopEffect:
             assert res > 0
             res -= 1
         return res
+
+    @property
+    def stack_writes(self):
+        """
+        offsets relative to the final sp
+        """
+        d = {}
+        for m in self.mem_writes:
+            if m.stack_offset is None:
+                continue
+            if m.data_depth != 1:
+                continue
+            d[m.stack_offset - self.stack_change] = list(m.data_controllers)[0]
+        return d
 
     @property
     def popped_regs(self):
