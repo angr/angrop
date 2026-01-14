@@ -31,13 +31,12 @@ class RegSetter(Builder):
         self.hard_chain_cache: dict[tuple, list] = None # type: ignore
         # Estimate of how difficult it is to set each register.
         # all self-contained and not symbolic access
-        self._reg_setting_dict: dict[str, list] = None # type: ignore
+        self._reg_setting_dict: dict[str, list] = defaultdict(list)
 
     def bootstrap(self):
         self._reg_setting_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
 
         # update reg_setting_dict
-        self._reg_setting_dict = defaultdict(list)
         for g in self._reg_setting_gadgets:
             if not g.self_contained:
                 continue
@@ -60,7 +59,7 @@ class RegSetter(Builder):
                 self._reg_setting_dict[reg].append(rb)
         for reg in self._reg_setting_dict:
             lst = self._reg_setting_dict[reg]
-            self._reg_setting_dict[reg] = sorted(lst, key=lambda x: x.stack_change)
+            self._reg_setting_dict[reg] = sorted(lst, key=lambda x: (x.stack_change, x.isn_count))
 
     def _expand_ropblocks(self, mixins):
         """

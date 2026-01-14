@@ -197,6 +197,9 @@ class RopEffect:
                 continue
             if m.data_depth != 1:
                 continue
+            # gadgets like push [rax]; ret has no data_controllers because it is a symbolic read
+            if not m.data_controllers:
+                continue
             d[m.stack_offset - self.stack_change] = list(m.data_controllers)[0]
         return d
 

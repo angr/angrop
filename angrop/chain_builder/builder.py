@@ -696,7 +696,7 @@ class Builder:
                 pass
         return None
 
-    def _normalize_jmp_mem(self, gadget, pre_preserve=None, post_preserve=None):
+    def _normalize_jmp_mem(self, gadget, pre_preserve=None, post_preserve=None, final_gadget=None):
         if not self.chain_builder._can_do_write:
             return None
         if pre_preserve is None:
@@ -731,23 +731,27 @@ class Builder:
 
         try:
             # step1: find a shifter that clean up the jmp_mem call
-            sc = abs(gadget.stack_change) + self.project.arch.bytes
-            shifter = None
-            # find the smallest shifter
-            shift_gadgets = self.chain_builder._shifter.shift_gadgets
-            keys = sorted(shift_gadgets.keys())
-            shifter_list = [shift_gadgets[x] for x in keys if x >= sc]
-            if not shifter_list:
-                return None
-            shifter_list = itertools.chain.from_iterable(shifter_list)
-            for shifter in shifter_list:
-                if shifter.pc_offset < shift_size:
-                    continue
-                if not shifter.changed_regs.intersection(post_preserve):
-                    break
+            # if final_gadget is passed in, then it is the shifter
+            if final_gadget:
+                shifter = final_gadget
             else:
-                return None
-            assert shifter.transit_type == 'pop_pc'
+                sc = abs(gadget.stack_change) + self.project.arch.bytes
+                shifter = None
+                # find the smallest shifter
+                shift_gadgets = self.chain_builder._shifter.shift_gadgets
+                keys = sorted(shift_gadgets.keys())
+                shifter_list = [shift_gadgets[x] for x in keys if x >= sc]
+                if not shifter_list:
+                    return None
+                shifter_list = itertools.chain.from_iterable(shifter_list)
+                for shifter in shifter_list:
+                    if shifter.pc_offset < shift_size:
+                        continue
+                    if not shifter.changed_regs.intersection(post_preserve):
+                        break
+                else:
+                    return None
+                assert shifter.transit_type == 'pop_pc'
 
             # step2: write the shifter to a writable location
             data = struct.pack(self.project.arch.struct_fmt(), shifter.addr)
@@ -813,7 +817,7 @@ class Builder:
         except (RopException, IndexError):
             return None
 
-    def normalize_gadget(self, gadget, pre_preserve=None, post_preserve=None, to_set_regs=None):
+    def normalize_gadget(self, gadget, pre_preserve=None, post_preserve=None, to_set_regs=None, final_gadget=None):
         """
         pre_preserve: what registers to preserve before executing the gadget
         post_preserve: what registers to preserve after executing the gadget
@@ -858,8 +862,10 @@ class Builder:
                 if tmp is None:
                     return None
                 gadgets = tmp + gadgets
+                if final_gadget:
+                    gadgets += [final_gadget]
             elif gadget.transit_type == 'jmp_mem':
-                rb = self._normalize_jmp_mem(gadget, pre_preserve=pre_preserve, post_preserve=post_preserve)
+                rb = self._normalize_jmp_mem(gadget, pre_preserve=pre_preserve, post_preserve=post_preserve, final_gadget=final_gadget)
                 return rb
             elif gadget.transit_type == 'pop_pc':
                 pass
