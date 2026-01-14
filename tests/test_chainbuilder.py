@@ -1197,6 +1197,57 @@ def test_mem_changer():
 
     # add is tested test_add_to_mem
 
+def test_push_pop_move():
+    # simple push-pop
+    proj = angr.load_shellcode(
+        """
+        push rax; jmp rsi
+        pop rsi; ret
+        pop rdi; ret
+        """,
+        "x86_64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP()
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.move_regs(rdi='rax')
+    chain.pp()
+
+    proj = angr.load_shellcode(
+        """
+        push rax; jmp qword ptr [rsi]
+        pop rsi; ret
+        pop rdi; ret
+        pop rcx; pop rdx; ret
+        mov [rcx], rdx; ret
+        """,
+        "x86_64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP()
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.move_regs(rdi='rax')
+    assert chain
+
+    proj = angr.load_shellcode(
+        """
+        push rax; call qword ptr [rsi]
+        pop rsi; ret
+        pop rdx; pop rdi; ret
+        pop rcx; pop rdx; ret
+        mov [rcx], rdx; ret
+        """,
+        "x86_64",
+        load_address=0x400000,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP()
+    rop.find_gadgets_single_threaded(show_progress=False)
+    chain = rop.move_regs(rdi='rax')
+    assert chain
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
