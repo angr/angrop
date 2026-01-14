@@ -1,3 +1,4 @@
+import re
 import math
 import ctypes
 import logging
@@ -583,7 +584,13 @@ class GadgetAnalyzer:
                 if extended is not None and bits == 64:
                     if extended <= 32:
                         bits = 32
-                pop = RopRegPop(reg, bits)
+                ast_depth = ast.depth
+                if ast.op == 'Reverse':
+                    ast_depth -= 1
+                name = list(ast.variables)[0]
+                re_res = re.match(r"symbolic_stack_(\d+)_", name)
+                offset = int(re_res.group(1)) * self.project.arch.bytes # type:ignore
+                pop = RopRegPop(reg, bits, offset, ast_depth)
                 gadget.reg_pops.add(pop)
                 gadget.changed_regs.add(reg)
             else:

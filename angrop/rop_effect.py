@@ -99,10 +99,12 @@ class RopRegPop:
     """
     a class to represent register pop effect
     """
-    def __init__(self, reg, bits):
+    def __init__(self, reg, bits, offset, depth):
         assert type(reg) is str
         self.reg = reg
         self.bits = bits
+        self.stack_offset = offset
+        self.ast_depth = depth
 
     def __hash__(self):
         return hash((self.reg, self.bits))
