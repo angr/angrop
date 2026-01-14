@@ -84,7 +84,6 @@ class PushPopMover(Builder):
             if not good_pusher:
                 continue
             todos[(from_reg, to_reg)] = (good_pusher, good_popper)
-            # jmp_reg needs
         return todos
 
     def normalize_single_threaded(self):

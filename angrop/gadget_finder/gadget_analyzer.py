@@ -1147,6 +1147,11 @@ class GadgetAnalyzer:
             if a.action == "read":
                 gadget.mem_reads.append(mem_access)
             if a.action == "write":
+                # if two writes at the same address, the second one overrules the first one
+                if mem_access.stack_offset is not None:
+                    for m in gadget.mem_writes:
+                        if mem_access.stack_offset == m.stack_offset:
+                            gadget.mem_writes.remove(m)
                 gadget.mem_writes.append(mem_access)
         return True
 

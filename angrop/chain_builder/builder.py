@@ -878,6 +878,9 @@ class Builder:
             if rb is None:
                 return None
 
+            if final_gadget:
+                return rb
+
             # normalize non-positive stack_change
             if gadget.stack_change <= 0:
                 shift_gadgets = self.chain_builder._shifter.shift_gadgets
