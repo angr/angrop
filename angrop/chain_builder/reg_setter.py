@@ -53,13 +53,28 @@ class RegSetter(Builder):
         self.hard_chain_cache = {}
 
     #### Utility Functions ####
+    def keep_best_blocks(self, lst):
+        """
+        in a list of ropblocks, remove strictly worse ropblocks
+        """
+        lst = sorted(lst, key=lambda x: self._comparison_tuple(x))
+        idx = 0
+        while idx < len(lst)-1:
+            g = lst[idx]
+            t = self._comparison_tuple(g)
+            to_remove = [g1 for g1 in lst[idx+1:] if all(t[i] <= self._comparison_tuple(g1)[i] for i in range(1, len(t))) and not (g.changed_regs - g1.changed_regs)]
+            for x in to_remove:
+                lst.remove(x)
+            idx += 1
+        return lst
+
     def _insert_to_reg_dict(self, gs):
         for rb in gs:
             for reg in rb.popped_regs:
                 self._reg_setting_dict[reg].append(rb)
         for reg in self._reg_setting_dict:
             lst = self._reg_setting_dict[reg]
-            self._reg_setting_dict[reg] = sorted(lst, key=lambda x: (x.stack_change, x.isn_count))
+            self._reg_setting_dict[reg] = self.keep_best_blocks(lst)
 
     def _expand_ropblocks(self, mixins):
         """
@@ -663,17 +678,6 @@ class RegSetter(Builder):
     def _comparison_tuple(self, g):
         return (len(g.changed_regs-g.popped_regs), g.stack_change, g.num_sym_mem_access,
                    g.isn_count, int(g.has_conditional_branch is True))
-
-    def _same_effect(self, g1, g2): # pylint: disable=no-self-use
-        if g1.popped_regs != g2.popped_regs:
-            return False
-        if g1.concrete_regs != g2.concrete_regs:
-            return False
-        if g1.reg_dependencies != g2.reg_dependencies:
-            return False
-        if g1.transit_type != g2.transit_type:
-            return False
-        return True
 
     def filter_gadgets(self, gadgets):
         """
