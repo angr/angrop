@@ -200,7 +200,13 @@ class RopEffect:
             # gadgets like push [rax]; ret has no data_controllers because it is a symbolic read
             if not m.data_controllers:
                 continue
-            d[m.stack_offset - self.stack_change] = list(m.data_controllers)[0]
+            reg = list(m.data_controllers)[0]
+            if hasattr(self, "transit_type"):
+                if self.transit_type == 'jmp_reg' and self.pc_reg == reg: # type: ignore
+                    continue
+                if self.transit_type == 'jmp_mem' and any(v.startswith(f'sreg_{reg}') for v in self.pc_target.variables): # type: ignore
+                    continue
+            d[m.stack_offset - self.stack_change] = reg
         return d
 
     @property

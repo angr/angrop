@@ -570,6 +570,22 @@ def test_stack_writes():
     assert len(g.mem_writes) == 1
     assert g.mem_writes[0].data_constant == 4
 
+    proj = angr.load_shellcode(
+        """
+        push rax; jmp rax
+        push rax; jmp [rax]
+        """,
+        "x86_64",
+        load_address=0,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    g = rop.analyze_gadget(0)
+    assert not g.stack_writes
+    g = rop.analyze_gadget(3)
+    assert not g.stack_writes
+
 def test_reg_pops():
     proj = angr.load_shellcode(
         """
