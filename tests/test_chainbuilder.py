@@ -1212,7 +1212,7 @@ def test_push_pop_move():
     rop = proj.analyses.ROP()
     rop.find_gadgets_single_threaded(show_progress=False)
     chain = rop.move_regs(rdi='rax')
-    chain.pp()
+    assert chain
 
     proj = angr.load_shellcode(
         """

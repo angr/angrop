@@ -62,7 +62,10 @@ class RegSetter(Builder):
         while idx < len(lst)-1:
             g = lst[idx]
             t = self._comparison_tuple(g)
-            to_remove = [g1 for g1 in lst[idx+1:] if all(t[i] <= self._comparison_tuple(g1)[i] for i in range(1, len(t))) and not (g.changed_regs - g1.changed_regs)]
+            e = self._effect_tuple(g)
+            to_remove = [g1 for g1 in lst[idx+1:] if self._effect_tuple(g1) == e
+                         and all(t[i] <= self._comparison_tuple(g1)[i] for i in range(1, len(t)))
+                         and not (g.changed_regs - g1.changed_regs)]
             for x in to_remove:
                 lst.remove(x)
             idx += 1
@@ -669,11 +672,11 @@ class RegSetter(Builder):
         v1 = tuple(sorted(g.popped_regs))
         v2 = tuple(sorted(g.concrete_regs.items()))
         v3 = []
-        for x,y in g.reg_dependencies.items():
-            v3.append((x, tuple(sorted(y))))
-        v3 = tuple(sorted(v3))
-        v4 = g.transit_type
-        return (v1, v2, v3, v4)
+        if isinstance(g, RopBlock):
+            v3 = 'pop_pc'
+        else:
+            v3 = g.transit_type
+        return (v1, v2, v3)
 
     def _comparison_tuple(self, g):
         return (len(g.changed_regs-g.popped_regs), g.stack_change, g.num_sym_mem_access,
