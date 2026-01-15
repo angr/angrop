@@ -17,12 +17,19 @@ from ..rop_effect import RopRegMove
 l = logging.getLogger(__name__)
 
 _global_reg_mover = None # type: ignore
+_global_push_pop_mover = None # type: ignore
+
 def _set_global_reg_mover(reg_mover, ptr_list):
     global _global_reg_mover# pylint: disable=global-statement
     _global_reg_mover = reg_mover
     Builder.used_writable_ptrs = ptr_list
 
-def worker_func(t):
+def _set_global_push_pop_mover(push_pop_mover, ptr_list):
+    global _global_push_pop_mover# pylint: disable=global-statement
+    _global_push_pop_mover = push_pop_mover
+    Builder.used_writable_ptrs = ptr_list
+
+def reg_mover_worker_func(t):
     new_move, gadget = t
     gadget.project = _global_reg_mover.project # type: ignore
     pre_preserve = {new_move.from_reg}
@@ -34,6 +41,25 @@ def worker_func(t):
     if rb is not None:
         solver = rb._blank_state.solver
     return new_move, gadget.addr, solver, rb
+
+def push_pop_mover_worker_func(t):
+    key, value = t
+    from_reg, to_reg = key
+    project = _global_push_pop_mover.project # type: ignore
+    move = RopRegMove(from_reg, to_reg, project.arch.bits)
+    pusher, popper = value
+    pusher.project = project
+    popper.project = project
+    rb = _global_push_pop_mover.normalize_gadget(pusher, # type: ignore
+                                                 pre_preserve={from_reg},
+                                                 post_preserve={to_reg},
+                                                 final_gadget=popper)
+    if rb is not None and move in rb.reg_moves:
+        solver = rb._blank_state.solver
+    else:
+        rb = None
+        solver = None
+    return move, solver, rb
 
 class PushPopMover(Builder):
     def __init__(self, chain_builder, reg_mover):
@@ -96,12 +122,32 @@ class PushPopMover(Builder):
             if rb and move in rb.reg_moves:
                 yield move, rb
 
+    def normalize_multiprocessing(self, processes):
+        todos = self._optimize_todos()
+        with mp.Manager() as manager:
+            # HACK: ideally, used_ptrs should be a resource of each ropblock that can be reassigned
+            # when conflict happens. but currently, I'm being lazy and just make sure every pointer
+            # is different
+            ptr_list = manager.list(Builder.used_writable_ptrs)
+            initargs = (self, ptr_list)
+            with mp.Pool(processes=processes, initializer=_set_global_push_pop_mover, initargs=initargs) as pool:
+                for move, solver, rb in pool.imap_unordered(push_pop_mover_worker_func, todos.items()):
+                    if rb is None:
+                        continue
+                    state = rop_utils.make_symbolic_state(self.project, self.arch.reg_list, 0)
+                    state.solver = solver
+                    rb.set_project(self.project)
+                    rb.set_builder(self)
+                    rb._blank_state = state
+                    yield move, rb
+            Builder.used_writable_ptrs = list(ptr_list)
+
     def optimize(self, processes):
         res = False
         if processes == 1:
             iterable = self.normalize_single_threaded()
         else:
-            raise
+            iterable = self.normalize_multiprocessing(processes)
         for move, rb in iterable:
             res = True
             for move in rb.reg_moves:
@@ -234,7 +280,7 @@ class RegMover(Builder):
             ptr_list = manager.list(Builder.used_writable_ptrs)
             initargs = (self, ptr_list)
             with mp.Pool(processes=processes, initializer=_set_global_reg_mover, initargs=initargs) as pool:
-                for new_move, addr, solver, rb in pool.imap_unordered(worker_func, self.normalize_todos()):
+                for new_move, addr, solver, rb in pool.imap_unordered(reg_mover_worker_func, self.normalize_todos()):
                     if rb is None:
                         continue
                     state = rop_utils.make_symbolic_state(self.project, self.arch.reg_list, 0)
