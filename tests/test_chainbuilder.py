@@ -1260,13 +1260,13 @@ def test_write_to_mem_badbyte_transform():
     else:
         rop.find_gadgets()
 
-    rop.set_badbytes([0x00, 0x0A])
-    chain = rop.write_to_mem(0xdeadbeef, b"\x00", fill_byte=b"A")
+    rop.set_badbytes([0x01, 0x0A])
+    chain = rop.write_to_mem(0xdeadbeef, b"\x01", fill_byte=b"A")
     state = chain.exec()
-    assert state.memory.load(0xdeadbeef, 1).concrete_value == 0
+    assert state.memory.load(0xdeadbeef, 1).concrete_value == 0x01
 
     payload = chain.payload_str()
-    assert b"\x00" not in payload
+    assert b"\x01" not in payload
     assert b"\x0A" not in payload
 
 def test_write_to_mem_badbyte_multibyte():
@@ -1279,15 +1279,15 @@ def test_write_to_mem_badbyte_multibyte():
     else:
         rop.find_gadgets()
 
-    rop.set_badbytes([0x00, 0x0A])
-    target = b"\x00\x41\x00\x42"
+    rop.set_badbytes([0x10, 0x0A])
+    target = b"\x00\x10\x00\x42"
     chain = rop.write_to_mem(0xdeadbf00, target, fill_byte=b"\xff")
     state = chain.exec()
     endian = "little" if proj.arch.memory_endness == "Iend_LE" else "big"
     assert state.memory.load(0xdeadbf00, len(target), endness=proj.arch.memory_endness).concrete_value == int.from_bytes(target, endian)
 
     payload = chain.payload_str()
-    assert b"\x00" not in payload
+    assert b"\x10" not in payload
     assert b"\x0A" not in payload
 
 def test_mem_changer_store_size_and_endness():
