@@ -158,30 +158,6 @@ class MemWriter(Builder):
             seen.add(i)
             yield i
 
-    def _find_single_byte_transform(self, target, badbytes, preferred_init=None):
-        """
-        find a safe (init, op, arg) tuple so that op(init, arg) == target
-        and both init/arg avoid badbytes
-        """
-        if target not in range(0x100):
-            return None
-        badbytes = set(badbytes)
-        ops = (
-            ("xor", lambda a, b: (a ^ b) & 0xFF),
-            ("or", lambda a, b: (a | b) & 0xFF),
-            ("and", lambda a, b: (a & b) & 0xFF),
-            ("add", lambda a, b: (a + b) & 0xFF),
-        )
-        inits = list(self._byte_candidates(preferred_init, badbytes))
-        args = [x for x in range(0x100) if x not in badbytes]
-
-        for op, func in ops:
-            for init in inits:
-                for arg in args:
-                    if func(init, arg) == target:
-                        return init, op, arg
-        return None
-
     def _solve_byte_pair(self, target, op, badbytes, preferred_init=None):
         """
         return (init_byte, arg_byte) for a given op if possible
@@ -254,7 +230,7 @@ class MemWriter(Builder):
                     continue
                 if any(b in badbytes for b in arg_blob):
                     continue
-                endian = "little" if "LE" in str(self.project.arch.memory_endness) else "big"
+                endian = "little" if self.project.arch.memory_endness == "Iend_LE" else "big"
                 arg_val = int.from_bytes(arg_blob, endian)
                 return init_blob, op, arg_val
         return None
@@ -610,6 +586,7 @@ class MemWriter(Builder):
         while offset < data_len:
             made_progress = False
             for chunk_size in chunk_sizes:
+                # TODO: check for @https://github.com/angr/angrop/pull/144#discussion_r2696998263
                 if offset + chunk_size > data_len:
                     continue
                 ptr = addr + offset
