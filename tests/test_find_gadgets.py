@@ -349,35 +349,6 @@ def test_syscall_block_hash():
     for addr in [0x402de7, 0x425a00, 0x43e083, 0x4b146c]:
         assert addr in tasks
 
-def test_gadget_filtering2():
-    proj = angr.load_shellcode(
-        """
-        pop rbp; add dh, dh; ret
-        pop rbp; or dh, dh; ret
-        pop rbp; add cl, ch; ret
-        pop rbp; sub al, 0xf6; ret
-        pop rbp; or al, ch; ret
-        pop rbp; add bl, ch; ret
-        pop rbp; ret
-        pop rbp; add bh, dh; ret
-        pop rbp; and dh, dh; ret
-        pop rbp; and bh, dh; ret
-        pop rbp; ret
-        shr cl, 0x99; pop rbp; ret
-        cdq ; pop rbp; ret
-        imul al; pop rbp; ret
-        shr cl, 0x3f; pop rbp; ret
-        xor eax, 0x7502e383; cmp cl, byte ptr [rax - 0x75]; pop rbp; add bh, dh; ret
-        """,
-        "amd64",
-        load_address=0x400000,
-        auto_load_libs=False,
-    )
-    rop = proj.analyses.ROP()
-    rop.find_gadgets_single_threaded(show_progress=False)
-    assert len(rop.chain_builder._reg_setter._reg_setting_dict['rbp']) == 1
-    assert rop.chain_builder._reg_setter._reg_setting_dict['rbp'][0].dstr().strip() == "pop rbp; ret"
-
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

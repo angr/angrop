@@ -53,23 +53,6 @@ class RegSetter(Builder):
         self.hard_chain_cache = {}
 
     #### Utility Functions ####
-    def keep_best_blocks(self, lst):
-        """
-        in a list of ropblocks, remove strictly worse ropblocks
-        """
-        lst = sorted(lst, key=self._comparison_tuple)
-        idx = 0
-        while idx < len(lst)-1:
-            g = lst[idx]
-            t = self._comparison_tuple(g)
-            e = self._effect_tuple(g)
-            to_remove = [g1 for g1 in lst[idx+1:] if self._effect_tuple(g1) == e
-                         and all(t[i] <= self._comparison_tuple(g1)[i] for i in range(1, len(t)))
-                         and not (g.changed_regs - g1.changed_regs)] # pylint: disable=superfluous-parens
-            for x in to_remove:
-                lst.remove(x)
-            idx += 1
-        return lst
 
     def _insert_to_reg_dict(self, gs):
         for rb in gs:
@@ -77,7 +60,7 @@ class RegSetter(Builder):
                 self._reg_setting_dict[reg].append(rb)
         for reg in self._reg_setting_dict:
             lst = self._reg_setting_dict[reg]
-            self._reg_setting_dict[reg] = self.keep_best_blocks(lst)
+            self._reg_setting_dict[reg] = sorted(lst, key=lambda x: (x.stack_change, x.isn_count))
 
     def _expand_ropblocks(self, mixins):
         """
@@ -672,11 +655,11 @@ class RegSetter(Builder):
         v1 = tuple(sorted(g.popped_regs))
         v2 = tuple(sorted(g.concrete_regs.items()))
         v3 = []
-        if isinstance(g, RopBlock):
-            v3 = 'pop_pc'
-        else:
-            v3 = g.transit_type
-        return (v1, v2, v3)
+        for x,y in g.reg_dependencies.items():
+            v3.append((x, tuple(sorted(y))))
+        v3 = tuple(sorted(v3))
+        v4 = g.transit_type
+        return (v1, v2, v3, v4)
 
     def _comparison_tuple(self, g):
         return (len(g.changed_regs-g.popped_regs), g.stack_change, g.num_sym_mem_access,
