@@ -62,6 +62,10 @@ def push_pop_mover_worker_func(t):
     return move, solver, rb
 
 class PushPopMover(Builder):
+    """
+    construct register moves by chaining push/pop, like push rax; jmp rbx => pop rdi; ret
+    to `mov rdi, rax`
+    """
     def __init__(self, chain_builder, reg_mover):
         super().__init__(chain_builder)
         self._stack_write_dict = defaultdict(list)
@@ -80,6 +84,7 @@ class PushPopMover(Builder):
         """
         todos = {}
         graph = self._reg_mover._graph
+        reg_setting_dict = self.chain_builder._reg_setter._reg_setting_dict
         for from_reg, to_reg in itertools.product(self.arch.reg_list, self.arch.reg_list):
             if from_reg == to_reg:
                 continue
@@ -87,7 +92,7 @@ class PushPopMover(Builder):
             if graph.has_edge(*edge):
                 if graph.get_edge_data(*edge)['bits'] == self.project.arch.bits:
                     continue
-            pop_gadgets = [g for g in self.chain_builder._reg_setter._reg_setting_dict[to_reg] if isinstance(g, RopGadget)]
+            pop_gadgets = [g for g in reg_setting_dict[to_reg] if isinstance(g, RopGadget)]
             if not pop_gadgets:
                 continue
             push_gadgets = self._stack_write_dict[from_reg]
@@ -96,8 +101,10 @@ class PushPopMover(Builder):
             good_pusher = None
             good_popper = None
             for offset in range(0, 0x20, self.project.arch.bytes):
-                matched_pop_gadgets = [rb for rb in pop_gadgets if any(pop.stack_offset == offset and pop.reg == to_reg for pop in rb.reg_pops)]
-                matched_push_gadgets = [g for g in push_gadgets if offset in g.stack_writes and g.stack_writes[offset] == from_reg]
+                matched_pop_gadgets = [rb for rb in pop_gadgets if any(pop.stack_offset == offset and pop.reg == to_reg
+                                                                       for pop in rb.reg_pops)]
+                matched_push_gadgets = [g for g in push_gadgets if
+                                        offset in g.stack_writes and g.stack_writes[offset] == from_reg]
                 matched_push_gadgets = sorted(matched_push_gadgets, key=lambda g: g.max_stack_offset)
                 matched_pop_gadgets = sorted(matched_pop_gadgets, key=lambda g: (g.stack_change, len(g.changed_regs)))
                 for pusher, popper in itertools.product(matched_push_gadgets, matched_pop_gadgets):
@@ -169,12 +176,13 @@ class PushPopMover(Builder):
         filter gadgets having the same effect
         """
         # first: filter out gadgets that don't do stack_writes
-        gadgets = {g for g in gadgets if g.stack_writes and not g.has_conditional_branch and not g.has_symbolic_access()}
+        gadgets = {g for g in gadgets if g.stack_writes and
+                   not g.has_conditional_branch and not g.has_symbolic_access()}
         gadgets = self._filter_gadgets(gadgets)
         return gadgets
 
     def _effect_tuple(self, g):
-        d = tuple(sorted([(x,y) for x,y in g.stack_writes.items()], key=lambda x: x[0]))
+        d = tuple(sorted(list(g.stack_writes.items()), key=lambda x: x[0]))
         return d
 
     def _comparison_tuple(self, g):

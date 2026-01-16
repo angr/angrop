@@ -865,7 +865,10 @@ class Builder:
                 if final_gadget:
                     gadgets += [final_gadget]
             elif gadget.transit_type == 'jmp_mem':
-                rb = self._normalize_jmp_mem(gadget, pre_preserve=pre_preserve, post_preserve=post_preserve, final_gadget=final_gadget)
+                rb = self._normalize_jmp_mem(gadget,
+                                             pre_preserve=pre_preserve,
+                                             post_preserve=post_preserve,
+                                             final_gadget=final_gadget)
                 return rb
             elif gadget.transit_type == 'pop_pc':
                 pass

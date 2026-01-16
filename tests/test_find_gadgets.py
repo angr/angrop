@@ -188,7 +188,7 @@ def local_multiprocess_analyze_gadget_list():
     assert gadgets[0].addr == 0x4006d8
     assert gadgets[1].addr == 0x400864
 
-def test_gadget_filtering():
+def test_gadget_filtering1():
     proj = angr.Project(os.path.join(tests_dir, "armel", "libc-2.31.so"), auto_load_libs=False)
     rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False, is_thumb=True)
     rop.analyze_gadget(0x42bca5)
@@ -349,7 +349,7 @@ def test_syscall_block_hash():
     for addr in [0x402de7, 0x425a00, 0x43e083, 0x4b146c]:
         assert addr in tasks
 
-def test_gadget_filtering():
+def test_gadget_filtering2():
     proj = angr.load_shellcode(
         """
         pop rbp; add dh, dh; ret

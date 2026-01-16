@@ -57,7 +57,7 @@ class RegSetter(Builder):
         """
         in a list of ropblocks, remove strictly worse ropblocks
         """
-        lst = sorted(lst, key=lambda x: self._comparison_tuple(x))
+        lst = sorted(lst, key=self._comparison_tuple)
         idx = 0
         while idx < len(lst)-1:
             g = lst[idx]
@@ -65,7 +65,7 @@ class RegSetter(Builder):
             e = self._effect_tuple(g)
             to_remove = [g1 for g1 in lst[idx+1:] if self._effect_tuple(g1) == e
                          and all(t[i] <= self._comparison_tuple(g1)[i] for i in range(1, len(t)))
-                         and not (g.changed_regs - g1.changed_regs)]
+                         and not (g.changed_regs - g1.changed_regs)] # pylint: disable=superfluous-parens
             for x in to_remove:
                 lst.remove(x)
             idx += 1
