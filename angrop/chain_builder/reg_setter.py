@@ -31,13 +31,12 @@ class RegSetter(Builder):
         self.hard_chain_cache: dict[tuple, list] = None # type: ignore
         # Estimate of how difficult it is to set each register.
         # all self-contained and not symbolic access
-        self._reg_setting_dict: dict[str, list] = None # type: ignore
+        self._reg_setting_dict: dict[str, list] = defaultdict(list)
 
     def bootstrap(self):
         self._reg_setting_gadgets = self.filter_gadgets(self.chain_builder.gadgets)
 
         # update reg_setting_dict
-        self._reg_setting_dict = defaultdict(list)
         for g in self._reg_setting_gadgets:
             if not g.self_contained:
                 continue
@@ -54,13 +53,14 @@ class RegSetter(Builder):
         self.hard_chain_cache = {}
 
     #### Utility Functions ####
+
     def _insert_to_reg_dict(self, gs):
         for rb in gs:
             for reg in rb.popped_regs:
                 self._reg_setting_dict[reg].append(rb)
         for reg in self._reg_setting_dict:
             lst = self._reg_setting_dict[reg]
-            self._reg_setting_dict[reg] = sorted(lst, key=lambda x: x.stack_change)
+            self._reg_setting_dict[reg] = sorted(lst, key=lambda x: (x.stack_change, x.isn_count))
 
     def _expand_ropblocks(self, mixins):
         """
@@ -664,17 +664,6 @@ class RegSetter(Builder):
     def _comparison_tuple(self, g):
         return (len(g.changed_regs-g.popped_regs), g.stack_change, g.num_sym_mem_access,
                    g.isn_count, int(g.has_conditional_branch is True))
-
-    def _same_effect(self, g1, g2): # pylint: disable=no-self-use
-        if g1.popped_regs != g2.popped_regs:
-            return False
-        if g1.concrete_regs != g2.concrete_regs:
-            return False
-        if g1.reg_dependencies != g2.reg_dependencies:
-            return False
-        if g1.transit_type != g2.transit_type:
-            return False
-        return True
 
     def filter_gadgets(self, gadgets):
         """

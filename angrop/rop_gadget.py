@@ -22,7 +22,7 @@ class RopGadget(RopEffect):
         # for jmp_reg, which register it jumps to
         self.pc_reg: str = None # type: ignore
         # for jmp_mem, where it jumps to
-        self.pc_target: int = None # type: ignore
+        self.pc_target = None # type: ignore
 
     @property
     def self_contained(self):

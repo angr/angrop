@@ -496,6 +496,145 @@ def test_riscv_zero_register():
     gs = rop.analyze_addr(0x0000000000011f32)
     assert len(gs) == 1
 
+def test_stack_writes():
+    proj = angr.load_shellcode(
+        """
+        push rax; jmp rsi
+        """,
+        "x86_64",
+        load_address=0,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP()
+    g = rop.analyze_gadget(0)
+
+    assert g
+    assert g.stack_writes
+    assert 0 in g.stack_writes
+    assert g.stack_writes[0] == 'rax'
+
+    proj = angr.load_shellcode(
+        """
+        push rax; call rsi
+        """,
+        "x86_64",
+        load_address=0,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP()
+    g = rop.analyze_gadget(0)
+
+    assert g
+    assert g.stack_writes
+    assert 8 in g.stack_writes
+    assert g.stack_writes[8] == 'rax'
+
+    proj = angr.load_shellcode(
+        """
+        push qword ptr [rax + rdx*2 - 0x7f]; jmp rcx
+        """,
+        "x86_64",
+        load_address=0,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP()
+    g = rop.analyze_gadget(0)
+    assert not g.stack_writes
+
+    proj = angr.load_shellcode(
+        """
+        push rdi; jmp qword ptr [rsi - 0x7f]
+        push -0x7e631700; push rdi; jmp qword ptr [rsi + 0x66]
+        """,
+        "x86_64",
+        load_address=0,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    addrs = []
+    for gadgets in rop._chain_builder._reg_mover._push_pop_mover._stack_write_dict.values():
+        addrs += [g.addr for g in gadgets]
+    assert 4 not in addrs
+
+    proj = angr.load_shellcode(
+        """
+        push rdi; popfq ; call rsi
+        """,
+        "x86_64",
+        load_address=0,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    g = rop.analyze_gadget(0)
+    assert len(g.mem_writes) == 1
+    assert g.mem_writes[0].data_constant == 4
+
+    proj = angr.load_shellcode(
+        """
+        push rax; jmp rax
+        push rax; jmp [rax]
+        """,
+        "x86_64",
+        load_address=0,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP(fast_mode=False, only_check_near_rets=False)
+    rop.find_gadgets_single_threaded(show_progress=False)
+    g = rop.analyze_gadget(0)
+    assert not g.stack_writes
+    g = rop.analyze_gadget(3)
+    assert not g.stack_writes
+
+def test_reg_pops():
+    proj = angr.load_shellcode(
+        """
+        pop rax; ret
+        """,
+        "x86_64",
+        load_address=0,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP()
+    g = rop.analyze_gadget(0)
+    assert g.reg_pops
+    reg_pop = list(g.reg_pops)[0]
+    assert reg_pop.reg == 'rax'
+    assert reg_pop.bits == 64
+    assert reg_pop.stack_offset == 0
+    assert reg_pop.ast_depth == 1
+
+    proj = angr.load_shellcode(
+        """
+        pop rax; mov eax, eax; ret
+        """,
+        "x86_64",
+        load_address=0,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP()
+    g = rop.analyze_gadget(0)
+    assert g.reg_pops
+    reg_pop = list(g.reg_pops)[0]
+    assert reg_pop.reg == 'rax'
+    assert reg_pop.bits == 32
+    assert reg_pop.stack_offset == 0
+    assert reg_pop.ast_depth > 1
+
+    proj = angr.load_shellcode(
+        """
+        pop rax; pop rbx; ret
+        """,
+        "x86_64",
+        load_address=0,
+        auto_load_libs=False,
+    )
+    rop = proj.analyses.ROP()
+    g = rop.analyze_gadget(0)
+    rbx_pops = [x for x in g.reg_pops if x.reg == 'rbx']
+    assert len(rbx_pops) == 1
+    assert rbx_pops[0].stack_offset == 8
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

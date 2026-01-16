@@ -1,3 +1,4 @@
+import re
 import math
 import ctypes
 import logging
@@ -583,7 +584,13 @@ class GadgetAnalyzer:
                 if extended is not None and bits == 64:
                     if extended <= 32:
                         bits = 32
-                pop = RopRegPop(reg, bits)
+                ast_depth = ast.depth
+                if ast.op == 'Reverse':
+                    ast_depth -= 1
+                name = list(ast.variables)[0]
+                re_res = re.match(r"symbolic_stack_(\d+)_", name)
+                offset = int(re_res.group(1)) * self.project.arch.bytes # type:ignore
+                pop = RopRegPop(reg, bits, offset, ast_depth)
                 gadget.reg_pops.add(pop)
                 gadget.changed_regs.add(reg)
             else:
@@ -921,6 +928,7 @@ class GadgetAnalyzer:
                 mem_access.data_dependencies = rop_utils.get_ast_dependency(a.data.ast)
                 mem_access.data_controllers = rop_utils.get_ast_controllers(init_state, a.data.ast,
                                                                             mem_access.data_dependencies)
+                mem_access.data_depth = a.data.ast.depth
             else:
                 mem_access.data_constant = init_state.solver.eval(a.data.ast)
         elif a.action == "read":
@@ -1001,6 +1009,7 @@ class GadgetAnalyzer:
         mem_change.op = write_action.data.ast.op
         mem_change.data_dependencies = data_dependencies
         mem_change.data_stack_controllers = data_stack_controllers
+        mem_change.data_depth = sym_data.depth
         mem_change.data_controllers = data_controllers
         mem_change.data_size = write_action.data.ast.size()
         mem_change.addr_size = write_action.addr.ast.size()
@@ -1138,6 +1147,11 @@ class GadgetAnalyzer:
             if a.action == "read":
                 gadget.mem_reads.append(mem_access)
             if a.action == "write":
+                # if two writes at the same address, the second one overrules the first one
+                if mem_access.stack_offset is not None:
+                    for m in gadget.mem_writes:
+                        if mem_access.stack_offset == m.stack_offset:
+                            gadget.mem_writes.remove(m)
                 gadget.mem_writes.append(mem_access)
         return True
 

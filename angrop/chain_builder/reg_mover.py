@@ -17,12 +17,19 @@ from ..rop_effect import RopRegMove
 l = logging.getLogger(__name__)
 
 _global_reg_mover = None # type: ignore
+_global_push_pop_mover = None # type: ignore
+
 def _set_global_reg_mover(reg_mover, ptr_list):
     global _global_reg_mover# pylint: disable=global-statement
     _global_reg_mover = reg_mover
     Builder.used_writable_ptrs = ptr_list
 
-def worker_func(t):
+def _set_global_push_pop_mover(push_pop_mover, ptr_list):
+    global _global_push_pop_mover# pylint: disable=global-statement
+    _global_push_pop_mover = push_pop_mover
+    Builder.used_writable_ptrs = ptr_list
+
+def reg_mover_worker_func(t):
     new_move, gadget = t
     gadget.project = _global_reg_mover.project # type: ignore
     pre_preserve = {new_move.from_reg}
@@ -34,6 +41,152 @@ def worker_func(t):
     if rb is not None:
         solver = rb._blank_state.solver
     return new_move, gadget.addr, solver, rb
+
+def push_pop_mover_worker_func(t):
+    key, value = t
+    from_reg, to_reg = key
+    project = _global_push_pop_mover.project # type: ignore
+    move = RopRegMove(from_reg, to_reg, project.arch.bits)
+    pusher, popper = value
+    pusher.project = project
+    popper.project = project
+    rb = _global_push_pop_mover.normalize_gadget(pusher, # type: ignore
+                                                 pre_preserve={from_reg},
+                                                 post_preserve={to_reg},
+                                                 final_gadget=popper)
+    if rb is not None and move in rb.reg_moves:
+        solver = rb._blank_state.solver
+    else:
+        rb = None
+        solver = None
+    return move, solver, rb
+
+class PushPopMover(Builder):
+    """
+    construct register moves by chaining push/pop, like push rax; jmp rbx => pop rdi; ret
+    to `mov rdi, rax`
+    """
+    def __init__(self, chain_builder, reg_mover):
+        super().__init__(chain_builder)
+        self._stack_write_dict = defaultdict(list)
+        self._reg_mover = reg_mover
+
+    def bootstrap(self):
+        gadgets = self.filter_gadgets(self.chain_builder.gadgets)
+        for g in gadgets:
+            for reg in g.stack_writes.values():
+                self._stack_write_dict[reg].append(g)
+
+    def _optimize_todos(self):
+        """
+        only try to find push/pop register moves chains if there is no way to directly move
+        between these two registers
+        """
+        todos = {}
+        graph = self._reg_mover._graph
+        reg_setting_dict = self.chain_builder._reg_setter._reg_setting_dict
+        for from_reg, to_reg in itertools.product(self.arch.reg_list, self.arch.reg_list):
+            if from_reg == to_reg:
+                continue
+            edge = (from_reg, to_reg)
+            if graph.has_edge(*edge):
+                if graph.get_edge_data(*edge)['bits'] == self.project.arch.bits:
+                    continue
+            pop_gadgets = [g for g in reg_setting_dict[to_reg] if isinstance(g, RopGadget)]
+            if not pop_gadgets:
+                continue
+            push_gadgets = self._stack_write_dict[from_reg]
+            if not push_gadgets:
+                continue
+            good_pusher = None
+            good_popper = None
+            for offset in range(0, 0x20, self.project.arch.bytes):
+                matched_pop_gadgets = [rb for rb in pop_gadgets if any(pop.stack_offset == offset and pop.reg == to_reg
+                                                                       for pop in rb.reg_pops)]
+                matched_push_gadgets = [g for g in push_gadgets if
+                                        offset in g.stack_writes and g.stack_writes[offset] == from_reg]
+                matched_push_gadgets = sorted(matched_push_gadgets, key=lambda g: g.max_stack_offset)
+                matched_pop_gadgets = sorted(matched_pop_gadgets, key=lambda g: (g.stack_change, len(g.changed_regs)))
+                for pusher, popper in itertools.product(matched_push_gadgets, matched_pop_gadgets):
+                    if popper.stack_change >= pusher.max_stack_offset + self.project.arch.bytes:
+                        good_pusher = pusher
+                        good_popper = popper
+                        break
+                if good_pusher:
+                    break
+            if not good_pusher:
+                continue
+            todos[(from_reg, to_reg)] = (good_pusher, good_popper)
+        return todos
+
+    def normalize_single_threaded(self):
+        todos = self._optimize_todos()
+        for key, value in todos.items():
+            from_reg, to_reg = key
+            move = RopRegMove(from_reg, to_reg, self.project.arch.bits)
+            pusher, popper = value
+            rb = self.normalize_gadget(pusher, pre_preserve={from_reg}, post_preserve={to_reg}, final_gadget=popper)
+            if rb and move in rb.reg_moves:
+                yield move, rb
+
+    def normalize_multiprocessing(self, processes):
+        todos = self._optimize_todos()
+        with mp.Manager() as manager:
+            # HACK: ideally, used_ptrs should be a resource of each ropblock that can be reassigned
+            # when conflict happens. but currently, I'm being lazy and just make sure every pointer
+            # is different
+            ptr_list = manager.list(Builder.used_writable_ptrs)
+            initargs = (self, ptr_list)
+            with mp.Pool(processes=processes, initializer=_set_global_push_pop_mover, initargs=initargs) as pool:
+                for move, solver, rb in pool.imap_unordered(push_pop_mover_worker_func, todos.items()):
+                    if rb is None:
+                        continue
+                    state = rop_utils.make_symbolic_state(self.project, self.arch.reg_list, 0)
+                    state.solver = solver
+                    rb.set_project(self.project)
+                    rb.set_builder(self)
+                    rb._blank_state = state
+                    yield move, rb
+            Builder.used_writable_ptrs = list(ptr_list)
+
+    def optimize(self, processes):
+        res = False
+        if processes == 1:
+            iterable = self.normalize_single_threaded()
+        else:
+            iterable = self.normalize_multiprocessing(processes)
+        for move, rb in iterable:
+            res = True
+            for move in rb.reg_moves:
+                edge = (move.from_reg, move.to_reg)
+                if self._reg_mover._graph.has_edge(*edge):
+                    edge_data = self._reg_mover._graph.get_edge_data(*edge)
+                    edge_blocks = edge_data['block']
+                    edge_blocks.append(rb)
+                    edge_data['block'] = sorted(edge_blocks, key=lambda x: x.stack_change)
+                    if move.bits > edge_data['bits']:
+                        edge_data['bits'] = move.bits
+                else:
+                    self._reg_mover._graph.add_edge(*edge, block=[rb], bits=move.bits)
+
+        return res
+
+    def filter_gadgets(self, gadgets):
+        """
+        filter gadgets having the same effect
+        """
+        # first: filter out gadgets that don't do stack_writes
+        gadgets = {g for g in gadgets if g.stack_writes and
+                   not g.has_conditional_branch and not g.has_symbolic_access()}
+        gadgets = self._filter_gadgets(gadgets)
+        return gadgets
+
+    def _effect_tuple(self, g):
+        d = tuple(sorted(list(g.stack_writes.items()), key=lambda x: x[0]))
+        return d
+
+    def _comparison_tuple(self, g):
+        return (g.max_stack_offset, g.num_sym_mem_access, rop_utils.transit_num(g), g.isn_count)
 
 class RegMover(Builder):
     """
@@ -47,9 +200,12 @@ class RegMover(Builder):
         self._graph: nx.Graph = None # type: ignore
         self._normalize_todos = {}
 
+        self._push_pop_mover = PushPopMover(chain_builder, self)
+
     def bootstrap(self):
         self._reg_moving_gadgets = sorted(self.filter_gadgets(self.chain_builder.gadgets), key=lambda g:g.stack_change)
         self._reg_moving_blocks = {g for g in self._reg_moving_gadgets if g.self_contained}
+        self._push_pop_mover.bootstrap()
         self._build_move_graph()
 
     def build_normalize_todos(self):
@@ -132,7 +288,7 @@ class RegMover(Builder):
             ptr_list = manager.list(Builder.used_writable_ptrs)
             initargs = (self, ptr_list)
             with mp.Pool(processes=processes, initializer=_set_global_reg_mover, initargs=initargs) as pool:
-                for new_move, addr, solver, rb in pool.imap_unordered(worker_func, self.normalize_todos()):
+                for new_move, addr, solver, rb in pool.imap_unordered(reg_mover_worker_func, self.normalize_todos()):
                     if rb is None:
                         continue
                     state = rop_utils.make_symbolic_state(self.project, self.arch.reg_list, 0)
@@ -182,6 +338,8 @@ class RegMover(Builder):
                         edge_data['bits'] = move.bits
                 else:
                     self._graph.add_edge(*edge, block=[rb], bits=move.bits)
+
+        res |= self._push_pop_mover.optimize(processes)
         return res
 
     def _build_move_graph(self):

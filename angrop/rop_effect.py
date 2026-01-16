@@ -20,6 +20,7 @@ class RopMemAccess:
         self.data_dependencies = set()
         self.data_controllers = set()
         self.data_stack_controllers = set()
+        self.data_depth: int | None = None
         self.addr_constant = None
         self.stack_offset = None # addr_constant - init_sp
         self.data_constant = None
@@ -98,10 +99,12 @@ class RopRegPop:
     """
     a class to represent register pop effect
     """
-    def __init__(self, reg, bits):
+    def __init__(self, reg, bits, offset, depth):
         assert type(reg) is str
         self.reg = reg
         self.bits = bits
+        self.stack_offset = offset
+        self.ast_depth = depth
 
     def __hash__(self):
         return hash((self.reg, self.bits))
@@ -182,6 +185,31 @@ class RopEffect:
             assert res > 0
             res -= 1
         return res
+
+    @property
+    def stack_writes(self):
+        """
+        offsets relative to the final sp
+        """
+        d = {}
+        for m in self.mem_writes:
+            if m.stack_offset is None:
+                continue
+            if m.data_depth != 1:
+                continue
+            # gadgets like push [rax]; ret has no data_controllers because it is a symbolic read
+            if not m.data_controllers:
+                continue
+            reg = list(m.data_controllers)[0]
+            if hasattr(self, "transit_type"):
+                if self.transit_type == 'jmp_reg' and self.pc_reg == reg: # type: ignore
+                    continue
+                if self.transit_type == 'jmp_mem': # type: ignore
+                    pc_vars = self.pc_target.variables # type: ignore
+                    if any(v.startswith(f'sreg_{reg}') for v in pc_vars):
+                        continue
+            d[m.stack_offset - self.stack_change] = reg
+        return d
 
     @property
     def popped_regs(self):
