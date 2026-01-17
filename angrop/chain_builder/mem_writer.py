@@ -690,7 +690,7 @@ class MemWriter(Builder):
         return chain
 
     ##### Main Entrance #####
-    def write_to_mem(self, addr, data, preserve_regs=None, fill_byte=b"\xff", allow_badbyte_addr=True):
+    def write_to_mem(self, addr, data, preserve_regs=None, fill_byte=b"\xff"):
         """
         main function
         1. do parameter sanitization
@@ -698,6 +698,8 @@ class MemWriter(Builder):
         """
         if preserve_regs is None:
             preserve_regs = set()
+        # add a new solution for (addr badbyte) case
+        addr_has_badbyte = self._word_contain_badbyte(addr)
 
         # sanity check
         if not (isinstance(fill_byte, bytes) and len(fill_byte) == 1):
@@ -708,8 +710,6 @@ class MemWriter(Builder):
             raise RopException("fill_byte is a bad byte!")
         if isinstance(addr, RopValue) and addr.symbolic:
             raise RopException("cannot write to a symbolic address")
-        if not allow_badbyte_addr and self._word_contain_badbyte(addr):
-            raise RopException(f"{addr} contains bad byte!")
 
         # split the string into smaller elements so that we can
         # handle bad bytes
@@ -717,7 +717,8 @@ class MemWriter(Builder):
         chain = RopChain(self.project, self, badbytes=self.badbytes)
         data_len = len(data)
         preferred_init = ord(fill_byte)
-        chunk_sizes = (8, 4, 2, 1)
+        # only use 1-byte writes if addr contains badbytes
+        chunk_sizes = (1,) if addr_has_badbyte else (8, 4, 2, 1)
 
         while offset < data_len:
             made_progress = False
@@ -726,16 +727,15 @@ class MemWriter(Builder):
                 if offset + chunk_size > data_len:
                     continue
                 ptr = addr + offset
-                if not allow_badbyte_addr and self._word_contain_badbyte(ptr):
-                    raise RopException(f"{ptr} contains bad byte!")
-
+                if chunk_size > 1 and self._word_contain_badbyte(ptr):
+                    continue
                 chunk = data[offset:offset+chunk_size]
                 if all(x not in self.badbytes for x in chunk):
                     chain += self._write_to_mem(ptr, chunk, preserve_regs=preserve_regs, fill_byte=fill_byte)
                     offset += chunk_size
                     made_progress = True
                     break
-                if chunk_size == 1 and chunk[0] in self.badbytes:
+                if chunk_size == 1 and chunk[0] in self.badbytes and not self._word_contain_badbyte(ptr):
                     # allow direct single-byte write; reg_setter can avoid badbytes in payload
                     chain += self._write_to_mem(ptr, chunk, preserve_regs=preserve_regs, fill_byte=fill_byte)
                     offset += chunk_size

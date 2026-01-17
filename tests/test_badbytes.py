@@ -81,6 +81,46 @@ def test_badbyte():
     assert state.solver.eval(state.regs.edx == nullptr)
     assert all(x not in chain.payload_str() for x in [0, 0xa])
 
+def test_badbyte_transform():
+    cache_path = os.path.join(data_dir, "bronze_ropchain")
+    proj = angr.Project(os.path.join(tests_dir, "i386", "bronze_ropchain"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path, optimize=False)
+    else:
+        rop.find_gadgets()
+
+    rop.set_badbytes([0x00, 0x0A])
+    chain = rop.write_to_mem(0xdeadbeef, b"\x00", fill_byte=b"A")
+    state = chain.exec()
+    assert state.memory.load(0xdeadbeef, 1).concrete_value == 0x00
+
+    payload = chain.payload_str()
+    assert b"\x00" not in payload
+    assert b"\x0A" not in payload
+
+def test_badbyte_multibyte():
+    cache_path = os.path.join(data_dir, "bronze_ropchain")
+    proj = angr.Project(os.path.join(tests_dir, "i386", "bronze_ropchain"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path, optimize=False)
+    else:
+        rop.find_gadgets()
+
+    rop.set_badbytes([0x00, 0x0A])
+    target = b"\x00\x00\x00\x42"
+    chain = rop.write_to_mem(0xdeadbf00, target, fill_byte=b"\xff")
+    state = chain.exec()
+    endian = "little" if proj.arch.memory_endness == "Iend_LE" else "big"
+    assert state.memory.load(0xdeadbf00, len(target), endness=proj.arch.memory_endness).concrete_value == int.from_bytes(target, endian)
+
+    payload = chain.payload_str()
+    assert b"\x00" not in payload
+    assert b"\x0A" not in payload
+
 
 def run_all():
     functions = globals()

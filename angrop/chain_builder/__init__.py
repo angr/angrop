@@ -109,16 +109,15 @@ class ChainBuilder:
         value = rop_utils.cast_rop_value(value, self.project)
         return self._mem_changer.mem_and(addr, value, size=size)
 
-    def write_to_mem(self, addr, data, fill_byte=b"\xff", allow_badbyte_addr=True):
+    def write_to_mem(self, addr, data, fill_byte=b"\xff"):
         """
         :param addr: address to store the string
         :param data: string to store
         :param fill_byte: a byte to use to fill up the string if necessary
-        :param allow_badbyte_addr: allow badbytes in addr if True
         :return: a rop chain
         """
         addr = rop_utils.cast_rop_value(addr, self.project)
-        return self._mem_writer.write_to_mem(addr, data, fill_byte=fill_byte, allow_badbyte_addr=allow_badbyte_addr)
+        return self._mem_writer.write_to_mem(addr, data, fill_byte=fill_byte)
 
     def pivot(self, thing):
         thing = rop_utils.cast_rop_value(thing, self.project)
