@@ -210,8 +210,12 @@ class MemWriter(Builder):
         """
         try to find per-byte init/arg pairs using a single op for the whole chunk
         """
-        badbytes = set(badbytes)
+        badbytes_key = tuple(sorted(badbytes))
         exclude_ops = set() if exclude_ops is None else set(exclude_ops)
+        cache_key = (bytes(target_bytes), badbytes_key, preferred_init, tuple(sorted(exclude_ops)))
+        if cache_key in self._chunk_transform_cache:
+            return self._chunk_transform_cache[cache_key]
+        badbytes = set(badbytes)
         ops = ("xor", "or", "and", "add")
         for op in ops:
             if op in exclude_ops:
@@ -235,7 +239,10 @@ class MemWriter(Builder):
                     continue
                 endian = "little" if self.project.arch.memory_endness == "Iend_LE" else "big"
                 arg_val = int.from_bytes(arg_blob, endian)
-                return init_blob, op, arg_val
+                result = (init_blob, op, arg_val)
+                self._chunk_transform_cache[cache_key] = result
+                return result
+        self._chunk_transform_cache[cache_key] = None
         return None
 
     def _plan_bytewise_fix(self, chunk, badbytes, preferred_init, exclude_ops=None):
@@ -243,13 +250,18 @@ class MemWriter(Builder):
         build a plan: single initial write of safe bytes, then per-byte ops (size=1)
         returns (init_blob, op, [(idx, arg_byte), ...]) or None
         """
-        badbytes = set(badbytes)
+        badbytes_key = tuple(sorted(badbytes))
         exclude_ops = set() if exclude_ops is None else set(exclude_ops)
+        cache_key = (bytes(chunk), badbytes_key, preferred_init, tuple(sorted(exclude_ops)))
+        if cache_key in self._byte_plan_cache:
+            return self._byte_plan_cache[cache_key]
+        badbytes = set(badbytes)
         available_ops = [
             op for op in ("xor", "or", "and", "add")
             if op not in exclude_ops and self._has_mem_change_gadget(op, 1)
         ]
         if not available_ops:
+            self._byte_plan_cache[cache_key] = None
             return None
 
         def apply_op(op, a, b):
@@ -290,7 +302,85 @@ class MemWriter(Builder):
                     # ensure arg bytes also avoid badbytes for the actions we actually emit
                     if any(arg_bytes[idx] in badbytes for idx, _ in actions):
                         continue
-                    return init_blob, op, actions
+                    result = (init_blob, op, actions)
+                    self._byte_plan_cache[cache_key] = result
+                    return result
+        self._byte_plan_cache[cache_key] = None
+        return None
+
+    def _plan_wordwise_fix(self, chunk, badbytes, preferred_init, word_size, exclude_ops=None):
+        """
+        build a plan: single initial write of safe bytes, then per-word ops (size=word_size)
+        returns (init_blob, op, [(offset, arg_word), ...]) or None
+        """
+        if word_size <= 1 or len(chunk) % word_size != 0:
+            return None
+
+        badbytes_key = tuple(sorted(badbytes))
+        exclude_ops = set() if exclude_ops is None else set(exclude_ops)
+        cache_key = (bytes(chunk), badbytes_key, preferred_init, word_size, tuple(sorted(exclude_ops)))
+        if cache_key in self._word_plan_cache:
+            return self._word_plan_cache[cache_key]
+        badbytes = set(badbytes)
+        available_ops = [
+            op for op in ("xor", "or", "and")
+            if op not in exclude_ops and self._has_mem_change_gadget(op, word_size)
+        ]
+        if not available_ops:
+            self._word_plan_cache[cache_key] = None
+            return None
+
+        endian = "little" if self.project.arch.memory_endness == "Iend_LE" else "big"
+
+        def apply_op(op, a, b):
+            match op:
+                case "xor":
+                    return (a ^ b) & 0xFF
+                case "or":
+                    return (a | b) & 0xFF
+                case "and":
+                    return (a & b) & 0xFF
+            return a
+
+        for op in available_ops:
+            init_bytes = []
+            arg_bytes = []
+            for tb in chunk:
+                pair = self._solve_byte_pair(tb, op, badbytes, preferred_init)
+                if pair is None:
+                    break
+                init_bytes.append(pair[0])
+                arg_bytes.append(pair[1])
+            else:
+                init_blob = bytes(init_bytes)
+                if any(b in badbytes for b in init_blob):
+                    continue
+
+                actions = []
+                for off in range(0, len(chunk), word_size):
+                    sub_init = init_bytes[off:off + word_size]
+                    sub_arg = arg_bytes[off:off + word_size]
+                    sub_target = chunk[off:off + word_size]
+                    need = False
+                    for i in range(word_size):
+                        result = apply_op(op, sub_init[i], sub_arg[i])
+                        if result != sub_target[i]:
+                            break
+                        if result != sub_init[i] or sub_init[i] != sub_target[i]:
+                            need = True
+                    else:
+                        if need:
+                            if any(b in badbytes for b in sub_arg):
+                                break
+                            arg_val = int.from_bytes(bytes(sub_arg), endian)
+                            actions.append((off, arg_val))
+                        continue
+                    break
+                else:
+                    result = (init_blob, op, actions)
+                    self._word_plan_cache[cache_key] = result
+                    return result
+        self._word_plan_cache[cache_key] = None
         return None
 
     def __init__(self, chain_builder):
@@ -298,19 +388,56 @@ class MemWriter(Builder):
         self._mem_write_gadgets: set[RopGadget] = None # type: ignore
         self._good_mem_write_gadgets: dict = None # type: ignore
         self._mem_write_chain_cache = defaultdict(list)
+        self._mem_change_cache = {}
+        self._mem_change_cache_ready = False
+        self._chunk_transform_cache = {}
+        self._byte_plan_cache = {}
+        self._word_plan_cache = {}
 
     def bootstrap(self):
         self._mem_write_gadgets = self._get_all_mem_write_gadgets(self.chain_builder.gadgets)
         self._good_mem_write_gadgets = defaultdict(set)
+        self._build_mem_change_cache()
+
+    def _build_mem_change_cache(self):
+        """
+        cache which mem_change gadgets exist per op and size (bytes)
+        """
+        changer = getattr(self.chain_builder, "_mem_changer", None)
+        self._mem_change_cache = {}
+        self._mem_change_cache_ready = False
+        if changer is None:
+            return
+        gadgets_by_op = {}
+        for op in ("xor", "or", "and", "add"):
+            gadgets = getattr(changer, f"_mem_{op}_gadgets", None)
+            if gadgets is None:
+                return
+            gadgets_by_op[op] = gadgets
+        for op in ("xor", "or", "and", "add"):
+            gadgets = gadgets_by_op[op] or []
+            sizes = set()
+            for g in gadgets:
+                if g.mem_changes:
+                    sizes.add(g.mem_changes[0].data_size // 8)
+            self._mem_change_cache[op] = sizes
+        self._mem_change_cache_ready = True
 
     def _has_mem_change_gadget(self, op, chunk_size):
         """
         check if there is a mem_<op> gadget for given size (bytes)
         """
+        if self._mem_change_cache_ready:
+            return chunk_size in self._mem_change_cache.get(op, set())
         changer = getattr(self.chain_builder, "_mem_changer", None)
         if changer is None:
             return False
-        gadgets = getattr(changer, f"_mem_{op}_gadgets", [])
+        # mem_changer might not have been bootstrapped when our cache was built
+        if getattr(changer, "_mem_xor_gadgets", None) is not None:
+            self._build_mem_change_cache()
+            if self._mem_change_cache_ready:
+                return chunk_size in self._mem_change_cache.get(op, set())
+        gadgets = getattr(changer, f"_mem_{op}_gadgets", []) or []
         data_size = chunk_size * 8
         return any(g.mem_changes and g.mem_changes[0].data_size == data_size for g in gadgets)
 
@@ -608,22 +735,71 @@ class MemWriter(Builder):
                     offset += chunk_size
                     made_progress = True
                     break
+                if chunk_size == 1 and chunk[0] in self.badbytes:
+                    # allow direct single-byte write; reg_setter can avoid badbytes in payload
+                    chain += self._write_to_mem(ptr, chunk, preserve_regs=preserve_regs, fill_byte=fill_byte)
+                    offset += chunk_size
+                    made_progress = True
+                    break
 
                 exclude_ops = set()
                 transform = self._find_chunk_transform(chunk, self.badbytes, preferred_init, exclude_ops=exclude_ops)
-                while transform and self._has_mem_change_gadget(transform[1], chunk_size):
+                while transform:
                     init_blob, op, arg = transform
+                    if not self._has_mem_change_gadget(op, chunk_size):
+                        exclude_ops.add(op)
+                        transform = self._find_chunk_transform(
+                            chunk, self.badbytes, preferred_init, exclude_ops=exclude_ops
+                        )
+                        continue
                     trial_chain = chain.copy()
                     try:
                         trial_chain += self._write_to_mem(ptr, init_blob, preserve_regs=preserve_regs, fill_byte=fill_byte)
                         trial_chain += getattr(self.chain_builder, f"mem_{op}")(ptr, arg, size=chunk_size)
                     except RopException:
                         exclude_ops.add(op)
-                        transform = self._find_chunk_transform(chunk, self.badbytes, preferred_init, exclude_ops=exclude_ops)
+                        transform = self._find_chunk_transform(
+                            chunk, self.badbytes, preferred_init, exclude_ops=exclude_ops
+                        )
                         continue
                     chain = trial_chain
                     offset += chunk_size
                     made_progress = True
+                    break
+
+                word_sizes = [s for s in (8, 4, 2) if s <= chunk_size]
+                for word_size in word_sizes:
+                    word_plan = self._plan_wordwise_fix(
+                        chunk, self.badbytes, preferred_init, word_size
+                    )
+                    if not word_plan:
+                        continue
+                    exclude_ops = set()
+                    while word_plan:
+                        init_blob, op, actions = word_plan
+                        trial_chain = chain.copy()
+                        try:
+                            trial_chain += self._write_to_mem(
+                                ptr, init_blob, preserve_regs=preserve_regs, fill_byte=fill_byte
+                            )
+                            for off, arg in actions:
+                                trial_chain += getattr(self.chain_builder, f"mem_{op}")(
+                                    ptr + off, arg, size=word_size
+                                )
+                        except RopException:
+                            exclude_ops.add(op)
+                            word_plan = self._plan_wordwise_fix(
+                                chunk, self.badbytes, preferred_init, word_size, exclude_ops=exclude_ops
+                            )
+                            continue
+                        chain = trial_chain
+                        offset += chunk_size
+                        made_progress = True
+                        break
+                    if made_progress:
+                        break
+
+                if made_progress:
                     break
 
                 byte_plan = self._plan_bytewise_fix(chunk, self.badbytes, preferred_init)
