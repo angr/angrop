@@ -31,13 +31,13 @@ class MemChanger(Builder):
 
     def verify(self, op, chain, addr, value, data_size):
         endness = self.project.arch.memory_endness
-        arch_bytes = self.project.arch.bytes
         data_bytes = data_size//8
 
         # make sure the chain actually works
         chain2 = chain.copy()
         init_val = 0x4142434445464748
-        chain2._blank_state.memory.store(addr.data, init_val, arch_bytes, endness=endness)
+        init_val &= (1 << data_size) - 1
+        chain2._blank_state.memory.store(addr.data, init_val, data_bytes, endness=endness)
         init_bv = chain2._blank_state.memory.load(addr.data, data_bytes, endness=endness)
         state = chain2.exec()
         final_bv = state.memory.load(addr.data, data_bytes, endness=endness)
@@ -108,6 +108,8 @@ class MemChanger(Builder):
     def _change_mem_with_gadget(self, op, gadget, addr, value, data_size):
         arch_endness = self.project.arch.memory_endness
         arch_bytes = self.project.arch.bytes
+        data_bytes = data_size // 8
+        data_mask = (1 << data_size) - 1
 
         # create an initial state with a random initial value
         test_state = self.make_sim_state(gadget.addr, gadget.stack_change//arch_bytes)
@@ -116,8 +118,9 @@ class MemChanger(Builder):
             case 'or':
                 init_val = 0
             case 'and':
-                init_val = (1 << 64)-1
-        test_state.memory.store(addr.concreted, init_val, data_size, endness=arch_bytes)
+                init_val = data_mask
+        init_val &= data_mask
+        test_state.memory.store(addr.concreted, init_val, data_bytes, endness=arch_endness)
 
         # step the gadget
         pre_gadget_state = test_state
@@ -144,8 +147,8 @@ class MemChanger(Builder):
         state = rop_utils.step_to_unconstrained_successor(self.project, pre_gadget_state)
 
         # constrain the data
-        final_bv = state.memory.load(addr.concreted, data_size//8, endness=arch_endness)
-        init_bv = test_state.memory.load(addr.concreted, data_size//8, endness=arch_endness)
+        final_bv = state.memory.load(addr.concreted, data_bytes, endness=arch_endness)
+        init_bv = test_state.memory.load(addr.concreted, data_bytes, endness=arch_endness)
         match op:
             case 'add':
                 const = (init_bv + value.concreted) == final_bv
