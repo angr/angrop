@@ -547,7 +547,8 @@ class MemWriter(Builder):
 
         return chain
 
-    def _write_to_mem(self, addr, string_data, preserve_regs=None, fill_byte=b"\xff"):# pylint:disable=inconsistent-return-statements
+    # pylint: disable=inconsistent-return-statements
+    def _write_to_mem(self, addr, string_data, preserve_regs=None, fill_byte=b"\xff"):
         """
         :param addr: address to store the string
         :param string_data: string to store
@@ -754,7 +755,9 @@ class MemWriter(Builder):
                         continue
                     trial_chain = chain.copy()
                     try:
-                        trial_chain += self._write_to_mem(ptr, init_blob, preserve_regs=preserve_regs, fill_byte=fill_byte)
+                        trial_chain += self._write_to_mem(
+                            ptr, init_blob, preserve_regs=preserve_regs, fill_byte=fill_byte
+                        )
                         trial_chain += getattr(self.chain_builder, f"mem_{op}")(ptr, arg, size=chunk_size)
                     except RopException:
                         exclude_ops.add(op)
@@ -802,19 +805,25 @@ class MemWriter(Builder):
                 if made_progress:
                     break
 
-                byte_plan = self._plan_bytewise_fix(chunk, self.badbytes, preferred_init)
+                byte_plan = self._plan_bytewise_fix(
+                    chunk, self.badbytes, preferred_init
+                )
                 if byte_plan:
                     exclude_ops = set()
                     while byte_plan:
                         init_blob, op, actions = byte_plan
                         trial_chain = chain.copy()
                         try:
-                            trial_chain += self._write_to_mem(ptr, init_blob, preserve_regs=preserve_regs, fill_byte=fill_byte)
+                            trial_chain += self._write_to_mem(
+                                ptr, init_blob, preserve_regs=preserve_regs, fill_byte=fill_byte
+                            )
                             for idx, arg_byte in actions:
                                 trial_chain += getattr(self.chain_builder, f"mem_{op}")(ptr + idx, arg_byte, size=1)
                         except RopException:
                             exclude_ops.add(op)
-                            byte_plan = self._plan_bytewise_fix(chunk, self.badbytes, preferred_init, exclude_ops=exclude_ops)
+                            byte_plan = self._plan_bytewise_fix(
+                                chunk, self.badbytes, preferred_init, exclude_ops=exclude_ops
+                            )
                             continue
                         chain = trial_chain
                         offset += chunk_size

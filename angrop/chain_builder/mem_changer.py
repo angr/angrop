@@ -31,7 +31,6 @@ class MemChanger(Builder):
 
     def verify(self, op, chain, addr, value, data_size):
         endness = self.project.arch.memory_endness
-        arch_bytes = self.project.arch.bytes
         data_bytes = data_size//8
 
         # make sure the chain actually works
