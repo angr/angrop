@@ -162,6 +162,15 @@ class ChainBuilder:
             return None
         return self._sys_caller.execve(path=path, path_addr=path_addr)
 
+    def sigreturn_syscall(self, syscall_num, args):
+        """
+        build a sigreturn syscall chain with syscall gadget and ROP syscall registers => SigreturnFrame.
+        :param syscall_num: syscall number for sigreturn
+        :param args: syscall arguments for sigreturn [list]
+        :return: RopChain object
+        """
+        return self._sigreturn.sigreturn_syscall(syscall_num, args)
+
     def sigreturn(self, **registers):
         """
         build a rop chain that invokes sigreturn/rt_sigreturn and loads registers from a frame

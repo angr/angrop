@@ -2,7 +2,7 @@ import logging
 
 from ..errors import RopException
 from ..sigreturn import SigreturnFrame
-
+import angr
 l = logging.getLogger(__name__)
 
 
@@ -34,10 +34,59 @@ class SigreturnBuilder:
         """
         Build a sigreturn syscall chain with syscall gadget and ROP syscall registers => SigreturnFrame.
         :param syscall_num: syscall number for sigreturn
-        :param args: syscall arguments for sigreturn
+        :param args: syscall arguments for sigreturn [list]
         :return: RopChain object
         """
-        # TODO: auto set regs for syscall.
+        if self.project.simos.name != "Linux":
+            raise RopException(f"{self.project.simos.name} is not supported!")
+        if not self.chain_builder.syscall_gadgets:
+            raise RopException("target does not contain syscall gadget!")
+        if self.arch.sigreturn_num is None:
+            raise RopException("sigreturn is not supported on this architecture")
+        
+        frame = SigreturnFrame.from_project(self.project)
+        cc = angr.SYSCALL_CC[self.project.arch.name]["default"](self.project.arch)
+
+        if len(args) > len(cc.ARG_REGS):
+            raise RopException("sig frame arguments exceeded.")
+        registers = {}
+        for arg, reg in zip(args, cc.ARG_REGS):
+            registers[reg] = arg
+        sysnum_reg = self.project.arch.register_names[self.project.arch.syscall_num_offset]
+        registers[sysnum_reg] = syscall_num
+
+        target_regs = set(cc.ARG_REGS)
+        target_regs.add(sysnum_reg)
+
+        def _prologue_ok(g):
+            p = g.prologue
+            if p is None:
+                return True
+            if p.changed_regs.intersection(target_regs):
+                return False
+            if p.stack_change not in (0, None):
+                return False
+            if p.mem_reads or p.mem_writes or p.mem_changes:
+                return False
+            return True
+
+        candidates = [g for g in self.chain_builder.syscall_gadgets if _prologue_ok(g)]
+        # TODO: better prologue filter?
+        if not candidates:
+            raise RopException("Fail to find a suitable syscall gadget for sigreturn_syscall")
+
+        gadget = min(candidates, key=lambda g: (g.isn_count, g.stack_change, g.num_sym_mem_access))
+
+        ip_reg = self.project.arch.register_names[self.project.arch.ip_offset]
+        registers[ip_reg] = gadget.addr
+
+        chain = self.chain_builder.do_syscall(self.arch.sigreturn_num, [], stack_recover=False, needs_return=False)
+        if not chain or not chain._gadgets:
+            raise RopException("Fail to build sigreturn syscall chain")
+
+        return self.sigreturn(**registers)
+        
+
 
     def sigreturn(self, **registers):
         """
@@ -69,7 +118,7 @@ class SigreturnBuilder:
             chain._values = chain._values[:offset_words]
             chain.payload_len = offset_words * self.project.arch.bytes
         elif offset_words < 0: # drop values to fit offset.
-            l.warning("Negative offset, some frame values would be dropped.")
+            l.warning("Negative offset, %d frame values would be dropped." % (-offset_words))
             frame_words = frame_words[-offset_words:]
         elif offset_words > len(chain._values):
             for _ in range(offset_words - len(chain._values)):
