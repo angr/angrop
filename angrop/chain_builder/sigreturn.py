@@ -1,8 +1,8 @@
 import logging
+import angr
 
 from ..errors import RopException
 from ..sigreturn import SigreturnFrame
-import angr
 l = logging.getLogger(__name__)
 
 
@@ -43,8 +43,7 @@ class SigreturnBuilder:
             raise RopException("target does not contain syscall gadget!")
         if self.arch.sigreturn_num is None:
             raise RopException("sigreturn is not supported on this architecture")
-        
-        frame = SigreturnFrame.from_project(self.project)
+
         cc = angr.SYSCALL_CC[self.project.arch.name]["default"](self.project.arch)
 
         if len(args) > len(cc.ARG_REGS):
@@ -85,7 +84,7 @@ class SigreturnBuilder:
             raise RopException("Fail to build sigreturn syscall chain")
 
         return self.sigreturn(**registers)
-        
+
 
 
     def sigreturn(self, **registers):
@@ -118,7 +117,7 @@ class SigreturnBuilder:
             chain._values = chain._values[:offset_words]
             chain.payload_len = offset_words * self.project.arch.bytes
         elif offset_words < 0: # drop values to fit offset.
-            l.warning("Negative offset, %d frame values would be dropped." % (-offset_words))
+            l.warning("Negative offset, %d frame values would be dropped.",-offset_words)
             frame_words = frame_words[-offset_words:]
         elif offset_words > len(chain._values):
             for _ in range(offset_words - len(chain._values)):
