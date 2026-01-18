@@ -19,6 +19,7 @@ class ROPArch:
         self.syscall_insts = None
         self.ret_insts = None
         self.execve_num = None
+        self.sigreturn_num = None
 
     def _get_reg_list(self):
         """
@@ -49,6 +50,7 @@ class X86(ROPArch):
         self.ret_insts = {b"\xc2", b"\xc3", b"\xca", b"\xcb"}
         self.segment_regs = {"cs", "ds", "es", "fs", "gs", "ss"}
         self.execve_num = 0xb
+        self.sigreturn_num = 0x77
 
     def _x86_block_make_sense(self, block):
         capstr = str(block.capstone).lower()
@@ -88,6 +90,7 @@ class AMD64(X86):
         self.syscall_insts = {b"\x0f\x05"} # syscall
         self.segment_regs = {"cs_seg", "ds_seg", "es_seg", "fs_seg", "gs_seg", "ss_seg"}
         self.execve_num = 0x3b
+        self.sigreturn_num = 0xf
 
     def block_make_sense(self, block):
         return self._x86_block_make_sense(block)
