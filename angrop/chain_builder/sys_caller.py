@@ -174,7 +174,7 @@ class SysCaller(FuncCaller):
         gadgets = sorted(gadgets, reverse=True, key=key_func)
         return gadgets
 
-    def do_syscall(self, syscall_num, args, needs_return=True, **kwargs):
+    def do_syscall(self, syscall_num, args, needs_return=True, stack_recover=True, **kwargs):
         """
         build a rop chain which performs the requested system call with the arguments set to 'registers' before
         the call is made
@@ -226,7 +226,8 @@ class SysCaller(FuncCaller):
 
             try:
                 chain = self._func_call(gadget, cc, args, extra_regs=extra_regs,
-                               needs_return=needs_return, preserve_regs=preserve_regs, **kwargs)
+                                needs_return=needs_return, preserve_regs=preserve_regs,
+                                stack_recover=stack_recover, **kwargs)
                 if self.verify(chain, registers, more):
                     return chain
             except RopException:
