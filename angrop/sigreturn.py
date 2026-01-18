@@ -1,4 +1,5 @@
 import logging
+from typing import Literal
 
 from .errors import RopException
 
@@ -66,7 +67,7 @@ _ARCH_NAME_MAP = {
 }
 
 
-def _endness_to_str(endness):
+def _endness_to_str(endness) -> Literal["little", "big"]:
     if endness == "Iend_BE":
         return "big"
     return "little"
@@ -84,7 +85,7 @@ class SigreturnFrame:
         self._values = {reg: 0 for reg in self._registers.values()}
         self._values.update(_DEFAULTS.get(arch_name, {}))
         self._word_size = 8 if arch_name == "amd64" else 4
-        self._byteorder = _endness_to_str(endness)
+        self._byteorder: Literal["little", "big"] = _endness_to_str(endness)
 
     @classmethod
     def from_project(cls, project):
