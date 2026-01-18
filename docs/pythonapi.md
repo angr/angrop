@@ -55,6 +55,10 @@ chain = rop.func_call("read", [0, 0x804f000, 0x100])
 # invoke syscall with arguments
 chain = rop.do_syscall(0, [0, 0x41414141, 0x100], needs_return=False)
 
+# sigreturn (SROP) chain
+# example: set rip/rsp and registers via sigreturn frame
+chain = rop.sigreturn(rip=0x401000, rsp=0x7fffffffe000, rax=59, rdi=0x41414141)
+
 # generate an `execve("/bin/sh", NULL, NULL)` chain
 chain = rop.execve()
 

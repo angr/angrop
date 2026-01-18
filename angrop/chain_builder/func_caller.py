@@ -95,7 +95,7 @@ class FuncCaller(Builder):
         return None
 
     def _func_call(self, func_gadget, cc, args, extra_regs=None, preserve_regs=None,
-                   needs_return=True, jmp_mem_target=None, **kwargs):
+                   needs_return=True, jmp_mem_target=None, stack_recover=True, **kwargs):
         """
         func_gadget: the address of the function to invoke
         cc: calling convention
@@ -140,14 +140,15 @@ class FuncCaller(Builder):
             state = chain._blank_state
             state.solver.add(claripy.And(*constraints))
             state.solver.add(jmp_mem_target == func_gadget.pc_target)
-
         # invoke the function
         chain.add_gadget(func_gadget)
-        for delta in range(func_gadget.stack_change//arch_bytes):
-            if func_gadget.pc_offset is None or delta != func_gadget.pc_offset:
-                chain.add_value(self._get_fill_val())
-            else:
-                chain.add_value(claripy.BVS("next_pc", self.project.arch.bits))
+        if stack_recover:
+            # more flexibility for non stack recovery (e.g: srop? is that the right solution?)
+            for delta in range(func_gadget.stack_change//arch_bytes):
+                if func_gadget.pc_offset is None or delta != func_gadget.pc_offset:
+                    chain.add_value(self._get_fill_val())
+                else:
+                    chain.add_value(claripy.BVS("next_pc", self.project.arch.bits))
 
         # we are done here if we don't need to return
         if not needs_return:

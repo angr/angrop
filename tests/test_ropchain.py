@@ -2,6 +2,7 @@ import os
 
 import angr
 import angrop # pylint: disable=unused-import
+from angrop.sigreturn import SigreturnFrame
 
 BIN_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "binaries")
 CACHE_DIR = os.path.join(BIN_DIR, 'tests_data', 'angrop_gadgets_cache')
@@ -34,6 +35,40 @@ def test_chain_exec():
     state = chain.exec()
     assert not state.regs.rdi.symbolic
     assert state.solver.eval(state.regs.rdi == 0x41414141)
+
+
+def test_sigreturn_chain_amd64():
+    cache_path = os.path.join(CACHE_DIR, "amd64_glibc_2.19")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets_single_threaded(show_progress=False)
+        rop.save_gadgets(cache_path)
+
+    rop.set_roparg_filler(0)
+    assert rop.syscall_gadgets
+    regs = {
+        "rip": 0x4141414141414141,
+        "rsp": 0x7fffffffdeadbeef,
+        "rax": 0x1337,
+        "rdi": 0x1122334455667788,
+    }
+    chain = rop.sigreturn(**regs)
+    state = chain.sim_exec_til_syscall()
+    assert state is not None
+    cc = angr.SYSCALL_CC[proj.arch.name]["default"](proj.arch)
+    assert state.solver.eval(cc.syscall_num(state)) == rop.arch.sigreturn_num
+
+    frame = SigreturnFrame.from_project(proj)
+    frame.update(**regs)
+    sp = state.solver.eval(state.regs.sp)
+    for reg, val in regs.items():
+        offset = frame.offset_of(reg)
+        mem = state.memory.load(sp + offset, frame.word_size, endness=proj.arch.memory_endness)
+        assert state.solver.eval(mem) == val
 
 def run_all():
     functions = globals()
