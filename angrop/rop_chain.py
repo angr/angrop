@@ -434,12 +434,14 @@ class RopChain:
             else:
                 # check if this value belongs to a sigreturn frame
                 if idx in sigreturn_map:
-                    frame, reg_name, expected_value = sigreturn_map[idx]
+                    frame, reg_name, _ = sigreturn_map[idx]
                     concrete_val = v.concreted
                     # only show if value is non-zero or it's a critical register
                     # critical registers: rip/rsp/pc/sp
-                    is_critical = reg_name == self._p.arch.register_names[self._p.arch.ip_offset] or \
-                                  reg_name == self._p.arch.register_names[self._p.arch.sp_offset]
+                    is_critical = reg_name in (
+                        self._p.arch.register_names[self._p.arch.ip_offset],
+                        self._p.arch.register_names[self._p.arch.sp_offset],
+                    )
                     is_nonzero = concrete_val != 0
                     if is_critical or is_nonzero:
                         res += prefix + f"[sigreturn frame] {reg_name}: {concrete_val:#x}\n"
