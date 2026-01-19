@@ -99,14 +99,13 @@ class SigreturnBuilder:
         """
         if self.project.simos.name != 'Linux':
             raise RopException(f"{self.project.simos.name} is not supported!")
-        if not self.syscall_gadgets:
+        if not self.chain_builder.syscall_gadgets:
             raise RopException("target does not contain syscall gadget!")
         # TODO: badbytes, write to mem, etc.
         if path_addr is None:
             raise RopException("path_addr is required for sigreturn_execve")
         execve_syscall = self.chain_builder.arch.execve_num
         return self.sigreturn_syscall(execve_syscall, [path_addr, 0, 0])
-        
 
 
     def sigreturn(self, **registers):
