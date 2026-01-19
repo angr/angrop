@@ -30,11 +30,12 @@ class SigreturnBuilder:
         offset_words = delta // self.project.arch.bytes
         return offset_words
 
-    def sigreturn_syscall(self, syscall_num, args):
+    def sigreturn_syscall(self, syscall_num, args, sp=None):
         """
         Build a sigreturn syscall chain with syscall gadget and ROP syscall registers => SigreturnFrame.
         :param syscall_num: syscall number for sigreturn
         :param args: syscall arguments for sigreturn [list]
+        :param sp: address to jump to after sigreturn (new rsp)
         :return: RopChain object
         """
         if self.project.simos.name != "Linux":
@@ -78,6 +79,11 @@ class SigreturnBuilder:
 
         ip_reg = self.project.arch.register_names[self.project.arch.ip_offset]
         registers[ip_reg] = gadget.addr
+
+        # set stack pointer to for another rop after sigreturn.
+        if sp is not None:
+            sp_reg = self.project.arch.register_names[self.project.arch.sp_offset]
+            registers[sp_reg] = sp
 
         chain = self.chain_builder.do_syscall(self.arch.sigreturn_num, [], needs_return=False)
         if not chain or not chain._gadgets:
