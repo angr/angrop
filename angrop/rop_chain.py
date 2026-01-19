@@ -40,6 +40,9 @@ class RopChain:
         self._pivoted = False
         self._init_sp = None
 
+        # sigreturn frame information: list of (frame_object, start_offset_in_values)
+        self._sigreturn_frames = []
+
     def __add__(self, other):
         # need to add the values from the other's stack and the constraints to the result state
         result = self.copy()
@@ -60,6 +63,12 @@ class RopChain:
             result.payload_len -= self._p.arch.bytes
         else:
             result._values.extend(other._values)
+
+        # merge sigreturn frames: adjust offsets from other
+        word_count_before_merge = len(self._values) - (1 if idx is not None else 0)
+        for frame, offset in other._sigreturn_frames:
+            adjusted_offset = word_count_before_merge + offset
+            result._sigreturn_frames.append((frame, adjusted_offset))
 
         # FIXME: cannot handle cases where a rop_block is used twice and have different constraints
         # because right now symbolic values go with rop_blocks
@@ -220,6 +229,7 @@ class RopChain:
         cp.payload_len = self.payload_len
         cp._blank_state = self._blank_state.copy()
         cp.badbytes = self.badbytes
+        cp._sigreturn_frames = list(self._sigreturn_frames)
 
         cp._pivoted = self._pivoted
         cp._init_sp = self._init_sp
@@ -395,7 +405,24 @@ class RopChain:
         bs = self._p.arch.bytes
         prefix_len = bs*2+2
         prefix = " "*prefix_len
-        for v in self._values:
+
+        # build a lookup map for sigreturn frame values
+        # key: index in _values, value: (frame_object, register_name)
+        sigreturn_map = {}
+        for frame, start_offset in self._sigreturn_frames:
+            # iterate through frame registers to build the map
+            frame_words = frame.to_words()
+            for i, word_value in enumerate(frame_words):
+                value_idx = start_offset + i
+                if value_idx < len(self._values):
+                    # find which register this word belongs to
+                    offset_in_bytes = i * frame.word_size
+                    for reg_offset, reg_name in frame._registers.items():
+                        if reg_offset == offset_in_bytes:
+                            sigreturn_map[value_idx] = (frame, reg_name, word_value)
+                            break
+
+        for idx, v in enumerate(self._values):
             if v.symbolic:
                 res += prefix + f"  {v.ast}\n"
                 continue
@@ -405,7 +432,19 @@ class RopChain:
                     res += fmt % g.addr + f": {g.dstr()}\n"
                     break
             else:
-                res += prefix + f"  {v.concreted:#x}\n"
+                # check if this value belongs to a sigreturn frame
+                if idx in sigreturn_map:
+                    frame, reg_name, expected_value = sigreturn_map[idx]
+                    concrete_val = v.concreted
+                    # only show if value is non-zero or it's a critical register
+                    # critical registers: rip/rsp/pc/sp
+                    is_critical = reg_name == self._p.arch.register_names[self._p.arch.ip_offset] or \
+                                  reg_name == self._p.arch.register_names[self._p.arch.sp_offset]
+                    is_nonzero = concrete_val != 0
+                    if is_critical or is_nonzero:
+                        res += prefix + f"[sigreturn frame] {reg_name}: {concrete_val:#x}\n"
+                else:
+                    res += prefix + f"  {v.concreted:#x}\n"
         return res
 
     def pp(self):
