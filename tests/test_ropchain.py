@@ -37,6 +37,39 @@ def test_chain_exec():
     assert state.solver.eval(state.regs.rdi == 0x41414141)
 
 
+def test_sigreturn_chain_i386():
+    cache_path = os.path.join(CACHE_DIR, "bronze_ropchain")
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "i386", "bronze_ropchain"), auto_load_libs=False)
+    rop = proj.analyses.ROP()
+
+    if os.path.exists(cache_path):
+        rop.load_gadgets(cache_path)
+    else:
+        rop.find_gadgets_single_threaded(show_progress=False)
+        rop.save_gadgets(cache_path)
+
+    rop.set_roparg_filler(0)
+    assert rop.syscall_gadgets
+    regs = {
+        "eip": 0x41414141,
+        "esp": 0xdeadbeef,
+        "eax": 0x1337,
+        "ebx": 0x11223344,
+    }
+    chain = rop.sigreturn(**regs)
+    state = chain.sim_exec_til_syscall()
+    assert state is not None
+    cc = angr.SYSCALL_CC[proj.arch.name]["default"](proj.arch)
+    assert state.solver.eval(cc.syscall_num(state)) == rop.arch.sigreturn_num
+
+    frame = SigreturnFrame.from_project(proj)
+    frame.update(**regs)
+    sp = state.solver.eval(state.regs.sp)
+    for reg, val in regs.items():
+        offset = frame.offset_of(reg)
+        mem = state.memory.load(sp + offset, frame.word_size, endness=proj.arch.memory_endness)
+        assert state.solver.eval(mem) == val
+
 def test_sigreturn_chain_amd64():
     cache_path = os.path.join(CACHE_DIR, "amd64_glibc_2.19")
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
