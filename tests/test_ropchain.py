@@ -71,6 +71,7 @@ def test_sigreturn_chain_i386():
         assert state.solver.eval(mem) == val
 
 def test_sigreturn_chain_amd64():
+    # TODO: simulate the sigreturn syscall and verify the register again?
     cache_path = os.path.join(CACHE_DIR, "amd64_glibc_2.19")
     proj = angr.Project(os.path.join(BIN_DIR, "tests", "x86_64", "libc.so.6"), auto_load_libs=False)
     rop = proj.analyses.ROP()

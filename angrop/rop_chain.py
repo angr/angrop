@@ -406,25 +406,17 @@ class RopChain:
         prefix_len = bs*2+2
         prefix = " "*prefix_len
 
-        # build a lookup map for sigreturn frame values
-        # key: index in _values, value: (frame_object, register_name)
-        sigreturn_map = {}
+        sigreturn_map = {} # start_offset -> frame and end offset
         for frame, start_offset in self._sigreturn_frames:
-            # iterate through frame registers to build the map
+            # iterate through frame registers to build a map
             frame_words = frame.to_words()
-            for i, word_value in enumerate(frame_words):
-                value_idx = start_offset + i
-                if value_idx < len(self._values):
-                    # find which register this word belongs to
-                    offset_in_bytes = i * frame.word_size
-                    for reg_offset, reg_name in frame._registers.items():
-                        if reg_offset == offset_in_bytes:
-                            sigreturn_map[value_idx] = (frame, reg_name, word_value)
-                            break
-
-        for idx, v in enumerate(self._values):
+            sigreturn_map[start_offset] = (frame, start_offset + len(frame_words))
+        idx = 0
+        while idx < len(self._values):
+            v = self._values[idx]
             if v.symbolic:
                 res += prefix + f"  {v.ast}\n"
+                idx += 1
                 continue
             for g in self._gadgets:
                 if g.addr == v.concreted:
@@ -432,21 +424,11 @@ class RopChain:
                     res += fmt % g.addr + f": {g.dstr()}\n"
                     break
             else:
-                # check if this value belongs to a sigreturn frame
                 if idx in sigreturn_map:
-                    frame, reg_name, _ = sigreturn_map[idx]
-                    concrete_val = v.concreted
-                    # only show if value is non-zero or it's a critical register
-                    # critical registers: rip/rsp/pc/sp
-                    is_critical = reg_name in (
-                        self._p.arch.register_names[self._p.arch.ip_offset],
-                        self._p.arch.register_names[self._p.arch.sp_offset],
-                    )
-                    is_nonzero = concrete_val != 0
-                    if is_critical or is_nonzero:
-                        res += prefix + f"[sigreturn frame] {reg_name}: {concrete_val:#x}\n"
-                else:
-                    res += prefix + f"  {v.concreted:#x}\n"
+                    sigframe, idx = sigreturn_map[idx]
+                    res += sigframe.dstr(prefix=prefix)
+                    continue
+            idx += 1
         return res
 
     def pp(self):

@@ -132,3 +132,12 @@ class SigreturnFrame:
     @property
     def word_size(self):
         return self._word_size
+
+    def dstr(self, prefix: str = "") -> str:
+        lines = [f"{prefix}  <SigreturnFrame for {self.arch_name}>"]
+        for offset in sorted(self._registers.keys()):
+            reg = self._registers[offset]
+            val = self._values[reg]
+            if val != 0:
+                lines.append(prefix + f"  {reg:15} : 0x{val:0{self._word_size*2}x}")
+        return "\n".join(lines)
