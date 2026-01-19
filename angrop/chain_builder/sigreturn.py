@@ -79,7 +79,7 @@ class SigreturnBuilder:
         ip_reg = self.project.arch.register_names[self.project.arch.ip_offset]
         registers[ip_reg] = gadget.addr
 
-        chain = self.chain_builder.do_syscall(self.arch.sigreturn_num, [], stack_recover=False, needs_return=False)
+        chain = self.chain_builder.do_syscall(self.arch.sigreturn_num, [], needs_return=False)
         if not chain or not chain._gadgets:
             raise RopException("Fail to build sigreturn syscall chain")
 
@@ -104,7 +104,7 @@ class SigreturnBuilder:
         frame.update(**registers)
 
         syscall_num = self.arch.sigreturn_num # syscall(sigreturn)
-        chain = self.chain_builder.do_syscall(syscall_num, [],stack_recover=False, needs_return=False) # dummy args
+        chain = self.chain_builder.do_syscall(syscall_num, [], needs_return=False) # dummy args
         if not chain or not chain._gadgets:
             raise RopException("Fail to build sigreturn syscall chain")
         frame_words = frame.to_words()

@@ -135,7 +135,7 @@ class ChainBuilder:
         """
         return self._func_caller.func_call(address, args, **kwargs)
 
-    def do_syscall(self, syscall_num, args, stack_recover=True, needs_return=True, **kwargs):
+    def do_syscall(self, syscall_num, args, needs_return=True, **kwargs):
         """
         build a rop chain which performs the requested system call with the arguments set to 'registers' before
         the call is made
@@ -148,7 +148,7 @@ class ChainBuilder:
         if not self._sys_caller:
             l.exception("SysCaller does not support OS: %s", self.project.loader.main_object.os)
             return None
-        return self._sys_caller.do_syscall(syscall_num, args,stack_recover=stack_recover,
+        return self._sys_caller.do_syscall(syscall_num, args,
                                             needs_return=needs_return, **kwargs)
 
     def execve(self, path=None, path_addr=None):
