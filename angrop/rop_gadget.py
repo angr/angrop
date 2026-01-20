@@ -104,8 +104,6 @@ class RopGadget(RopEffect):
         out.pc_offset = self.pc_offset
         out.pc_reg = self.pc_reg
         out.pc_target = self.pc_target
-        out.branch_dependencies = set(self.branch_dependencies)
-        out.has_conditional_branch = self.has_conditional_branch
         return out
 
     def __getstate__(self):
