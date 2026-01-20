@@ -256,7 +256,8 @@ class Builder:
                 if ast.op == 'BVS' and ast.args[0].startswith('symbolic_stack'):
                     target_ast = ast
                     break
-            assert target_ast is not None
+            if target_ast is None:
+                raise RopException("rebalancing non-stack value")
 
             solver = claripy.Solver()
             solver.add(lhs == rhs)

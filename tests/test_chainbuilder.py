@@ -1248,6 +1248,25 @@ def test_push_pop_move():
     chain = rop.move_regs(rdi='rax')
     assert chain
 
+def test_rebalance_ast_failsafe():
+    proj = angr.load_shellcode(
+            """
+            pop ebx; pop esi; pop edi; xor eax, eax; ret
+            lea eax, [edx + 0xf]; pop edi; ret
+            """,
+            "i386",
+            load_address=0,
+            auto_load_libs=False
+            )
+    rop = proj.analyses.ROP()
+    rop.find_gadgets_single_threaded()
+
+    rop.set_badbytes([0x00])
+    try:
+        rop.set_regs(eax=0, edi=0xdeadbeef)
+    except RopException:
+        pass
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
