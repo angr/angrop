@@ -226,7 +226,8 @@ class SysCaller(FuncCaller):
 
             try:
                 chain = self._func_call(gadget, cc, args, extra_regs=extra_regs,
-                               needs_return=needs_return, preserve_regs=preserve_regs, **kwargs)
+                                needs_return=needs_return, preserve_regs=preserve_regs,
+                                **kwargs)
                 if self.verify(chain, registers, more):
                     return chain
             except RopException:

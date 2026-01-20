@@ -6,6 +6,7 @@ from .mem_writer import MemWriter
 from .mem_changer import MemChanger
 from .func_caller import FuncCaller
 from .sys_caller import SysCaller
+from .sigreturn import SigreturnBuilder
 from .pivot import Pivot
 from .shifter import Shifter
 from .. import rop_utils
@@ -45,6 +46,7 @@ class ChainBuilder:
         self._func_caller = FuncCaller(self)
         self._pivot = Pivot(self)
         self._sys_caller = SysCaller(self)
+        self._sigreturn = SigreturnBuilder(self)
         if not SysCaller.supported_os(self.project.loader.main_object.os):
             l.warning("%s is not a fully supported OS, SysCaller may not work on this OS",
                       self.project.loader.main_object.os)
@@ -146,7 +148,8 @@ class ChainBuilder:
         if not self._sys_caller:
             l.exception("SysCaller does not support OS: %s", self.project.loader.main_object.os)
             return None
-        return self._sys_caller.do_syscall(syscall_num, args, needs_return=needs_return, **kwargs)
+        return self._sys_caller.do_syscall(syscall_num, args,
+                                            needs_return=needs_return, **kwargs)
 
     def execve(self, path=None, path_addr=None):
         """
@@ -158,6 +161,25 @@ class ChainBuilder:
             l.exception("SysCaller does not support OS: %s", self.project.loader.main_object.os)
             return None
         return self._sys_caller.execve(path=path, path_addr=path_addr)
+
+    def sigreturn_syscall(self, syscall_num, args, sp=None):
+        """
+        build a sigreturn syscall chain with syscall gadget and ROP syscall registers => SigreturnFrame.
+        :param syscall_num: syscall number for sigreturn
+        :param args: syscall arguments for sigreturn [list]
+        :param sp: address to jump to after sigreturn
+        :return: RopChain object
+        """
+        return self._sigreturn.sigreturn_syscall(syscall_num, args, sp=sp)
+
+    def sigreturn(self, **registers):
+        """
+        build a rop chain that invokes sigreturn/rt_sigreturn and loads registers from a frame
+        :param syscall_num: override syscall number if needed
+        :param registers: register values to set in the sigreturn frame
+        :return: a RopChain that performs sigreturn
+        """
+        return self._sigreturn.sigreturn(**registers)
 
     def shift(self, length, preserve_regs=None, next_pc_idx=-1):
         """
