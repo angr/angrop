@@ -230,14 +230,18 @@ class RopEffect:
     def copy_effect(self, cp):
         cp.stack_change = self.stack_change
         cp.changed_regs = set(self.changed_regs)
-        cp.reg_pops = set(self.reg_pops)
         cp.concrete_regs = dict(self.concrete_regs)
         cp.reg_dependencies = dict(self.reg_dependencies)
         cp.reg_controllers = dict(self.reg_controllers)
+        cp.reg_pops = set(self.reg_pops)
         cp.reg_moves = list(self.reg_moves)
+
         cp.mem_reads = list(self.mem_reads)
         cp.mem_writes = list(self.mem_writes)
         cp.mem_changes = list(self.mem_changes)
         cp.bbl_addrs = list(self.bbl_addrs)
         cp.isn_count = self.isn_count
+
+        cp.pop_equal_set = set(self.pop_equal_set)
+        cp.branch_dependencies = self.has_conditional_branch
         return cp

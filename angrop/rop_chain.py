@@ -219,8 +219,10 @@ class RopChain:
         cp._values = list(self._values)
         cp.payload_len = self.payload_len
         cp._blank_state = self._blank_state.copy()
-        cp.badbytes = self.badbytes.copy()
+        cp.badbytes = self.badbytes
 
+        cp._pivoted = self._pivoted
+        cp._init_sp = self._init_sp
         return cp
 
     #### Solver Layer ####
