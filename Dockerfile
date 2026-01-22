@@ -1,27 +1,11 @@
-from python:3.13-bookworm
+from python:3.13-trixie
 
 run apt-get update && apt-get upgrade -y
-run pip install --upgrade pip 
+run apt-get install -y make git rustup cmake
+run rustup install stable
 
-run apt-get install -y make binutils-riscv64-linux-gnu git
+run pip install angr pwntools
 
-# setup python dependencies
-run pip install cffi pwntools unicorn==2.0.1.post1 protobuf==5.28.2
-run pip install setuptools==79.0.1
-
-run git clone --depth 1 -b wip/riscv https://github.com/angr/archinfo /archinfo
-workdir /archinfo
-run pip install -e .
-run pip install pyvex==9.2.139 cle==9.2.139 claripy==9.2.139
-run git clone --depth 1 -b wip/riscv https://github.com/angr/angr /angr
-workdir /angr
-run sed -i 's/9.2.153.dev0/9.2.139/' angr/__init__.py
-run sed -i 's/9.2.153.dev0/9.2.139/' ./pyproject.toml
-run pip install --no-build-isolation -e .
-
-# install angrop
 copy . /angrop
 workdir /angrop
 run pip install -e .
-run pip install ailment==9.2.153
-copy bin/angrop-cli /usr/bin/angrop-cli
