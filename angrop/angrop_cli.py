@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-developed within 30min at DEF CON 33 :P
+the first draft was developed within 30min at DEF CON 33 :P
 """
 
 import os
@@ -14,13 +14,13 @@ import angr
 import angrop
 from pwnlib.elf import ELF
 
-def find_gadgets(path, rop, optimize=False):
+def find_gadgets(path, rop):
     cache_path = get_cache_path(path)
     if not os.path.exists(cache_path):
-        gadgets = rop.find_gadgets(processes=cpu_count(), optimize=optimize)
+        gadgets = rop.find_gadgets(processes=cpu_count(), optimize=False)
         rop.save_gadgets(cache_path)
     else:
-        rop.load_gadgets(cache_path, optimize=optimize)
+        rop.load_gadgets(cache_path, optimize=False)
     return rop._all_gadgets
 
 def dump_gadgets(args):
@@ -45,7 +45,10 @@ def dump_chain(args):
     e = ELF(args.path)
     proj = angr.Project(args.path, load_options={'main_opts':{'base_addr': 0}})
     rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, only_check_near_rets=False)
-    find_gadgets(args.path, rop, optimize=not args.fast)
+    find_gadgets(args.path, rop)
+    if not args.fast:
+        rop.optimize(processes=cpu_count())
+
     match args.target:
         case "execve":
             execve_addr = None
