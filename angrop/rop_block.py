@@ -160,6 +160,7 @@ class RopBlock(RopChain, RopEffect):
             else:
                 raise NotImplementedError("plz create an issue")
         rb._analyze_effect()
+        rb._check_ibt_seq(rb._gadgets)  # the jmp_reg branch appends directly; validate it too
         return rb
 
     @staticmethod

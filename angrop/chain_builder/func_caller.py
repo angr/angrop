@@ -202,6 +202,10 @@ class FuncCaller(Builder):
         func_gadget = FunctionGadget(address, symbol)
         func_gadget.stack_change = self.project.arch.bytes
         func_gadget.pc_offset = 0
+        # Synthesized gadgets never pass through _create_gadget, so tag has_endbr here;
+        # otherwise a jmp_reg -> func transition would be spuriously rejected under IBT.
+        if self.arch.ibt or self.arch.force_endbr:
+            func_gadget.has_endbr = self.arch.addr_has_endbr(address)
         try:
             return self._func_call(func_gadget, self._cc, args, **kwargs)
         except RopException:

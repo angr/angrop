@@ -130,6 +130,11 @@ class GadgetAnalyzer:
     def _analyze_gadget(self, addr, allow_conditional_branches):
         l.info("Analyzing 0x%x", addr)
 
+        # force_endbr: blanket find-time exclusion of non-endbr entries. This is the ONLY
+        # place a gadget is dropped for IBT reasons; ibt alone never drops anything.
+        if self.arch.force_endbr and not self.arch.addr_has_endbr(addr):
+            return []
+
         # Step 1: first statically check if the block can reach stopping states
         #         static analysis is much faster
         if not self._can_reach_stopping_states(addr, allow_conditional_branches, max_steps=self._max_bb_cnt):
@@ -541,6 +546,10 @@ class GadgetAnalyzer:
             gadget = RopGadget(addr=addr)
 
         gadget = self._effect_analysis(gadget, init_state, final_state, ctrl_type, do_cond_branch)
+        if gadget is not None and (self.arch.ibt or self.arch.force_endbr):
+            # under force_endbr the _analyze_gadget gate already proved this addr is endbr,
+            # so skip the redundant memory load
+            gadget.has_endbr = True if self.arch.force_endbr else self.arch.addr_has_endbr(gadget.addr)
         return gadget
 
     def _analyze_concrete_regs(self, final_state, gadget):

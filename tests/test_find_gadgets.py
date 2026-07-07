@@ -349,6 +349,137 @@ def test_syscall_block_hash():
     for addr in [0x402de7, 0x425a00, 0x43e083, 0x4b146c]:
         assert addr in tasks
 
+def test_ibt_has_endbr_tagging():                         # C1
+    blob = b"\xf3\x0f\x1e\xfa\x5f\xc3\x5e\xc3"            # endbr64;pop rdi;ret | pop rsi;ret
+    proj = angr.load_shellcode(blob, "amd64", load_address=0x400000)
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, ibt=True)
+    g_endbr = rop.analyze_gadget(0x400000)
+    g_plain = rop.analyze_gadget(0x400006)
+    assert g_endbr is not None and g_endbr.has_endbr is True
+    assert g_plain is not None and g_plain.has_endbr is False   # not filtered, tagged False
+
+
+def test_ibt_ret_gadgets_unaffected():                    # C2
+    proj = angr.load_shellcode(b"\x5f\xc3", "amd64", load_address=0x400000)  # pop rdi; ret
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, ibt=True)
+    g = rop.analyze_gadget(0x400000)
+    assert g is not None and g.transit_type == 'pop_pc' and g.has_endbr is False
+
+
+def test_ibt_default_untagged():                          # C0.3
+    proj = angr.load_shellcode(b"\xf3\x0f\x1e\xfa\x5f\xc3", "amd64", load_address=0x400000)
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)
+    g = rop.analyze_gadget(0x400000)
+    assert g is not None and g.has_endbr is False
+
+
+def test_ibt_check_transition():                          # C2 + C3 (via the mutator)
+    import pytest
+    from angrop.rop_chain import RopChain
+    from angrop.errors import RopException
+    proj = angr.load_shellcode(b"\xf3\x0f\x1e\xfa\x5f\xc3\x5e\xc3", "amd64", load_address=0x400000)
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, ibt=True)
+    endbr_g = rop.analyze_gadget(0x400000)
+    plain_g = rop.analyze_gadget(0x400006)
+    plain_g.transit_type = 'jmp_reg'
+    chain = RopChain(rop.project, rop.chain_builder._reg_setter)
+    with pytest.raises(RopException):
+        chain.set_gadgets([plain_g, plain_g])             # jmp_reg -> non-endbr
+    chain.set_gadgets([plain_g, endbr_g])                 # jmp_reg -> endbr : ok
+    plain_g.transit_type = 'pop_pc'
+    chain.set_gadgets([plain_g, plain_g])                 # pop_pc -> non-endbr : ok (ret exempt)
+    plain_g.transit_type = 'jmp_mem'
+    chain.set_gadgets([plain_g, plain_g])                 # jmp_mem -> non-endbr : ok in mutator
+                                                          # (target is the in-memory shifter,
+                                                          #  enforced in _normalize_jmp_mem)
+
+
+def test_ibt_find_set_identity():                         # C0.2
+    proj = angr.Project(os.path.join(tests_dir, "i386", "bronze_ropchain"), auto_load_libs=False)
+    base = proj.analyses.ROP(); base.find_gadgets_single_threaded(show_progress=False)
+    ibt = proj.analyses.ROP(ibt=True); ibt.find_gadgets_single_threaded(show_progress=False)
+    assert {g.addr for g in base._all_gadgets} == {g.addr for g in ibt._all_gadgets}
+
+
+def test_ibt_cet_truth_table():                           # C6
+    proj = angr.load_shellcode(b"\x5f\xc3", "amd64", load_address=0x400000)
+    for kw in [dict(ibt=True), dict(cet=True), dict(cet="full"),
+               dict(cet="ibt"), dict(cet="ibt+shstk"), dict(cet="shstk+ibt"),
+               dict(cet=1)]:  # truthy non-True must not silently leave IBT off
+        assert proj.analyses.ROP(**kw).arch.ibt is True, kw
+    for kw in [dict(), dict(cet=None), dict(cet=False), dict(cet="shstk"),
+               dict(cet="ibr+shstk")]:  # typo of 'ibt' must NOT enable ibt (and warns)
+        assert proj.analyses.ROP(**kw).arch.ibt is False, kw
+
+
+def test_ibt_unpickled_chain_no_builder():                # F2: no crash without a builder
+    import pickle
+    from angrop.rop_chain import RopChain
+    proj = angr.load_shellcode(b"\xf3\x0f\x1e\xfa\x5f\xc3", "amd64", load_address=0x400000)
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, ibt=True)
+    g = rop.analyze_gadget(0x400000)
+    chain = RopChain(rop.project, rop.chain_builder._reg_setter)
+    chain2 = pickle.loads(pickle.dumps(chain))            # __getstate__ nulls _builder
+    assert chain2._builder is None
+    chain2.set_gadgets([g, g])                            # must not raise despite ibt
+
+
+def test_ibt_pickle_survives(tmp_path):                   # C4
+    proj = angr.load_shellcode(b"\xf3\x0f\x1e\xfa\x5f\xc3", "amd64", load_address=0x400000)
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, ibt=True)
+    rop.analyze_gadget(0x400000)
+    path = str(tmp_path / "cache"); rop.save_gadgets(path)
+    rop2 = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, ibt=True)
+    rop2.load_gadgets(path, optimize=False)
+    assert any(g.has_endbr for g in rop2._all_gadgets)
+
+
+def test_ibt_cache_cross_flag(tmp_path):                  # C4 (cross-flag re-tag / re-filter)
+    blob = b"\xf3\x0f\x1e\xfa\x5f\xc3\x5e\xc3"            # endbr64;pop rdi;ret | pop rsi;ret
+    proj = angr.load_shellcode(blob, "amd64", load_address=0x400000)
+    base = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1)   # default: untagged
+    base.find_gadgets_single_threaded(show_progress=False)
+    path = str(tmp_path / "cache"); base.save_gadgets(path)
+    # load under ibt -> has_endbr re-tagged to match a fresh find (not left all-False)
+    ibt = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, ibt=True)
+    ibt.load_gadgets(path, optimize=False)
+    tagged = {g.addr: g.has_endbr for g in ibt._all_gadgets}
+    assert tagged.get(0x400000) is True and tagged.get(0x400006) is False
+    # load under force_endbr -> non-endbr gadget re-filtered out of a default cache
+    fe = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, force_endbr=True)
+    fe.load_gadgets(path, optimize=False)
+    addrs = {g.addr for g in fe._all_gadgets}
+    assert 0x400000 in addrs and 0x400006 not in addrs
+    assert all(g.has_endbr for g in fe._all_gadgets)
+    # _duplicates stays consistent with _all_gadgets (no non-endbr equivalents left)
+    assert all(fe.arch.addr_has_endbr(a) for eqs in fe._duplicates.values() for a in eqs)
+
+
+def test_ibt_non_x86_noop():                              # C5
+    proj = angr.load_shellcode(b"\x1e\xff\x2f\xe1", "armel", load_address=0x1000)  # bx lr
+    assert proj.analyses.ROP(ibt=True).arch.ibt is False
+
+
+def test_ibt_endbr32_tagging():                           # C1 (endbr32 mirror)
+    blob = b"\xf3\x0f\x1e\xfb\x58\xc3"                    # endbr32; pop eax; ret
+    proj = angr.load_shellcode(blob, "x86", load_address=0x400000)
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, ibt=True)
+    g = rop.analyze_gadget(0x400000)
+    assert g is not None and g.has_endbr is True
+
+
+def test_force_endbr_excludes_non_endbr():                # C7
+    blob = b"\xf3\x0f\x1e\xfa\x5f\xc3\x5e\xc3"            # endbr64;pop rdi;ret | pop rsi;ret
+    proj = angr.load_shellcode(blob, "amd64", load_address=0x400000)
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, force_endbr=True)
+    assert rop.analyze_gadget(0x400000) is not None       # endbr kept
+    assert rop.analyze_gadget(0x400006) is None           # non-endbr dropped
+    rop.find_gadgets_single_threaded(show_progress=False)
+    addrs = {g.addr for g in rop._all_gadgets}
+    assert 0x400000 in addrs and 0x400006 not in addrs
+    assert all(g.has_endbr for g in rop._all_gadgets)
+
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}
