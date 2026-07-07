@@ -24,6 +24,10 @@ class RopGadget(RopEffect):
         # for jmp_mem, where it jumps to
         self.pc_target = None # type: ignore
 
+        # IBT: whether the gadget's entry is an endbr landing pad. Only set (tagged) when
+        # ibt/force_endbr is enabled; stays False otherwise (and for non-x86 arches).
+        self.has_endbr = False
+
     @property
     def self_contained(self):
         """
@@ -104,6 +108,7 @@ class RopGadget(RopEffect):
         out.pc_offset = self.pc_offset
         out.pc_reg = self.pc_reg
         out.pc_target = self.pc_target
+        out.has_endbr = self.has_endbr
         return out
 
     def __getstate__(self):
@@ -113,6 +118,8 @@ class RopGadget(RopEffect):
 
     def __setstate__(self, state):
         self.__dict__.update(state)
+        if 'has_endbr' not in self.__dict__:
+            self.has_endbr = False
 
 class PivotGadget(RopGadget):
     """

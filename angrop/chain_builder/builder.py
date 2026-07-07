@@ -735,6 +735,11 @@ class Builder:
             # if final_gadget is passed in, then it is the shifter
             if final_gadget:
                 shifter = final_gadget
+                # Under IBT the jmp_mem gadget indirectly branches to the shifter, so the
+                # shifter must be endbr. The shifter is written into memory (not into
+                # _gadgets), so this is the ONLY place this transition can be enforced.
+                if self.arch.ibt and not shifter.has_endbr:
+                    return None
             else:
                 sc = abs(gadget.stack_change) + self.project.arch.bytes
                 shifter = None
@@ -747,6 +752,10 @@ class Builder:
                 shifter_list = itertools.chain.from_iterable(shifter_list)
                 for shifter in shifter_list:
                     if shifter.pc_offset < shift_size:
+                        continue
+                    # jmp_mem's indirect target is the shifter -> must be endbr under IBT.
+                    # Authoritative (not best-effort): the shifter never enters _gadgets.
+                    if self.arch.ibt and not shifter.has_endbr:
                         continue
                     if not shifter.changed_regs.intersection(post_preserve):
                         break
