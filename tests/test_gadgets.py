@@ -650,7 +650,7 @@ def test_concrete_reg_change():
     g = rop.analyze_gadget(0)
     assert g.concrete_reg_changes and 'rax' in g.concrete_reg_changes
     init_ast, final_ast = g.concrete_reg_changes['rax']
-    new_ast = claripy.algorithm.replace(expr=final_ast, old=init_ast, new=claripy.BVV(1, 64))
+    new_ast = claripy.replace(expr=final_ast, old=init_ast, new=claripy.BVV(1, 64))
     assert new_ast.concrete_value == 0x42
 
     # the other side must be concrete

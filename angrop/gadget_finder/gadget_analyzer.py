@@ -105,7 +105,7 @@ class GadgetAnalyzer:
             simgr.move(from_stash='active', to_stash='syscall',
                        filter_func=lambda s: rop_utils.is_in_kernel(self.project, s))
 
-        except (claripy.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError): # type: ignore
+        except (claripy.ClaripySolverInterruptError, claripy.errors.ClaripyError, ValueError): # type: ignore
             return [], []
         except (claripy.ClaripyFrontendError,
                 angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e: # type: ignore
@@ -170,7 +170,7 @@ class GadgetAnalyzer:
             except RopException as e:
                 l.debug("... %s", e)
                 continue
-            except (claripy.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError): # type: ignore
+            except (claripy.ClaripySolverInterruptError, claripy.errors.ClaripyError, ValueError): # type: ignore
                 continue
             except (claripy.ClaripyFrontendError,
                     angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e: # type: ignore
@@ -621,7 +621,7 @@ class GadgetAnalyzer:
             final_reg = final_state.registers.load(reg)
             if init_reg is final_reg:
                 continue
-            ast = claripy.algorithm.replace(expr=final_reg, old=init_reg, new=claripy.BVV(0, arch_bits))
+            ast = claripy.replace(expr=final_reg, old=init_reg, new=claripy.BVV(0, arch_bits))
             if ast.symbolic:
                 continue
             gadget.concrete_reg_changes[reg] = (init_reg, final_reg)
