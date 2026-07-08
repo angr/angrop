@@ -8,7 +8,7 @@ from functools import cmp_to_key
 from collections import defaultdict
 
 import angr
-import claripy
+from angr import claripy
 
 from .. import rop_utils
 from ..errors import RopException

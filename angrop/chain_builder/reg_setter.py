@@ -3,7 +3,7 @@ import logging
 from collections import defaultdict, Counter
 from functools import cmp_to_key
 
-import claripy
+from angr import claripy
 import networkx as nx
 from angr.errors import SimUnsatError
 

@@ -5,7 +5,7 @@ import ctypes
 import threading
 
 import angr
-import claripy
+from angr import claripy
 from angr.engines.successors import SimSuccessors
 
 from .errors import RegNotFoundException, RopException, RopTimeoutException

@@ -7,7 +7,7 @@ from collections import defaultdict
 
 import angr
 import pyvex
-import claripy
+from angr import claripy
 from angr.analyses.bindiff import differing_constants
 from angr.analyses.bindiff import UnmatchedStatementsException
 from angr.errors import SimEngineError, SimMemoryError

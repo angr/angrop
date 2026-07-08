@@ -3,7 +3,7 @@ import logging
 from collections import defaultdict
 
 import angr
-import claripy
+from angr import claripy
 
 from .builder import Builder
 from .. import rop_utils

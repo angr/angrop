@@ -2,7 +2,7 @@ import os
 import pickle
 import logging
 
-import claripy
+from angr import claripy
 import angr
 import angrop  # pylint: disable=unused-import
 
