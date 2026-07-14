@@ -1015,6 +1015,14 @@ class GadgetAnalyzer:
                 return None
         data_stack_controllers = {x for x in sym_data.variables if x.startswith('symbolic_stack')}
 
+        # a memory change whose delta has no controller is a pure constant change (e.g. `dec [rax]`).
+        # we only recognize such constant changes at full word granularity. sub-word constant changes
+        # (e.g. thumb `ldrh; subs; strh`) are not usable by the mem-change chain builder; historically
+        # they were filtered out incidentally because claripy left the store data wrapped in an
+        # Extract, but clarirs simplifies that away, so we reject them explicitly here.
+        if not data_controllers and not data_stack_controllers:
+            if write_action.data.ast.size() != self.project.arch.bits:
+                return None
 
         mem_change = self._build_mem_access(read_action, gadget, init_state, final_state)
         mem_change.op = write_action.data.ast.op
