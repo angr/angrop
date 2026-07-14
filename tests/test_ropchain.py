@@ -18,7 +18,7 @@ def test_chain_exec():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     # make sure the target gadget exist
@@ -45,7 +45,7 @@ def test_sigreturn_chain_i386():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     rop.set_roparg_filler(0)
@@ -79,7 +79,7 @@ def test_sigreturn_chain_amd64():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     rop.set_roparg_filler(0)

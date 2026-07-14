@@ -15,7 +15,7 @@ def get_rop(path):
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
     return rop
 
