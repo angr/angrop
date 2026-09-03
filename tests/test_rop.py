@@ -2,7 +2,7 @@ import os
 import pickle
 import logging
 
-import claripy
+from angr import claripy
 import angr
 import angrop  # pylint: disable=unused-import
 
@@ -265,7 +265,7 @@ def test_roptest_aarch64():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.write_to_mem(0x41414140, b'AAAAAAA')
@@ -285,7 +285,7 @@ def test_acct_sa():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.set_regs(rax=0x41414141)
@@ -314,7 +314,7 @@ def test_liblog():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.set_regs(rdx=0x41414141)

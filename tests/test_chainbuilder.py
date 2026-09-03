@@ -1,6 +1,6 @@
 import os
 
-import claripy
+from angr import claripy
 
 import angr
 import angrop # pylint: disable=unused-import
@@ -19,7 +19,7 @@ def test_symbolic_data():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     var1 = claripy.BVS("var1", proj.arch.bits)
@@ -38,7 +38,7 @@ def test_x86_64_func_call():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.func_call('puts', [0x402704]) + rop.func_call('puts', [0x402704])
@@ -53,7 +53,7 @@ def test_i386_func_call():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.func_call('write', [1, 0x80AC5E8, 17]) + rop.func_call('write', [1, 0x80AC5E8, 17])
@@ -67,7 +67,7 @@ def test_arm_func_call():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.set_regs(lr=0x41414141)
@@ -95,7 +95,7 @@ def test_i386_syscall():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.do_syscall(4, [1, 0x80AC5E8, 17])
@@ -110,7 +110,7 @@ def test_x86_64_syscall():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     gadget = rop.analyze_gadget(0x4fb4a6)
@@ -136,7 +136,7 @@ def test_preserve_regs():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain1 = rop.set_regs(rdi=0x402715)
@@ -153,7 +153,7 @@ def test_i386_mem_write():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.write_to_mem(0xdeadbeef, b"/bin/sh\x00")
@@ -170,7 +170,7 @@ def test_ropvalue():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.write_to_mem(0x800000, b"/bin/sh\x00")
@@ -194,7 +194,7 @@ def test_reg_move():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     # test single register move
@@ -218,7 +218,7 @@ def test_set_regs():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.set_regs(r4=0x4141412c, r5=0x42424242)
@@ -234,7 +234,7 @@ def test_add_to_mem():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.write_to_mem(0xdeadbeef, b'CCCC') # 0x43434343
@@ -254,7 +254,7 @@ def test_add_to_mem():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     rop.add_to_mem(0x41414140, 0x42424242)
@@ -266,7 +266,7 @@ def test_add_to_mem():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     rop.add_to_mem(0x41414140, 0x42424242)
@@ -279,7 +279,7 @@ def test_pivot():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.pivot(0x41414140)
@@ -300,7 +300,7 @@ def test_shifter():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.shift(0x50, preserve_regs=['ebx'])
@@ -326,7 +326,7 @@ def test_shifter():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.shift(0x40)
@@ -341,7 +341,7 @@ def test_shifter():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.shift(0x40)
@@ -357,7 +357,7 @@ def test_shifter():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.shift(0x10)
@@ -374,7 +374,7 @@ def test_retsled():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.retsled(0x40)
@@ -388,7 +388,7 @@ def test_retsled():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.retsled(0x40)
@@ -401,7 +401,7 @@ def test_retsled():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     chain = rop.retsled(0x40)
@@ -435,7 +435,7 @@ def test_retn_i386_call_chain():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     # force to use 'retn 0xc' to clean up function arguments
@@ -600,7 +600,7 @@ def test_graph_search_reg_setter():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     # the easy peasy pop-only reg setter
@@ -1122,7 +1122,7 @@ def test_riscv_oop_normalization():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets(processes=16, optimize=False)
+        rop.find_gadgets_single_threaded(optimize=False)
         rop.save_gadgets(cache_path)
 
     g = rop.analyze_gadget(0x00000000000407cc)
@@ -1163,7 +1163,7 @@ def test_mem_changer():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
 
     # xor
     chain = rop.write_to_mem(0xdeadbeef, b'\x63')

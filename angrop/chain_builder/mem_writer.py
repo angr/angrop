@@ -3,7 +3,7 @@ import logging
 from collections import defaultdict
 
 import angr
-import claripy
+from angr import claripy
 
 from .builder import Builder
 from .. import rop_utils
@@ -101,7 +101,7 @@ class MemWriteChain:
             if not val.symbolic or not val.ast.variables:
                 continue
             if list(val.ast.variables)[0].startswith('addr_'):
-                test_ast = claripy.algorithm.replace(expr=val.ast,
+                test_ast = claripy.replace(expr=val.ast,
                                           old=self.addr_bv,
                                           new=addr_val.data)
                 new = addr_val.copy()
@@ -112,7 +112,7 @@ class MemWriteChain:
                 continue
             if list(val.ast.variables)[0].startswith('data_'):
                 var = claripy.BVV(struct.unpack(fmt, data.ljust(arch_bytes, b'\x00'))[0], len(self.data_bv))
-                test_ast = claripy.algorithm.replace(expr=val.ast,
+                test_ast = claripy.replace(expr=val.ast,
                                           old=self.data_bv,
                                           new=var)
                 if len(test_ast) < arch_bits: # type: ignore

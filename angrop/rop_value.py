@@ -1,4 +1,4 @@
-import claripy
+from angr import claripy
 
 class RopValue:
     """

@@ -36,7 +36,7 @@ def test_badbyte():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     # make sure it can set 0 first
@@ -91,7 +91,7 @@ def test_badbyte_transform():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     rop.set_badbytes([0x00, 0x0A])
@@ -111,7 +111,7 @@ def test_badbyte_multibyte():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     rop.set_badbytes([0x00, 0x0A])
@@ -133,7 +133,7 @@ def test_hard_regs_loop():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
 
     rop.set_badbytes([0x00, 0x0A])

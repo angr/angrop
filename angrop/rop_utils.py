@@ -5,11 +5,30 @@ import ctypes
 import threading
 
 import angr
-import claripy
+from angr import claripy
 from angr.engines.successors import SimSuccessors
 
 from .errors import RegNotFoundException, RopException, RopTimeoutException
 from .rop_value import RopValue
+
+
+def children_asts(ast):
+    """
+    Iterate over the nested children ASTs of ``ast`` (depth-first).
+
+    Replaces claripy's ``Base.children_asts()``, which clarirs does not
+    provide; clarirs ASTs only expose their immediate ``.args``.
+    """
+    queue = [iter(ast.args)]
+    while queue:
+        try:
+            child = next(queue[-1])
+        except StopIteration:
+            queue.pop()
+            continue
+        if isinstance(child, claripy.ast.Base):
+            queue.append(iter(child.args))
+            yield child
 
 def addr_to_asmstring(project, addr):
     block = project.factory.block(addr)
@@ -83,7 +102,7 @@ def get_ast_controllers(state, ast, reg_deps) -> set:
             if not state.registers.load(r).symbolic:
                 continue
             reg_sym_val = state.registers.load(r)
-            test_ast = claripy.algorithm.replace(expr=test_ast,
+            test_ast = claripy.replace(expr=test_ast,
                                       old=reg_sym_val,
                                       new=claripy.BVV(test_val, reg_sym_val.size()))
         # we consider 32-bit control on 64-bit system valid
@@ -111,7 +130,7 @@ def get_ast_const_offset(state, ast, reg_deps) -> int:
     # This is faster than eval with extra contraints
     for reg in reg_deps:
         reg_val = state.registers.load(reg)
-        ast = claripy.algorithm.replace(
+        ast = claripy.replace(
             expr=ast, old=reg_val, new=zero_val)
 
     assert not ast.symbolic
@@ -178,7 +197,7 @@ def fast_unconstrained_check(state, ast):
 
     passes_prefilter = True
 
-    for a in ast.children_asts():
+    for a in children_asts(ast):
         if a.op not in good_ops:
             passes_prefilter = False
         # check for x __add__ x which is constrained
@@ -255,7 +274,7 @@ def get_reg_name(arch, reg_offset):
 def bits_extended(ast):
     if ast.op in ('ZeroExt', 'SignExt'):
         return ast.args[0]
-    for c in ast.children_asts():
+    for c in children_asts(ast):
         if c.op in ('ZeroExt', 'SignExt'):
             return c.args[0]
     return None
@@ -296,10 +315,14 @@ def make_initial_state(project, stack_gsize):
     initial_state.options.discard(angr.options.CGC_ZERO_FILL_UNCONSTRAINED_MEMORY)
     initial_state.options.update({angr.options.TRACK_REGISTER_ACTIONS, angr.options.TRACK_MEMORY_ACTIONS,
                                   angr.options.TRACK_JMP_ACTIONS, angr.options.TRACK_CONSTRAINT_ACTIONS})
-    symbolic_stack = claripy.Concat(*[
-        initial_state.solver.BVS(f"symbolic_stack_{i}", project.arch.bits) for i in range(stack_gsize)
-    ])
-    initial_state.memory.store(initial_state.regs.sp, symbolic_stack)
+    # stack_gsize may be 0 (a gadget that controls no stack); skip the store in
+    # that case. claripy tolerated claripy.Concat() with no arguments, but
+    # clarirs rejects an empty operand list.
+    if stack_gsize > 0:
+        symbolic_stack = claripy.Concat(*[
+            initial_state.solver.BVS(f"symbolic_stack_{i}", project.arch.bits) for i in range(stack_gsize)
+        ])
+        initial_state.memory.store(initial_state.regs.sp, symbolic_stack)
     if initial_state.arch.bp_offset != initial_state.arch.sp_offset:
         initial_state.regs.bp = initial_state.regs.sp + 20*initial_state.arch.bytes
     initial_state.solver._solver.timeout = 1000  # only solve for a second at most

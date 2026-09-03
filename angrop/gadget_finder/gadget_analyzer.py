@@ -7,7 +7,7 @@ from collections import defaultdict
 
 import angr
 import pyvex
-import claripy
+from angr import claripy
 from angr.analyses.bindiff import differing_constants
 from angr.analyses.bindiff import UnmatchedStatementsException
 from angr.errors import SimEngineError, SimMemoryError
@@ -105,7 +105,7 @@ class GadgetAnalyzer:
             simgr.move(from_stash='active', to_stash='syscall',
                        filter_func=lambda s: rop_utils.is_in_kernel(self.project, s))
 
-        except (claripy.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError): # type: ignore
+        except (claripy.ClaripySolverInterruptError, claripy.errors.ClaripyError, ValueError): # type: ignore
             return [], []
         except (claripy.ClaripyFrontendError,
                 angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e: # type: ignore
@@ -170,7 +170,7 @@ class GadgetAnalyzer:
             except RopException as e:
                 l.debug("... %s", e)
                 continue
-            except (claripy.ClaripySolverInterruptError, claripy.errors.ClaripyZ3Error, ValueError): # type: ignore
+            except (claripy.ClaripySolverInterruptError, claripy.errors.ClaripyError, ValueError): # type: ignore
                 continue
             except (claripy.ClaripyFrontendError,
                     angr.engines.vex.claripy.ccall.CCallMultivaluedException) as e: # type: ignore
@@ -621,7 +621,7 @@ class GadgetAnalyzer:
             final_reg = final_state.registers.load(reg)
             if init_reg is final_reg:
                 continue
-            ast = claripy.algorithm.replace(expr=final_reg, old=init_reg, new=claripy.BVV(0, arch_bits))
+            ast = claripy.replace(expr=final_reg, old=init_reg, new=claripy.BVV(0, arch_bits))
             if ast.symbolic:
                 continue
             gadget.concrete_reg_changes[reg] = (init_reg, final_reg)
@@ -1015,6 +1015,14 @@ class GadgetAnalyzer:
                 return None
         data_stack_controllers = {x for x in sym_data.variables if x.startswith('symbolic_stack')}
 
+        # a memory change whose delta has no controller is a pure constant change (e.g. `dec [rax]`).
+        # we only recognize such constant changes at full word granularity. sub-word constant changes
+        # (e.g. thumb `ldrh; subs; strh`) are not usable by the mem-change chain builder; historically
+        # they were filtered out incidentally because claripy left the store data wrapped in an
+        # Extract, but clarirs simplifies that away, so we reject them explicitly here.
+        if not data_controllers and not data_stack_controllers:
+            if write_action.data.ast.size() != self.project.arch.bits:
+                return None
 
         mem_change = self._build_mem_access(read_action, gadget, init_state, final_state)
         mem_change.op = write_action.data.ast.op

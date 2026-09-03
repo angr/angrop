@@ -1,6 +1,6 @@
 import os
 
-import claripy
+from angr import claripy
 import angr
 import angrop # pylint: disable=unused-import
 from angrop.rop_gadget import RopGadget, PivotGadget, SyscallGadget
@@ -15,7 +15,7 @@ def get_rop(path):
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path)
     else:
-        rop.find_gadgets()
+        rop.find_gadgets_single_threaded()
         rop.save_gadgets(cache_path)
     return rop
 
@@ -650,7 +650,7 @@ def test_concrete_reg_change():
     g = rop.analyze_gadget(0)
     assert g.concrete_reg_changes and 'rax' in g.concrete_reg_changes
     init_ast, final_ast = g.concrete_reg_changes['rax']
-    new_ast = claripy.algorithm.replace(expr=final_ast, old=init_ast, new=claripy.BVV(1, 64))
+    new_ast = claripy.replace(expr=final_ast, old=init_ast, new=claripy.BVV(1, 64))
     assert new_ast.concrete_value == 0x42
 
     # the other side must be concrete

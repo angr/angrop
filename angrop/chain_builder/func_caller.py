@@ -2,7 +2,7 @@ import struct
 import logging
 
 import angr
-import claripy
+from angr import claripy
 from angr.calling_conventions import SimRegArg, SimStackArg
 
 from .builder import Builder

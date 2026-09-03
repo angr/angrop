@@ -268,7 +268,14 @@ class RopChain:
                 solver_state.solver.add(expr)
                 if not solver_state.solver.satisfiable():
                     raise RopException("bad chain!")
-            concrete_vals.append((solver_state.solver.eval(ast), value.rebase))
+            concrete = solver_state.solver.eval(ast)
+            # pin the concretized value so that values sharing constraints with this
+            # one (e.g. two registers tied by `r12 + rbx*8 == ptr`) are concretized
+            # consistently. without this, each eval() may pick a different satisfying
+            # model and the concrete values won't jointly satisfy the constraints.
+            if ast.symbolic:
+                solver_state.solver.add(ast == concrete)
+            concrete_vals.append((concrete, value.rebase))
 
         return concrete_vals
 

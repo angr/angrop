@@ -8,7 +8,7 @@ from functools import cmp_to_key
 from collections import defaultdict
 
 import angr
-import claripy
+from angr import claripy
 
 from .. import rop_utils
 from ..errors import RopException
@@ -185,7 +185,7 @@ class Builder:
             var_map[reg] = (old_var, new_var)
 
         #  if this ast is a tree, record all the children_asts
-        for x in ast.children_asts():
+        for x in rop_utils.children_asts(ast):
             if x.op != 'BVS':
                 continue
             name = x.args[0]
@@ -210,7 +210,7 @@ class Builder:
         if ast.op == 'BVS':
             variables.add(ast)
         else:
-            for x in ast.children_asts():
+            for x in rop_utils.children_asts(ast):
                 if x.op != 'BVS':
                     continue
                 variables.add(x)
@@ -252,7 +252,7 @@ class Builder:
         # in some cases, we can just solve it
         if mode == 'stack' and lhs.symbolic and not rhs.symbolic and len(lhs.variables) == 1 and lhs.depth > 1:
             target_ast = None
-            for ast in lhs.children_asts():
+            for ast in rop_utils.children_asts(lhs):
                 if ast.op == 'BVS' and ast.args[0].startswith('symbolic_stack'):
                     target_ast = ast
                     break

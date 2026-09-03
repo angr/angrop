@@ -3,7 +3,7 @@ import logging
 from collections import defaultdict, Counter
 from functools import cmp_to_key
 
-import claripy
+from angr import claripy
 import networkx as nx
 from angr.errors import SimUnsatError
 
@@ -66,7 +66,7 @@ class ConcreteRegChanger(Builder):
     def _effect_tuple(self, g):
         reg = list(g.concrete_reg_changes.keys())[0]
         init_ast, final_ast = g.concrete_reg_changes[reg]
-        val = claripy.algorithm.replace(expr=final_ast,
+        val = claripy.replace(expr=final_ast,
                                         old=init_ast,
                                         new=claripy.BVV(0, self.project.arch.bits))
         op = final_ast.op
@@ -707,7 +707,7 @@ class RegSetter(Builder):
         for g1 in concrete_setter_gadgets:
             for g2 in delta_gadgets:
                 init_ast, final_ast = g2.concrete_reg_changes[reg]
-                ast = claripy.algorithm.replace(expr=final_ast,
+                ast = claripy.replace(expr=final_ast,
                                                 old=init_ast,
                                                 new=claripy.BVV(g1.concrete_regs[reg], arch_bits))
                 if ast.concrete_value != val.concreted:

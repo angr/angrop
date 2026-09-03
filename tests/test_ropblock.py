@@ -107,7 +107,7 @@ def test_stack_offset_infinite_loop():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets(optimize=False)
+        rop.find_gadgets_single_threaded(optimize=False)
         rop.save_gadgets(cache_path)
 
     addrs = [g.addr for g in rop._all_gadgets]
@@ -127,7 +127,7 @@ def test_normalized_block_effect2():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets(processes=16, optimize=False)
+        rop.find_gadgets_single_threaded(optimize=False)
         rop.save_gadgets(cache_path)
 
     gs = rop.analyze_addr(0x4ae6)
@@ -159,7 +159,7 @@ def test_jmp_reg_normalize_fast_path():
     if os.path.exists(cache_path):
         rop.load_gadgets(cache_path, optimize=False)
     else:
-        rop.find_gadgets(processes=16, optimize=False)
+        rop.find_gadgets_single_threaded(optimize=False)
         rop.save_gadgets(cache_path)
 
     rop.optimize(processes=1)

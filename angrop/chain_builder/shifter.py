@@ -1,7 +1,7 @@
 import logging
 from collections import defaultdict
 
-import claripy
+from angr import claripy
 
 from .. import rop_utils
 from .builder import Builder
