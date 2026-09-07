@@ -721,6 +721,22 @@ def test_gadget_filtering():
     assert len(rop.chain_builder._reg_setter._reg_setting_dict['rbp']) == 1
     assert rop.chain_builder._reg_setter._reg_setting_dict['rbp'][0].dstr().strip() == "pop rbp; ret"
 
+def test_shifted_stack_load_is_a_pop():
+    """
+    A register loaded from the stack and then shifted right is still controllable: we lose the shifted-out bits but
+    the remaining bits might be enough to place ordinary values.
+    libVEX 3.27 lifts `asr x5, x11, #1` to a single Sar64, and angrop incorrectly rejected every non-zero shift.
+    Older versions of libVEX emitted a rotate-and-mask expression, which angrop supports just fine.
+    """
+    proj = angr.Project(os.path.join(BIN_DIR, "tests", "aarch64", "libastring-ocaml-astring.cmxs"),
+                        load_options={'main_opts': {'base_addr': 0}})
+    rop = proj.analyses.ROP(fast_mode=False, max_sym_mem_access=1, only_check_near_rets=False)
+
+    # ldr x11, [sp]; asr x5, x11, #1; strb w5, [x0]; ldr x30, [sp, #0x18]; add sp, sp, #0x20; ret
+    gadgets = rop.analyze_addr(0x189a4)
+    assert len(gadgets) == 1
+    assert {"x5", "x11"}.issubset(gadgets[0].popped_regs)
+
 def run_all():
     functions = globals()
     all_functions = {x:y for x, y in functions.items() if x.startswith('test_')}

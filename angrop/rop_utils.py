@@ -225,9 +225,19 @@ def fast_unconstrained_check(state, ast):
                 if not arg.symbolic and arg.concrete_value != 0:
                     return True
 
-        if ast.op in ("__rshift__", "__lshift__"):
+        if ast.op == "__lshift__":
+            # a left shift zeroes out the high N bits
             for arg in ast.args:
                 if not arg.symbolic and arg.concrete_value != 0:
+                    return True
+
+        if ast.op == "__rshift__":
+            # a right shift by k leaves the high (size-k) bits under control
+            shift = ast.args[1]
+            if not shift.symbolic:
+                size = ast.size()
+                needed = 32 if size == 64 else size
+                if size - shift.concrete_value < needed:
                     return True
 
         if ast.op in ["__add__", "__sub__", "__xor__"]:
