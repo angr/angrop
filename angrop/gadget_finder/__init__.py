@@ -118,7 +118,7 @@ class GadgetFinder:
     """
     def __init__(self, project, fast_mode=None, only_check_near_rets=True, max_block_size=None,
                  max_sym_mem_access=None, is_thumb=False, kernel_mode=False, stack_gsize=80,
-                 cond_br=False, max_bb_cnt=2):
+                 cond_br=False, max_bb_cnt=2, require_endbr=False, force_endbr=False):
         # configurations
         self.project = project
         self.fast_mode = fast_mode
@@ -128,6 +128,13 @@ class GadgetFinder:
         self.stack_gsize = stack_gsize
         self.cond_br = cond_br
         self.max_bb_cnt = max_bb_cnt
+
+        # IBT (endbr) awareness: only meaningful on architectures with an endbr encoding.
+        if (require_endbr or force_endbr) and self.arch.endbr_bytes is None:
+            l.warning("ibt/cet/force_endbr endbr tracking only applies to i386/amd64, disabling it")
+            require_endbr = force_endbr = False
+        self.arch.ibt = require_endbr
+        self.arch.force_endbr = force_endbr
 
         if only_check_near_rets and not isinstance(self.arch, (X86, AMD64, AARCH64)):
             l.warning("only_check_near_rets only makes sense for i386/amd64/aarch64, setting it to False")
@@ -381,6 +388,14 @@ class GadgetFinder:
             addr += offset # this is the actual address
 
             if addr in skip_addrs:
+                do_update()
+                continue
+
+            # force_endbr perf pre-filter: skip non-endbr entries before the cache lookup
+            # and the (expensive) block lift -- addr_has_endbr only needs a memory load.
+            # Correctness is guaranteed by the _analyze_gadget gate; this only saves work.
+            # Do NOT add to skip_cache/skip_addrs (those are keyed by block bytes / shared).
+            if analyzer.arch.force_endbr and not analyzer.arch.addr_has_endbr(addr):
                 do_update()
                 continue
 

@@ -77,6 +77,9 @@ class RopChain:
             if not result._blank_state.satisfiable():
                 raise RopException("cannot use a rop_block with different constraints yet")
 
+        # both operands are internally IBT-valid (every _gadgets write is validated), so
+        # only the new join seam needs checking -- avoids O(n^2) re-validation on a+b+c+...
+        result._check_ibt_seq(self._gadgets[-1:] + other._gadgets[:1])
         return result
 
     def set_timeout(self, timeout):
@@ -94,6 +97,11 @@ class RopChain:
         self.payload_len += self._p.arch.bytes
 
     def add_gadget(self, gadget):
+        # validate the new seam BEFORE any mutation, so a rejected transition leaves the
+        # chain untouched (add_value below would otherwise inflate _values/payload_len)
+        if self._gadgets:
+            self._check_ibt_seq([self._gadgets[-1], gadget])
+
         value = gadget.addr
         if self._pie:
             value -= self._p.loader.main_object.mapped_base
@@ -108,7 +116,30 @@ class RopChain:
         self._gadgets.append(gadget)
 
     def set_gadgets(self, gadgets: list[RopGadget]):
+        self._check_ibt_seq(gadgets)  # validate before mutating self
         self._gadgets = gadgets
+
+    def _check_ibt_seq(self, gadgets):
+        """
+        Under IBT (arch.ibt), reject indirect-branch transitions that land on a non-endbr
+        gadget. This is the centralized enforcement point for jmp_reg transitions: it runs
+        on every write to a chain's ordered gadget list. No-op unless arch.ibt is set (C0),
+        and no-op when the chain has no builder yet (e.g. freshly unpickled before
+        set_builder) so gadget-list writes keep working without a builder as they did
+        before IBT support.
+
+        Only jmp_reg's target is the adjacent _gadgets entry. jmp_mem's real target (the
+        shifter) lives in memory, not in _gadgets, and the following entry is reached via
+        the shifter's ret (exempt) -- jmp_mem is enforced in builder._normalize_jmp_mem.
+        pop_pc (ret) transitions are never checked (IBT exempts ret targets).
+        """
+        if self._builder is None or not self._builder.arch.ibt:
+            return
+        for prev, cur in zip(gadgets, gadgets[1:]):
+            if prev.transit_type == 'jmp_reg' and not cur.has_endbr:
+                raise RopException(
+                    "IBT violation: indirect branch from %#x lands on non-endbr gadget %#x"
+                    % (prev.addr, cur.addr))
 
     def add_constraint(self, cons):
         """

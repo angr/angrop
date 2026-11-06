@@ -21,6 +21,23 @@ class ROPArch:
         self.execve_num = None
         self.sigreturn_num = None
 
+        # IBT (endbr) support; opt-in, x86/amd64 only. See ROP(ibt=/cet=/force_endbr=).
+        self.endbr_bytes = None
+        self.ibt = False
+        self.force_endbr = False
+
+    def addr_has_endbr(self, addr) -> bool:
+        """
+        Whether `addr` is an endbr (IBT landing pad) entry. Total: never raises.
+        """
+        if self.endbr_bytes is None:
+            return False
+        try:
+            raw = self.project.loader.memory.load(addr, len(self.endbr_bytes))
+        except Exception:  # pylint: disable=broad-except
+            return False
+        return bytes(raw) == self.endbr_bytes
+
     def _get_reg_list(self):
         """
         get the set of names of general-purpose registers + bp
@@ -51,6 +68,7 @@ class X86(ROPArch):
         self.segment_regs = {"cs", "ds", "es", "fs", "gs", "ss"}
         self.execve_num = 0xb
         self.sigreturn_num = 0x77
+        self.endbr_bytes = b"\xf3\x0f\x1e\xfb"  # endbr32
 
     def _x86_block_make_sense(self, block):
         capstr = str(block.capstone).lower()
@@ -91,6 +109,7 @@ class AMD64(X86):
         self.segment_regs = {"cs_seg", "ds_seg", "es_seg", "fs_seg", "gs_seg", "ss_seg"}
         self.execve_num = 0x3b
         self.sigreturn_num = 0xf
+        self.endbr_bytes = b"\xf3\x0f\x1e\xfa"  # endbr64
 
     def block_make_sense(self, block):
         return self._x86_block_make_sense(block)

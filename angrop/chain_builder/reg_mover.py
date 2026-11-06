@@ -497,8 +497,13 @@ class RegMover(Builder):
                     assert gs
                     # FIXME: we are using the _build_reg_setting_chain API to turn mixin lists to a RopBlock
                     # which is pretty wrong
-                    chain = self._build_reg_setting_chain(gs, {})
-                    rb = RopBlock.from_chain(chain)
+                    try:
+                        chain = self._build_reg_setting_chain(gs, {})
+                        rb = RopBlock.from_chain(chain)
+                    except (RopException, SimUnsatError):
+                        # this candidate can't be built (e.g. an IBT-invalid jmp_reg
+                        # transition under ibt=True); skip it and try the next sequence
+                        continue
                     rop_blocks.add(rb)
             except nx.exception.NetworkXNoPath as e: # type: ignore
                 raise RopException(f"There is no chain can move {move.from_reg} to {move.to_reg}") from e
