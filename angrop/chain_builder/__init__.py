@@ -11,6 +11,7 @@ from .pivot import Pivot
 from .shifter import Shifter
 from .. import rop_utils
 from ..errors import RopException
+from ..rop_chain import RopChain
 
 l = logging.getLogger("angrop.chain_builder")
 
@@ -134,6 +135,24 @@ class ChainBuilder:
         :return: a RopChain which invokes the function with the arguments
         """
         return self._func_caller.func_call(address, args, **kwargs)
+
+    def ret2csu(self, pop_gadget, call_gadget, table, index, args,
+                cleanup_slots=7, next_pc=None):
+        """Build an x86-64 ``__libc_csu_init`` indirect-call frame."""
+        if self.project.arch.name != "AMD64":
+            raise RopException("ret2csu is currently implemented for AMD64")
+        if len(args) != 3:
+            raise RopException("ret2csu requires exactly three call arguments")
+        if not 0 <= args[0] <= 0xffffffff:
+            raise RopException("ret2csu first argument is loaded through edi and must fit 32 bits")
+        chain = RopChain(self.project, self, badbytes=self.badbytes)
+        values = [pop_gadget, index, index + 1, args[0], args[1], args[2], table,
+                  call_gadget] + [0] * cleanup_slots
+        if next_pc is not None:
+            values.append(next_pc)
+        for value in values:
+            chain.add_value(value)
+        return chain
 
     def do_syscall(self, syscall_num, args, needs_return=True, **kwargs):
         """
